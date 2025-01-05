@@ -18,3 +18,5 @@ cdk.out
 
 # Docker volume
 volume
+
+.DS_Store

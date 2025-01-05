@@ -1,0 +1,26 @@
+{
+  "name": "device-data-ingestion-service",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "bootstrap:local": "npm run localstack && npm run cdklocal bootstrap --all",
+    "cdklocal": "AWS_ACCESS_KEY_ID=test AWS_SECRET_ACCESS_KEY=test AWS_DEFAULT_REGION=eu-central-1 cdklocal --app 'npx tsx local.dev.ts'",
+    "deploy": "cdk deploy --all",
+    "deploy:local": "npm run localstack && npm run bootstrap:local && npm run cdklocal deploy -- --all",
+    "dev": "npm run localstack && npm run cdklocal watch",
+    "localstack": "docker compose -f ./node_modules/@hems-lib/cdk/docker-compose.yml up -d",
+    "remove": "cdk destroy --all",
+    "remove:local": "npm run localstack && npm run cdklocal destroy -- --all",
+    "synth:local": "npm run cdklocal synth",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "devDependencies": {
+    "@hems-lib/cdk": "../../packages/cdk",
+    "@hems-lib/lambda": "../../packages/lambda",
+    "aws-cdk-local": "^2.18.0",
+    "tsx": "^4.19.2"
+  },
+  "keywords": [],
+  "author": "",
+  "description": ""
+}

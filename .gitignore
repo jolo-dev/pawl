@@ -6,3 +6,15 @@ node_modules
 # CDK asset staging directory
 .cdk.staging
 cdk.out
+
+# moon
+.moon/cache
+.moon/docker
+
+
+
+.nx/cache
+.nx/workspace-data
+
+# Docker volume
+volume

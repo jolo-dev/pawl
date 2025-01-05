@@ -9,7 +9,6 @@ deploy-cloudcatalog:
   pages: true
   script:
     - cd cloudcatalog
-    - npm install
     # Specify the steps involved to build your app here
     - npm run build
   artifacts:

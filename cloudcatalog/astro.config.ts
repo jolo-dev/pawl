@@ -4,6 +4,8 @@ import starlightTypeDoc, { typeDocSidebarGroup } from "starlight-typedoc";
 
 // https://astro.build/config
 export default defineConfig({
+  outDir: "public",
+  publicDir: "assets",
   integrations: [
     starlight({
       title: "HEMS AWS-lib",

@@ -2,11 +2,11 @@
 image: node:lts
 
 before_script:
-  - cd cloudcatalog
   # Functions that should be executed before the build script is run
   - npm install
 
-pages:
+deploy-cloudcatalog:
+  pages: true
   script:
     - cd cloudcatalog
     # Specify the steps involved to build your app here

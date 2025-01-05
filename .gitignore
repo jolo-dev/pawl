@@ -20,3 +20,4 @@ cdk.out
 volume
 
 .DS_Store
+# for gitlab pages

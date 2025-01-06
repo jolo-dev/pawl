@@ -19,7 +19,7 @@ packages/cdk/src/eventbridge.ts:23
 
 ### type
 
-> **type**: [`LambdaFunction`](/api/cdk/classes/lambdafunction/) \| [`Sqs`](/api/cdk/classes/sqs/) \| [`ApiDestination`](/api/cdk/classes/apidestination/) \| [`EventBridge`](/api/cdk/classes/eventbridge/)
+> **type**: [`LambdaFunction`](/public/api/cdk/classes/lambdafunction/) \| [`Sqs`](/public/api/cdk/classes/sqs/) \| [`ApiDestination`](/public/api/cdk/classes/apidestination/) \| [`EventBridge`](/public/api/cdk/classes/eventbridge/)
 
 #### Defined in
 

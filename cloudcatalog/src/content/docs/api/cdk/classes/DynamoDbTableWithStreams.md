@@ -30,7 +30,7 @@ architecture-beta
 
 ### new DynamoDbTableWithStreams()
 
-> **new DynamoDbTableWithStreams**(`scope`, `id`, `props`): [`DynamoDbTableWithStreams`](/api/cdk/classes/dynamodbtablewithstreams/)
+> **new DynamoDbTableWithStreams**(`scope`, `id`, `props`): [`DynamoDbTableWithStreams`](/public/api/cdk/classes/dynamodbtablewithstreams/)
 
 The constructor function creates a DynamoDB table with streams and adds a Lambda function as an
 event source.
@@ -39,7 +39,7 @@ event source.
 
 ##### scope
 
-[`Stack`](/api/cdk/classes/stack/)
+[`Stack`](/public/api/cdk/classes/stack/)
 
 The `scope` parameter in the constructor refers to the stack where the
 DynamoDB table and associated resources will be created.
@@ -54,14 +54,14 @@ resources in the stack.
 
 ##### props
 
-[`DynamoDbTableWithStreamsProps`](/api/cdk/interfaces/dynamodbtablewithstreamsprops/)
+[`DynamoDbTableWithStreamsProps`](/public/api/cdk/interfaces/dynamodbtablewithstreamsprops/)
 
 props is an object containing properties for
 configuring a DynamoDB table with streams. It includes the following properties:
 
 #### Returns
 
-[`DynamoDbTableWithStreams`](/api/cdk/classes/dynamodbtablewithstreams/)
+[`DynamoDbTableWithStreams`](/public/api/cdk/classes/dynamodbtablewithstreams/)
 
 #### Overrides
 
@@ -91,7 +91,7 @@ node\_modules/constructs/lib/construct.d.ts:266
 
 ### stack
 
-> `readonly` **stack**: [`Stack`](/api/cdk/classes/stack/)
+> `readonly` **stack**: [`Stack`](/public/api/cdk/classes/stack/)
 
 #### Inherited from
 
@@ -105,7 +105,7 @@ packages/cdk/src/basic-construct.ts:11
 
 ### table
 
-> **table**: [`Table`](/api/cdk/classes/table/)
+> **table**: [`Table`](/public/api/cdk/classes/table/)
 
 #### Defined in
 
@@ -124,7 +124,7 @@ monitors a DynamoDB table specified in the input stack.
 
 ##### stack
 
-[`Stack`](/api/cdk/classes/stack/)
+[`Stack`](/public/api/cdk/classes/stack/)
 
 A stack object that contains information about the resources and
 configurations of a cloud infrastructure.

@@ -11,19 +11,19 @@ title: "Stack"
 
 ## Extended by
 
-- [`LocalStack`](/api/cdk/classes/localstack/)
+- [`LocalStack`](/public/api/cdk/classes/localstack/)
 
 ## Constructors
 
 ### new Stack()
 
-> **new Stack**(`scope`?, `id`?, `props`?): [`Stack`](/api/cdk/classes/stack/)
+> **new Stack**(`scope`?, `id`?, `props`?): [`Stack`](/public/api/cdk/classes/stack/)
 
 #### Parameters
 
 ##### scope?
 
-[`Construct`](/api/cdk/classes/construct/)
+[`Construct`](/public/api/cdk/classes/construct/)
 
 ##### id?
 
@@ -35,7 +35,7 @@ title: "Stack"
 
 #### Returns
 
-[`Stack`](/api/cdk/classes/stack/)
+[`Stack`](/public/api/cdk/classes/stack/)
 
 #### Overrides
 

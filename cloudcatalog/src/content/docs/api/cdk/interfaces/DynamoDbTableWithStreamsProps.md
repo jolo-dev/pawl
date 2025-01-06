@@ -93,7 +93,7 @@ node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2.d.ts:250
 
 ### eventSource
 
-> **eventSource**: [`EventSource`](/api/cdk/interfaces/eventsource/)
+> **eventSource**: [`EventSource`](/public/api/cdk/interfaces/eventsource/)
 
 #### Defined in
 
@@ -151,7 +151,7 @@ node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2.d.ts:125
 
 ### lambdaFunction
 
-> **lambdaFunction**: [`LambdaFunction`](/api/cdk/classes/lambdafunction/)
+> **lambdaFunction**: [`LambdaFunction`](/public/api/cdk/classes/lambdafunction/)
 
 #### Defined in
 

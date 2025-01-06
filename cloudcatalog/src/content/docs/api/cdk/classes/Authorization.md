@@ -11,17 +11,17 @@ Authorization type for an API Destination Connection
 
 ### new Authorization()
 
-> **new Authorization**(): [`Authorization`](/api/cdk/classes/authorization/)
+> **new Authorization**(): [`Authorization`](/public/api/cdk/classes/authorization/)
 
 #### Returns
 
-[`Authorization`](/api/cdk/classes/authorization/)
+[`Authorization`](/public/api/cdk/classes/authorization/)
 
 ## Methods
 
 ### apiKey()
 
-> `static` **apiKey**(`apiKeyName`, `apiKeyValue`): [`Authorization`](/api/cdk/classes/authorization/)
+> `static` **apiKey**(`apiKeyName`, `apiKeyValue`): [`Authorization`](/public/api/cdk/classes/authorization/)
 
 Use API key authorization
 
@@ -36,11 +36,11 @@ What these are depends on the target of your connection.
 
 ##### apiKeyValue
 
-[`SecretValue`](/api/cdk/classes/secretvalue/)
+[`SecretValue`](/public/api/cdk/classes/secretvalue/)
 
 #### Returns
 
-[`Authorization`](/api/cdk/classes/authorization/)
+[`Authorization`](/public/api/cdk/classes/authorization/)
 
 #### Defined in
 
@@ -50,7 +50,7 @@ node\_modules/aws-cdk-lib/aws-events/lib/connection.d.ts:54
 
 ### basic()
 
-> `static` **basic**(`username`, `password`): [`Authorization`](/api/cdk/classes/authorization/)
+> `static` **basic**(`username`, `password`): [`Authorization`](/public/api/cdk/classes/authorization/)
 
 Use username and password authorization
 
@@ -62,11 +62,11 @@ Use username and password authorization
 
 ##### password
 
-[`SecretValue`](/api/cdk/classes/secretvalue/)
+[`SecretValue`](/public/api/cdk/classes/secretvalue/)
 
 #### Returns
 
-[`Authorization`](/api/cdk/classes/authorization/)
+[`Authorization`](/public/api/cdk/classes/authorization/)
 
 #### Defined in
 
@@ -76,7 +76,7 @@ node\_modules/aws-cdk-lib/aws-events/lib/connection.d.ts:58
 
 ### oauth()
 
-> `static` **oauth**(`props`): [`Authorization`](/api/cdk/classes/authorization/)
+> `static` **oauth**(`props`): [`Authorization`](/public/api/cdk/classes/authorization/)
 
 Use OAuth authorization
 
@@ -88,7 +88,7 @@ Use OAuth authorization
 
 #### Returns
 
-[`Authorization`](/api/cdk/classes/authorization/)
+[`Authorization`](/public/api/cdk/classes/authorization/)
 
 #### Defined in
 

@@ -18,7 +18,7 @@ another construct.
 
 ### new Construct()
 
-> **new Construct**(`scope`, `id`): [`Construct`](/api/cdk/classes/construct/)
+> **new Construct**(`scope`, `id`): [`Construct`](/public/api/cdk/classes/construct/)
 
 Creates a new construct node.
 
@@ -26,7 +26,7 @@ Creates a new construct node.
 
 ##### scope
 
-[`Construct`](/api/cdk/classes/construct/)
+[`Construct`](/public/api/cdk/classes/construct/)
 
 The scope in which to define this construct
 
@@ -40,7 +40,7 @@ dash `--`.
 
 #### Returns
 
-[`Construct`](/api/cdk/classes/construct/)
+[`Construct`](/public/api/cdk/classes/construct/)
 
 #### Defined in
 

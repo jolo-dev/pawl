@@ -47,7 +47,7 @@ architecture-beta
 
 ### new ApiGateway()
 
-> **new ApiGateway**(`scope`, `id`, `props`): [`ApiGateway`](/api/cdk/classes/apigateway/)
+> **new ApiGateway**(`scope`, `id`, `props`): [`ApiGateway`](/public/api/cdk/classes/apigateway/)
 
 The constructor function initializes an HTTP API with specified routes. Every API GW has an Authorizer(@see foo).
 It is possible to give each route an individual Authorizer.
@@ -56,7 +56,7 @@ It is possible to give each route an individual Authorizer.
 
 ##### scope
 
-[`Stack`](/api/cdk/classes/stack/)
+[`Stack`](/public/api/cdk/classes/stack/)
 
 The `scope` parameter in the constructor represents the stack where the
 resources will be created. It is typically an instance of the `Stack` class in an AWS
@@ -72,7 +72,7 @@ others and is often used in naming resources associated with this API.
 
 ##### props
 
-[`ApiProps`](/api/cdk/interfaces/apiprops/)
+[`ApiProps`](/public/api/cdk/interfaces/apiprops/)
 
 The `props` parameter in the constructor function likely contains
 configuration options and settings for the API being created. It seems to include an `authorizer`
@@ -81,7 +81,7 @@ containing route definitions for the API.
 
 #### Returns
 
-[`ApiGateway`](/api/cdk/classes/apigateway/)
+[`ApiGateway`](/public/api/cdk/classes/apigateway/)
 
 #### Overrides
 
@@ -111,7 +111,7 @@ node\_modules/constructs/lib/construct.d.ts:266
 
 ### stack
 
-> `readonly` **stack**: [`Stack`](/api/cdk/classes/stack/)
+> `readonly` **stack**: [`Stack`](/public/api/cdk/classes/stack/)
 
 #### Inherited from
 
@@ -142,7 +142,7 @@ etc.). It is used to define a specific route for handling incoming requests in a
 
 ##### func
 
-[`LambdaFunction`](/api/cdk/classes/lambdafunction/)
+[`LambdaFunction`](/public/api/cdk/classes/lambdafunction/)
 
 The `func` parameter is a Lambda function that will be executed
 when the specified route is accessed.
@@ -167,7 +167,7 @@ The function `createAlarm` monitors an HTTP API Gateway using a given stack.
 
 ##### stack
 
-[`Stack`](/api/cdk/classes/stack/)
+[`Stack`](/public/api/cdk/classes/stack/)
 
 The `stack` parameter is a Stack object that is being passed into the
 `createAlarm` function.

@@ -5,7 +5,7 @@ prev: false
 title: "useAuthorizerHandler"
 ---
 
-> **useAuthorizerHandler**\<`T`\>(`serviceName`, `handleRequest`): `HandlerWithHooks`\<`T` *extends* *typeof* [`SIMPLE`](/api/lambda/variables/authorizer/#simple) ? `APIGatewayRequestSimpleAuthorizerHandlerV2` : `APIGatewayRequestIAMAuthorizerHandlerV2`, `APIGatewayRequestAuthorizerEventV2`, `T` *extends* *typeof* [`SIMPLE`](/api/lambda/variables/authorizer/#simple) ? `APIGatewaySimpleAuthorizerResult` : `APIGatewayIAMAuthorizerResult`\>
+> **useAuthorizerHandler**\<`T`\>(`serviceName`, `handleRequest`): `HandlerWithHooks`\<`T` *extends* *typeof* [`SIMPLE`](/public/api/lambda/variables/authorizer/#simple) ? `APIGatewayRequestSimpleAuthorizerHandlerV2` : `APIGatewayRequestIAMAuthorizerHandlerV2`, `APIGatewayRequestAuthorizerEventV2`, `T` *extends* *typeof* [`SIMPLE`](/public/api/lambda/variables/authorizer/#simple) ? `APIGatewaySimpleAuthorizerResult` : `APIGatewayIAMAuthorizerResult`\>
 
 ## Type Parameters
 
@@ -23,7 +23,7 @@ title: "useAuthorizerHandler"
 
 ## Returns
 
-`HandlerWithHooks`\<`T` *extends* *typeof* [`SIMPLE`](/api/lambda/variables/authorizer/#simple) ? `APIGatewayRequestSimpleAuthorizerHandlerV2` : `APIGatewayRequestIAMAuthorizerHandlerV2`, `APIGatewayRequestAuthorizerEventV2`, `T` *extends* *typeof* [`SIMPLE`](/api/lambda/variables/authorizer/#simple) ? `APIGatewaySimpleAuthorizerResult` : `APIGatewayIAMAuthorizerResult`\>
+`HandlerWithHooks`\<`T` *extends* *typeof* [`SIMPLE`](/public/api/lambda/variables/authorizer/#simple) ? `APIGatewayRequestSimpleAuthorizerHandlerV2` : `APIGatewayRequestIAMAuthorizerHandlerV2`, `APIGatewayRequestAuthorizerEventV2`, `T` *extends* *typeof* [`SIMPLE`](/public/api/lambda/variables/authorizer/#simple) ? `APIGatewaySimpleAuthorizerResult` : `APIGatewayIAMAuthorizerResult`\>
 
 ## Defined in
 

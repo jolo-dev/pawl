@@ -9,7 +9,7 @@ title: "ApiProps"
 
 ### authorizer
 
-> **authorizer**: [`HttpIamAuthorizer`](/api/cdk/classes/httpiamauthorizer/) \| [`HttpUserPoolAuthorizer`](/api/cdk/classes/httpuserpoolauthorizer/) \| [`HttpLambdaAuthorizer`](/api/cdk/classes/httplambdaauthorizer/) \| [`HttpJwtAuthorizer`](/api/cdk/classes/httpjwtauthorizer/)
+> **authorizer**: [`HttpIamAuthorizer`](/public/api/cdk/classes/httpiamauthorizer/) \| [`HttpUserPoolAuthorizer`](/public/api/cdk/classes/httpuserpoolauthorizer/) \| [`HttpLambdaAuthorizer`](/public/api/cdk/classes/httplambdaauthorizer/) \| [`HttpJwtAuthorizer`](/public/api/cdk/classes/httpjwtauthorizer/)
 
 #### Defined in
 
@@ -19,7 +19,7 @@ packages/cdk/src/apigateway.ts:16
 
 ### routes?
 
-> `optional` **routes**: `Record`\<\`ANY /$\{string\}\` \| \`DELETE /$\{string\}\` \| \`GET /$\{string\}\` \| \`HEAD /$\{string\}\` \| \`OPTIONS /$\{string\}\` \| \`PATCH /$\{string\}\` \| \`POST /$\{string\}\` \| \`PUT /$\{string\}\`, [`LambdaFunction`](/api/cdk/classes/lambdafunction/)\>
+> `optional` **routes**: `Record`\<\`ANY /$\{string\}\` \| \`DELETE /$\{string\}\` \| \`GET /$\{string\}\` \| \`HEAD /$\{string\}\` \| \`OPTIONS /$\{string\}\` \| \`PATCH /$\{string\}\` \| \`POST /$\{string\}\` \| \`PUT /$\{string\}\`, [`LambdaFunction`](/public/api/cdk/classes/lambdafunction/)\>
 
 Define the routes for the API. Can be a function, proxy to another API, or point to an load balancer
 

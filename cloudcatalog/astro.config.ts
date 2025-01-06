@@ -5,7 +5,8 @@ import starlightTypeDoc, { typeDocSidebarGroup } from "starlight-typedoc";
 // https://astro.build/config
 export default defineConfig({
   outDir: "../public",
-  publicDir: "./src/assets",
+  publicDir: "public",
+  base: process.env.NODE_ENV === "production" ? "public" : ".",
   integrations: [
     starlight({
       title: "HEMS AWS-lib",
@@ -24,7 +25,7 @@ export default defineConfig({
           typeDoc: {
             plugin: ["typedoc-plugin-mermaid", "typedoc-plugin-zod"],
           },
-          watch: true,
+          // watch: true,
         }),
       ],
     }),

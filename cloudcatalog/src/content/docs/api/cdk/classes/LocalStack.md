@@ -7,13 +7,13 @@ title: "LocalStack"
 
 ## Extends
 
-- [`Stack`](/api/cdk/classes/stack/)
+- [`Stack`](/public/api/cdk/classes/stack/)
 
 ## Constructors
 
 ### new LocalStack()
 
-> **new LocalStack**(`scope`, `id`, `props`): [`LocalStack`](/api/cdk/classes/localstack/)
+> **new LocalStack**(`scope`, `id`, `props`): [`LocalStack`](/public/api/cdk/classes/localstack/)
 
 The constructor function checks for the existence of a directory specified in the props, creates
 LambdaFunction instances for each TypeScript file in the directory, and outputs the function URLs.
@@ -22,7 +22,7 @@ LambdaFunction instances for each TypeScript file in the directory, and outputs 
 
 ##### scope
 
-[`Construct`](/api/cdk/classes/construct/)
+[`Construct`](/public/api/cdk/classes/construct/)
 
 The `scope` parameter in the constructor function represents the scope
 in which the construct is created. It is typically the parent construct under which the current
@@ -48,11 +48,11 @@ stack setup. The code snippet checks for the existence of a directory specified 
 
 #### Returns
 
-[`LocalStack`](/api/cdk/classes/localstack/)
+[`LocalStack`](/public/api/cdk/classes/localstack/)
 
 #### Overrides
 
-[`Stack`](/api/cdk/classes/stack/).[`constructor`](/api/cdk/classes/stack/#constructors)
+[`Stack`](/public/api/cdk/classes/stack/).[`constructor`](/public/api/cdk/classes/stack/#constructors)
 
 #### Defined in
 
@@ -85,7 +85,7 @@ implement some other region-agnostic behavior.
 
 #### Inherited from
 
-[`Stack`](/api/cdk/classes/stack/).[`account`](/api/cdk/classes/stack/#account)
+[`Stack`](/public/api/cdk/classes/stack/).[`account`](/public/api/cdk/classes/stack/#account)
 
 #### Defined in
 
@@ -101,7 +101,7 @@ The ID of the cloud assembly artifact for this stack.
 
 #### Inherited from
 
-[`Stack`](/api/cdk/classes/stack/).[`artifactId`](/api/cdk/classes/stack/#artifactid)
+[`Stack`](/public/api/cdk/classes/stack/).[`artifactId`](/public/api/cdk/classes/stack/#artifactid)
 
 #### Defined in
 
@@ -127,7 +127,7 @@ region/account-agnostic.
 
 #### Inherited from
 
-[`Stack`](/api/cdk/classes/stack/).[`environment`](/api/cdk/classes/stack/#environment)
+[`Stack`](/public/api/cdk/classes/stack/).[`environment`](/public/api/cdk/classes/stack/#environment)
 
 #### Defined in
 
@@ -141,7 +141,7 @@ node\_modules/aws-cdk-lib/core/lib/stack.d.ts:240
 
 #### Inherited from
 
-[`Stack`](/api/cdk/classes/stack/).[`monitoring`](/api/cdk/classes/stack/#monitoring)
+[`Stack`](/public/api/cdk/classes/stack/).[`monitoring`](/public/api/cdk/classes/stack/#monitoring)
 
 #### Defined in
 
@@ -158,7 +158,7 @@ resource. `undefined` for top-level (non-nested) stacks.
 
 #### Inherited from
 
-[`Stack`](/api/cdk/classes/stack/).[`nestedStackResource`](/api/cdk/classes/stack/#nestedstackresource)
+[`Stack`](/public/api/cdk/classes/stack/).[`nestedStackResource`](/public/api/cdk/classes/stack/#nestedstackresource)
 
 #### Defined in
 
@@ -174,7 +174,7 @@ The tree node.
 
 #### Inherited from
 
-[`Stack`](/api/cdk/classes/stack/).[`node`](/api/cdk/classes/stack/#node)
+[`Stack`](/public/api/cdk/classes/stack/).[`node`](/public/api/cdk/classes/stack/#node)
 
 #### Defined in
 
@@ -207,7 +207,7 @@ implement some other region-agnostic behavior.
 
 #### Inherited from
 
-[`Stack`](/api/cdk/classes/stack/).[`region`](/api/cdk/classes/stack/#region)
+[`Stack`](/public/api/cdk/classes/stack/).[`region`](/public/api/cdk/classes/stack/#region)
 
 #### Defined in
 
@@ -223,7 +223,7 @@ Synthesis method for this stack
 
 #### Inherited from
 
-[`Stack`](/api/cdk/classes/stack/).[`synthesizer`](/api/cdk/classes/stack/#synthesizer)
+[`Stack`](/public/api/cdk/classes/stack/).[`synthesizer`](/public/api/cdk/classes/stack/#synthesizer)
 
 #### Defined in
 
@@ -239,7 +239,7 @@ Tags to be applied to the stack.
 
 #### Inherited from
 
-[`Stack`](/api/cdk/classes/stack/).[`tags`](/api/cdk/classes/stack/#tags)
+[`Stack`](/public/api/cdk/classes/stack/).[`tags`](/public/api/cdk/classes/stack/#tags)
 
 #### Defined in
 
@@ -258,7 +258,7 @@ Example value: `MyStack.template.json`
 
 #### Inherited from
 
-[`Stack`](/api/cdk/classes/stack/).[`templateFile`](/api/cdk/classes/stack/#templatefile)
+[`Stack`](/public/api/cdk/classes/stack/).[`templateFile`](/public/api/cdk/classes/stack/#templatefile)
 
 #### Defined in
 
@@ -274,7 +274,7 @@ Options for CloudFormation template (like version, transform, description).
 
 #### Inherited from
 
-[`Stack`](/api/cdk/classes/stack/).[`templateOptions`](/api/cdk/classes/stack/#templateoptions)
+[`Stack`](/public/api/cdk/classes/stack/).[`templateOptions`](/public/api/cdk/classes/stack/#templateoptions)
 
 #### Defined in
 
@@ -308,7 +308,7 @@ To specify a different strategy for selecting availability zones override this m
 
 #### Inherited from
 
-[`Stack`](/api/cdk/classes/stack/).[`availabilityZones`](/api/cdk/classes/stack/#availabilityzones)
+[`Stack`](/public/api/cdk/classes/stack/).[`availabilityZones`](/public/api/cdk/classes/stack/#availabilityzones)
 
 #### Defined in
 
@@ -330,7 +330,7 @@ Indicates whether the stack requires bundling or not
 
 #### Inherited from
 
-[`Stack`](/api/cdk/classes/stack/).[`bundlingRequired`](/api/cdk/classes/stack/#bundlingrequired)
+[`Stack`](/public/api/cdk/classes/stack/).[`bundlingRequired`](/public/api/cdk/classes/stack/#bundlingrequired)
 
 #### Defined in
 
@@ -352,7 +352,7 @@ Return the stacks this stack depends on
 
 #### Inherited from
 
-[`Stack`](/api/cdk/classes/stack/).[`dependencies`](/api/cdk/classes/stack/#dependencies)
+[`Stack`](/public/api/cdk/classes/stack/).[`dependencies`](/public/api/cdk/classes/stack/#dependencies)
 
 #### Defined in
 
@@ -374,7 +374,7 @@ Indicates if this is a nested stack, in which case `parentStack` will include a 
 
 #### Inherited from
 
-[`Stack`](/api/cdk/classes/stack/).[`nested`](/api/cdk/classes/stack/#nested)
+[`Stack`](/public/api/cdk/classes/stack/).[`nested`](/public/api/cdk/classes/stack/#nested)
 
 #### Defined in
 
@@ -396,7 +396,7 @@ If this is a nested stack, returns it's parent stack.
 
 #### Inherited from
 
-[`Stack`](/api/cdk/classes/stack/).[`nestedStackParent`](/api/cdk/classes/stack/#nestedstackparent)
+[`Stack`](/public/api/cdk/classes/stack/).[`nestedStackParent`](/public/api/cdk/classes/stack/#nestedstackparent)
 
 #### Defined in
 
@@ -418,7 +418,7 @@ Returns the list of notification Amazon Resource Names (ARNs) for the current st
 
 #### Inherited from
 
-[`Stack`](/api/cdk/classes/stack/).[`notificationArns`](/api/cdk/classes/stack/#notificationarns)
+[`Stack`](/public/api/cdk/classes/stack/).[`notificationArns`](/public/api/cdk/classes/stack/#notificationarns)
 
 #### Defined in
 
@@ -440,7 +440,7 @@ The partition in which this stack is defined
 
 #### Inherited from
 
-[`Stack`](/api/cdk/classes/stack/).[`partition`](/api/cdk/classes/stack/#partition)
+[`Stack`](/public/api/cdk/classes/stack/).[`partition`](/public/api/cdk/classes/stack/#partition)
 
 #### Defined in
 
@@ -469,7 +469,7 @@ The ID of the stack
 
 #### Inherited from
 
-[`Stack`](/api/cdk/classes/stack/).[`stackId`](/api/cdk/classes/stack/#stackid)
+[`Stack`](/public/api/cdk/classes/stack/).[`stackId`](/public/api/cdk/classes/stack/#stackid)
 
 #### Defined in
 
@@ -500,7 +500,7 @@ you can use `Aws.STACK_NAME` directly.
 
 #### Inherited from
 
-[`Stack`](/api/cdk/classes/stack/).[`stackName`](/api/cdk/classes/stack/#stackname)
+[`Stack`](/public/api/cdk/classes/stack/).[`stackName`](/public/api/cdk/classes/stack/#stackname)
 
 #### Defined in
 
@@ -536,7 +536,7 @@ Whether termination protection is enabled for this stack.
 
 #### Inherited from
 
-[`Stack`](/api/cdk/classes/stack/).[`terminationProtection`](/api/cdk/classes/stack/#terminationprotection)
+[`Stack`](/public/api/cdk/classes/stack/).[`terminationProtection`](/public/api/cdk/classes/stack/#terminationprotection)
 
 #### Defined in
 
@@ -558,7 +558,7 @@ The Amazon domain suffix for the region in which this stack is defined
 
 #### Inherited from
 
-[`Stack`](/api/cdk/classes/stack/).[`urlSuffix`](/api/cdk/classes/stack/#urlsuffix)
+[`Stack`](/public/api/cdk/classes/stack/).[`urlSuffix`](/public/api/cdk/classes/stack/#urlsuffix)
 
 #### Defined in
 
@@ -591,7 +591,7 @@ app, and also supports nested stacks.
 
 #### Inherited from
 
-[`Stack`](/api/cdk/classes/stack/).[`addDependency`](/api/cdk/classes/stack/#adddependency)
+[`Stack`](/public/api/cdk/classes/stack/).[`addDependency`](/public/api/cdk/classes/stack/#adddependency)
 
 #### Defined in
 
@@ -626,7 +626,7 @@ https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/metadata-section-
 
 #### Inherited from
 
-[`Stack`](/api/cdk/classes/stack/).[`addMetadata`](/api/cdk/classes/stack/#addmetadata)
+[`Stack`](/public/api/cdk/classes/stack/).[`addMetadata`](/public/api/cdk/classes/stack/#addmetadata)
 
 #### Defined in
 
@@ -669,7 +669,7 @@ stack.addTransform('AWS::Serverless-2016-10-31')
 
 #### Inherited from
 
-[`Stack`](/api/cdk/classes/stack/).[`addTransform`](/api/cdk/classes/stack/#addtransform)
+[`Stack`](/public/api/cdk/classes/stack/).[`addTransform`](/public/api/cdk/classes/stack/#addtransform)
 
 #### Defined in
 
@@ -717,7 +717,7 @@ See `exportValue` for an example of this process.
 
 #### Inherited from
 
-[`Stack`](/api/cdk/classes/stack/).[`exportStringListValue`](/api/cdk/classes/stack/#exportstringlistvalue)
+[`Stack`](/public/api/cdk/classes/stack/).[`exportStringListValue`](/public/api/cdk/classes/stack/#exportstringlistvalue)
 
 #### Defined in
 
@@ -788,7 +788,7 @@ Instead, the process takes two deployments:
 
 #### Inherited from
 
-[`Stack`](/api/cdk/classes/stack/).[`exportValue`](/api/cdk/classes/stack/#exportvalue)
+[`Stack`](/public/api/cdk/classes/stack/).[`exportValue`](/public/api/cdk/classes/stack/#exportvalue)
 
 #### Defined in
 
@@ -828,7 +828,7 @@ can be 'undefined'.
 
 #### Inherited from
 
-[`Stack`](/api/cdk/classes/stack/).[`formatArn`](/api/cdk/classes/stack/#formatarn)
+[`Stack`](/public/api/cdk/classes/stack/).[`formatArn`](/public/api/cdk/classes/stack/#formatarn)
 
 #### Defined in
 
@@ -866,7 +866,7 @@ needed.
 
 #### Inherited from
 
-[`Stack`](/api/cdk/classes/stack/).[`getLogicalId`](/api/cdk/classes/stack/#getlogicalid)
+[`Stack`](/public/api/cdk/classes/stack/).[`getLogicalId`](/public/api/cdk/classes/stack/#getlogicalid)
 
 #### Defined in
 
@@ -912,7 +912,7 @@ the given region.
 
 #### Inherited from
 
-[`Stack`](/api/cdk/classes/stack/).[`regionalFact`](/api/cdk/classes/stack/#regionalfact)
+[`Stack`](/public/api/cdk/classes/stack/).[`regionalFact`](/public/api/cdk/classes/stack/#regionalfact)
 
 #### Defined in
 
@@ -945,7 +945,7 @@ override the `allocateLogicalId` method.
 
 #### Inherited from
 
-[`Stack`](/api/cdk/classes/stack/).[`renameLogicalId`](/api/cdk/classes/stack/#renamelogicalid)
+[`Stack`](/public/api/cdk/classes/stack/).[`renameLogicalId`](/public/api/cdk/classes/stack/#renamelogicalid)
 
 #### Defined in
 
@@ -976,7 +976,7 @@ The set of parameters needed to obtain the context
 
 #### Inherited from
 
-[`Stack`](/api/cdk/classes/stack/).[`reportMissingContextKey`](/api/cdk/classes/stack/#reportmissingcontextkey)
+[`Stack`](/public/api/cdk/classes/stack/).[`reportMissingContextKey`](/public/api/cdk/classes/stack/#reportmissingcontextkey)
 
 #### Defined in
 
@@ -1002,7 +1002,7 @@ Resolve a tokenized value in the context of the current stack.
 
 #### Inherited from
 
-[`Stack`](/api/cdk/classes/stack/).[`resolve`](/api/cdk/classes/stack/#resolve)
+[`Stack`](/public/api/cdk/classes/stack/).[`resolve`](/public/api/cdk/classes/stack/#resolve)
 
 #### Defined in
 
@@ -1040,7 +1040,7 @@ the expected format of 'arn' - depends on what format the service 'arn' represen
 
 #### Inherited from
 
-[`Stack`](/api/cdk/classes/stack/).[`splitArn`](/api/cdk/classes/stack/#splitarn)
+[`Stack`](/public/api/cdk/classes/stack/).[`splitArn`](/public/api/cdk/classes/stack/#splitarn)
 
 #### Defined in
 
@@ -1070,7 +1070,7 @@ Convert an object, potentially containing tokens, to a JSON string
 
 #### Inherited from
 
-[`Stack`](/api/cdk/classes/stack/).[`toJsonString`](/api/cdk/classes/stack/#tojsonstring)
+[`Stack`](/public/api/cdk/classes/stack/).[`toJsonString`](/public/api/cdk/classes/stack/#tojsonstring)
 
 #### Defined in
 
@@ -1090,7 +1090,7 @@ Returns a string representation of this construct.
 
 #### Inherited from
 
-[`Stack`](/api/cdk/classes/stack/).[`toString`](/api/cdk/classes/stack/#tostring)
+[`Stack`](/public/api/cdk/classes/stack/).[`toString`](/public/api/cdk/classes/stack/#tostring)
 
 #### Defined in
 
@@ -1116,7 +1116,7 @@ Convert an object, potentially containing tokens, to a YAML string
 
 #### Inherited from
 
-[`Stack`](/api/cdk/classes/stack/).[`toYamlString`](/api/cdk/classes/stack/#toyamlstring)
+[`Stack`](/public/api/cdk/classes/stack/).[`toYamlString`](/public/api/cdk/classes/stack/#toyamlstring)
 
 #### Defined in
 
@@ -1160,7 +1160,7 @@ true if `x` is an object created from a class which extends `Construct`.
 
 #### Inherited from
 
-[`Stack`](/api/cdk/classes/stack/).[`isConstruct`](/api/cdk/classes/stack/#isconstruct)
+[`Stack`](/public/api/cdk/classes/stack/).[`isConstruct`](/public/api/cdk/classes/stack/#isconstruct)
 
 #### Defined in
 
@@ -1188,7 +1188,7 @@ We do attribute detection since we can't reliably use 'instanceof'.
 
 #### Inherited from
 
-[`Stack`](/api/cdk/classes/stack/).[`isStack`](/api/cdk/classes/stack/#isstack)
+[`Stack`](/public/api/cdk/classes/stack/).[`isStack`](/public/api/cdk/classes/stack/#isstack)
 
 #### Defined in
 
@@ -1216,7 +1216,7 @@ The construct to start the search from.
 
 #### Inherited from
 
-[`Stack`](/api/cdk/classes/stack/).[`of`](/api/cdk/classes/stack/#of)
+[`Stack`](/public/api/cdk/classes/stack/).[`of`](/public/api/cdk/classes/stack/#of)
 
 #### Defined in
 

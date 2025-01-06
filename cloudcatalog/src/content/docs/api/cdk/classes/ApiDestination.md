@@ -15,7 +15,7 @@ https://docs.aws.amazon.com/cdk/api/v2/docs/aws-cdk-lib.aws_events.ApiDestinatio
 
 ### new ApiDestination()
 
-> **new ApiDestination**(`scope`, `id`, `props`): [`ApiDestination`](/api/cdk/classes/apidestination/)
+> **new ApiDestination**(`scope`, `id`, `props`): [`ApiDestination`](/public/api/cdk/classes/apidestination/)
 
 The constructor function creates an ApiDestination with a Connection for your EventBridge.
 
@@ -23,7 +23,7 @@ The constructor function creates an ApiDestination with a Connection for your Ev
 
 ##### scope
 
-[`Construct`](/api/cdk/classes/construct/)
+[`Construct`](/public/api/cdk/classes/construct/)
 
 The `scope` parameter in the constructor refers to the AWS
 CloudFormation construct to which the ApiDestination is being added.
@@ -38,14 +38,14 @@ the specific instance of the API destination within the scope of the AWS CDK app
 
 ##### props
 
-[`ApiDestinationProps`](/api/cdk/interfaces/apidestinationprops/)
+[`ApiDestinationProps`](/public/api/cdk/interfaces/apidestinationprops/)
 
 The `props` object in the constructor contains the following
 properties:
 
 #### Returns
 
-[`ApiDestination`](/api/cdk/classes/apidestination/)
+[`ApiDestination`](/public/api/cdk/classes/apidestination/)
 
 #### Overrides
 
@@ -227,7 +227,7 @@ Create an Api Destination construct from an existing Api Destination ARN.
 
 ##### scope
 
-[`Construct`](/api/cdk/classes/construct/)
+[`Construct`](/public/api/cdk/classes/construct/)
 
 The scope creating construct (usually `this`).
 

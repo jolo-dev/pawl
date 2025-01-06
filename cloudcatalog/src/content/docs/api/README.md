@@ -7,5 +7,5 @@ title: "hems-aws-lib"
 
 ## Modules
 
-- [cdk](/api/cdk/readme/)
-- [lambda](/api/lambda/readme/)
+- [cdk](/public/api/cdk/readme/)
+- [lambda](/public/api/lambda/readme/)

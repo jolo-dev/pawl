@@ -5,7 +5,7 @@ prev: false
 title: "BasicTags"
 ---
 
-> `const` **BasicTags**: `ZodObject`\<[`BasicTagsProps`](/api/cdk/type-aliases/basictagsprops/)\>
+> `const` **BasicTags**: `ZodObject`\<[`BasicTagsProps`](/public/api/cdk/type-aliases/basictagsprops/)\>
 
 ## Defined in
 

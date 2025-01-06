@@ -15,7 +15,7 @@ Authorize Http Api routes via a lambda function
 
 ### new HttpLambdaAuthorizer()
 
-> **new HttpLambdaAuthorizer**(`id`, `handler`, `props`?): [`HttpLambdaAuthorizer`](/api/cdk/classes/httplambdaauthorizer/)
+> **new HttpLambdaAuthorizer**(`id`, `handler`, `props`?): [`HttpLambdaAuthorizer`](/public/api/cdk/classes/httplambdaauthorizer/)
 
 Initialize a lambda authorizer to be bound with HTTP route.
 
@@ -39,7 +39,7 @@ Properties to configure the authorizer
 
 #### Returns
 
-[`HttpLambdaAuthorizer`](/api/cdk/classes/httplambdaauthorizer/)
+[`HttpLambdaAuthorizer`](/public/api/cdk/classes/httplambdaauthorizer/)
 
 #### Defined in
 

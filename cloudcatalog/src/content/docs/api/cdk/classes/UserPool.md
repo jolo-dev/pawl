@@ -15,13 +15,13 @@ Define a Cognito User Pool
 
 ### new UserPool()
 
-> **new UserPool**(`scope`, `id`, `props`?): [`UserPool`](/public/api/cdk/classes/userpool/)
+> **new UserPool**(`scope`, `id`, `props`?): [`UserPool`](/api/cdk/classes/userpool/)
 
 #### Parameters
 
 ##### scope
 
-[`Construct`](/public/api/cdk/classes/construct/)
+[`Construct`](/api/cdk/classes/construct/)
 
 ##### id
 
@@ -33,7 +33,7 @@ Define a Cognito User Pool
 
 #### Returns
 
-[`UserPool`](/public/api/cdk/classes/userpool/)
+[`UserPool`](/api/cdk/classes/userpool/)
 
 #### Overrides
 
@@ -181,7 +181,7 @@ node\_modules/aws-cdk-lib/aws-cognito/lib/user-pool.d.ts:774
 
 ### addClient()
 
-> **addClient**(`id`, `options`?): [`UserPoolClient`](/public/api/cdk/classes/userpoolclient/)
+> **addClient**(`id`, `options`?): [`UserPoolClient`](/api/cdk/classes/userpoolclient/)
 
 Add a new app client to this user pool.
 
@@ -197,7 +197,7 @@ Add a new app client to this user pool.
 
 #### Returns
 
-[`UserPoolClient`](/public/api/cdk/classes/userpoolclient/)
+[`UserPoolClient`](/api/cdk/classes/userpoolclient/)
 
 #### See
 
@@ -470,7 +470,7 @@ Import an existing user pool based on its ARN.
 
 ##### scope
 
-[`Construct`](/public/api/cdk/classes/construct/)
+[`Construct`](/api/cdk/classes/construct/)
 
 ##### id
 
@@ -500,7 +500,7 @@ Import an existing user pool based on its id.
 
 ##### scope
 
-[`Construct`](/public/api/cdk/classes/construct/)
+[`Construct`](/api/cdk/classes/construct/)
 
 ##### id
 

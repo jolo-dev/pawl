@@ -15,13 +15,13 @@ A DynamoDB Table.
 
 ### new Table()
 
-> **new Table**(`scope`, `id`, `props`): [`Table`](/public/api/cdk/classes/table/)
+> **new Table**(`scope`, `id`, `props`): [`Table`](/api/cdk/classes/table/)
 
 #### Parameters
 
 ##### scope
 
-[`Construct`](/public/api/cdk/classes/construct/)
+[`Construct`](/api/cdk/classes/construct/)
 
 ##### id
 
@@ -33,7 +33,7 @@ A DynamoDB Table.
 
 #### Returns
 
-[`Table`](/public/api/cdk/classes/table/)
+[`Table`](/api/cdk/classes/table/)
 
 #### Overrides
 
@@ -995,7 +995,7 @@ Creates a Table construct that represents an external table via table ARN.
 
 ##### scope
 
-[`Construct`](/public/api/cdk/classes/construct/)
+[`Construct`](/api/cdk/classes/construct/)
 
 the parent creating construct (usually `this`)
 
@@ -1031,7 +1031,7 @@ Creates a Table construct that represents an external table.
 
 ##### scope
 
-[`Construct`](/public/api/cdk/classes/construct/)
+[`Construct`](/api/cdk/classes/construct/)
 
 the parent creating construct (usually `this`)
 
@@ -1067,7 +1067,7 @@ Creates a Table construct that represents an external table via table name.
 
 ##### scope
 
-[`Construct`](/public/api/cdk/classes/construct/)
+[`Construct`](/api/cdk/classes/construct/)
 
 the parent creating construct (usually `this`)
 

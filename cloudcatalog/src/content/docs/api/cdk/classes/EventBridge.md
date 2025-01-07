@@ -72,7 +72,7 @@ new EventBridge(this, "test", {
 
 ### new EventBridge()
 
-> **new EventBridge**(`scope`, `id`, `props`): [`EventBridge`](/public/api/cdk/classes/eventbridge/)
+> **new EventBridge**(`scope`, `id`, `props`): [`EventBridge`](/api/cdk/classes/eventbridge/)
 
 The function creates an EventBridge with specified targets and sets up corresponding rules for
 each target.
@@ -81,7 +81,7 @@ each target.
 
 ##### scope
 
-[`Stack`](/public/api/cdk/classes/stack/)
+[`Stack`](/api/cdk/classes/stack/)
 
 The `scope` parameter in the constructor refers to the AWS CloudFormation
 stack where the EventBridge resources will be created. It provides a way to define the scope or
@@ -97,7 +97,7 @@ others and is typically provided by the user when instantiating the stack.
 
 ##### props
 
-[`EventBridgeProps`](/public/api/cdk/interfaces/eventbridgeprops/)
+[`EventBridgeProps`](/api/cdk/interfaces/eventbridgeprops/)
 
 The `props` parameter in the constructor function seems to be of
 type `EventBridgeProps`. It likely contains information and configurations related to setting up
@@ -106,7 +106,7 @@ such as the event bus name, targets for the rules, and
 
 #### Returns
 
-[`EventBridge`](/public/api/cdk/classes/eventbridge/)
+[`EventBridge`](/api/cdk/classes/eventbridge/)
 
 #### Overrides
 
@@ -146,7 +146,7 @@ node\_modules/constructs/lib/construct.d.ts:266
 
 ### stack
 
-> `readonly` **stack**: [`Stack`](/public/api/cdk/classes/stack/)
+> `readonly` **stack**: [`Stack`](/api/cdk/classes/stack/)
 
 #### Inherited from
 
@@ -169,7 +169,7 @@ eventbridge.
 
 ##### stack
 
-[`Stack`](/public/api/cdk/classes/stack/)
+[`Stack`](/api/cdk/classes/stack/)
 
 The `stack` parameter is a Stack object that is being passed to the
 `createAlarm` function.

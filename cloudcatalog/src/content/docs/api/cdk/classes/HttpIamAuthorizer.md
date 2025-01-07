@@ -15,11 +15,11 @@ Authorize HTTP API Routes with IAM
 
 ### new HttpIamAuthorizer()
 
-> **new HttpIamAuthorizer**(): [`HttpIamAuthorizer`](/public/api/cdk/classes/httpiamauthorizer/)
+> **new HttpIamAuthorizer**(): [`HttpIamAuthorizer`](/api/cdk/classes/httpiamauthorizer/)
 
 #### Returns
 
-[`HttpIamAuthorizer`](/public/api/cdk/classes/httpiamauthorizer/)
+[`HttpIamAuthorizer`](/api/cdk/classes/httpiamauthorizer/)
 
 ## Properties
 

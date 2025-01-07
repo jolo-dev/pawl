@@ -27,7 +27,7 @@ node\_modules/aws-cdk-lib/aws-events/lib/api-destination.d.ts:12
 
 ### authorization
 
-> **authorization**: [`Authorization`](/public/api/cdk/classes/authorization/)
+> **authorization**: [`Authorization`](/api/cdk/classes/authorization/)
 
 #### Defined in
 

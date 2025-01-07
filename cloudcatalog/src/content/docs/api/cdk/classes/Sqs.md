@@ -23,7 +23,7 @@ architecture-beta
 
 ### new Sqs()
 
-> **new Sqs**(`scope`, `id`, `props`): [`Sqs`](/public/api/cdk/classes/sqs/)
+> **new Sqs**(`scope`, `id`, `props`): [`Sqs`](/api/cdk/classes/sqs/)
 
 The constructor function creates an SQS queue with a dead-letter queue (DLQ) and sets up event
 source mapping for a Lambda function to consume messages from the queue.
@@ -32,7 +32,7 @@ source mapping for a Lambda function to consume messages from the queue.
 
 ##### scope
 
-[`Stack`](/public/api/cdk/classes/stack/)
+[`Stack`](/api/cdk/classes/stack/)
 
 The `scope` parameter in the constructor refers to the stack where the
 resources will be created. It is typically an instance of the `Stack` class in an AWS
@@ -57,7 +57,7 @@ Notification Service) resources. These properties include:
 
 #### Returns
 
-[`Sqs`](/public/api/cdk/classes/sqs/)
+[`Sqs`](/api/cdk/classes/sqs/)
 
 #### Overrides
 
@@ -97,7 +97,7 @@ packages/cdk/src/sqs.ts:26
 
 ### stack
 
-> `readonly` **stack**: [`Stack`](/public/api/cdk/classes/stack/)
+> `readonly` **stack**: [`Stack`](/api/cdk/classes/stack/)
 
 #### Inherited from
 
@@ -119,7 +119,7 @@ The `createAlarm` function sets up monitoring for an SQS queue in a given stack.
 
 ##### stack
 
-[`Stack`](/public/api/cdk/classes/stack/)
+[`Stack`](/api/cdk/classes/stack/)
 
 The `stack` parameter is a Stack object that is being passed to the
 `createAlarm` function.

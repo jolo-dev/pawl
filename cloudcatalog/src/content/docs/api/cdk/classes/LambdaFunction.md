@@ -23,7 +23,7 @@ architecture-beta
 
 ### new LambdaFunction()
 
-> **new LambdaFunction**(`scope`, `id`, `props`): [`LambdaFunction`](/public/api/cdk/classes/lambdafunction/)
+> **new LambdaFunction**(`scope`, `id`, `props`): [`LambdaFunction`](/api/cdk/classes/lambdafunction/)
 
 The above function is a TypeScript constructor that creates a Lambda function with specific
 configurations, including using Node.js 22.x runtime and bundling to ESM format for efficiency.
@@ -32,7 +32,7 @@ configurations, including using Node.js 22.x runtime and bundling to ESM format 
 
 ##### scope
 
-[`Stack`](/public/api/cdk/classes/stack/)
+[`Stack`](/api/cdk/classes/stack/)
 
 The `scope` parameter in the constructor refers to the AWS CloudFormation
 stack where the Lambda function will be deployed. It provides a way to define the logical
@@ -48,7 +48,7 @@ specific Lambda function from others within the same scope or stack.
 
 ##### props
 
-[`LambdaProps`](/public/api/cdk/interfaces/lambdaprops/)
+[`LambdaProps`](/api/cdk/interfaces/lambdaprops/)
 
 LambdaProps is a type that contains properties for configuring a
 Lambda function. In this case, it includes an `authorizer` property that is being assigned to
@@ -57,7 +57,7 @@ with specific configurations such as function name,
 
 #### Returns
 
-[`LambdaFunction`](/public/api/cdk/classes/lambdafunction/)
+[`LambdaFunction`](/api/cdk/classes/lambdafunction/)
 
 #### Overrides
 
@@ -107,7 +107,7 @@ node\_modules/constructs/lib/construct.d.ts:266
 
 ### stack
 
-> `readonly` **stack**: [`Stack`](/public/api/cdk/classes/stack/)
+> `readonly` **stack**: [`Stack`](/api/cdk/classes/stack/)
 
 #### Inherited from
 
@@ -127,7 +127,7 @@ packages/cdk/src/basic-construct.ts:11
 
 ##### stack
 
-[`Stack`](/public/api/cdk/classes/stack/)
+[`Stack`](/api/cdk/classes/stack/)
 
 #### Returns
 

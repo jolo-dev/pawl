@@ -42,7 +42,7 @@ your Lamba's code, instead of using environment variables.)
 
 ### new SecretValue()
 
-> **new SecretValue**(`protectedValue`, `options`?): [`SecretValue`](/public/api/cdk/classes/secretvalue/)
+> **new SecretValue**(`protectedValue`, `options`?): [`SecretValue`](/api/cdk/classes/secretvalue/)
 
 Construct a SecretValue (do not use!)
 
@@ -61,7 +61,7 @@ instead.
 
 #### Returns
 
-[`SecretValue`](/public/api/cdk/classes/secretvalue/)
+[`SecretValue`](/api/cdk/classes/secretvalue/)
 
 #### Overrides
 
@@ -235,7 +235,7 @@ node\_modules/aws-cdk-lib/core/lib/secret-value.d.ts:143
 
 ### cfnDynamicReference()
 
-> `static` **cfnDynamicReference**(`ref`): [`SecretValue`](/public/api/cdk/classes/secretvalue/)
+> `static` **cfnDynamicReference**(`ref`): [`SecretValue`](/api/cdk/classes/secretvalue/)
 
 Obtain the secret value through a CloudFormation dynamic reference.
 
@@ -251,7 +251,7 @@ The dynamic reference to use.
 
 #### Returns
 
-[`SecretValue`](/public/api/cdk/classes/secretvalue/)
+[`SecretValue`](/api/cdk/classes/secretvalue/)
 
 #### Defined in
 
@@ -261,7 +261,7 @@ node\_modules/aws-cdk-lib/core/lib/secret-value.d.ts:105
 
 ### cfnParameter()
 
-> `static` **cfnParameter**(`param`): [`SecretValue`](/public/api/cdk/classes/secretvalue/)
+> `static` **cfnParameter**(`param`): [`SecretValue`](/api/cdk/classes/secretvalue/)
 
 Obtain the secret value through a CloudFormation parameter.
 
@@ -278,7 +278,7 @@ The CloudFormation parameter to use.
 
 #### Returns
 
-[`SecretValue`](/public/api/cdk/classes/secretvalue/)
+[`SecretValue`](/api/cdk/classes/secretvalue/)
 
 #### Defined in
 
@@ -310,7 +310,7 @@ node\_modules/aws-cdk-lib/core/lib/secret-value.d.ts:39
 
 ### ~~plainText()~~
 
-> `static` **plainText**(`secret`): [`SecretValue`](/public/api/cdk/classes/secretvalue/)
+> `static` **plainText**(`secret`): [`SecretValue`](/api/cdk/classes/secretvalue/)
 
 Construct a literal secret value for use with secret-aware constructs
 
@@ -332,7 +332,7 @@ Use `unsafePlainText()` instead.
 
 #### Returns
 
-[`SecretValue`](/public/api/cdk/classes/secretvalue/)
+[`SecretValue`](/api/cdk/classes/secretvalue/)
 
 #### Defined in
 
@@ -342,7 +342,7 @@ node\_modules/aws-cdk-lib/core/lib/secret-value.d.ts:51
 
 ### resourceAttribute()
 
-> `static` **resourceAttribute**(`attr`): [`SecretValue`](/public/api/cdk/classes/secretvalue/)
+> `static` **resourceAttribute**(`attr`): [`SecretValue`](/api/cdk/classes/secretvalue/)
 
 Use a resource's output as secret value
 
@@ -354,7 +354,7 @@ Use a resource's output as secret value
 
 #### Returns
 
-[`SecretValue`](/public/api/cdk/classes/secretvalue/)
+[`SecretValue`](/api/cdk/classes/secretvalue/)
 
 #### Defined in
 
@@ -364,7 +364,7 @@ node\_modules/aws-cdk-lib/core/lib/secret-value.d.ts:118
 
 ### secretsManager()
 
-> `static` **secretsManager**(`secretId`, `options`?): [`SecretValue`](/public/api/cdk/classes/secretvalue/)
+> `static` **secretsManager**(`secretId`, `options`?): [`SecretValue`](/api/cdk/classes/secretvalue/)
 
 Creates a `SecretValue` with a value which is dynamically loaded from AWS Secrets Manager.
 
@@ -387,7 +387,7 @@ Options
 
 #### Returns
 
-[`SecretValue`](/public/api/cdk/classes/secretvalue/)
+[`SecretValue`](/api/cdk/classes/secretvalue/)
 
 #### Defined in
 
@@ -397,7 +397,7 @@ node\_modules/aws-cdk-lib/core/lib/secret-value.d.ts:82
 
 ### ssmSecure()
 
-> `static` **ssmSecure**(`parameterName`, `version`?): [`SecretValue`](/public/api/cdk/classes/secretvalue/)
+> `static` **ssmSecure**(`parameterName`, `version`?): [`SecretValue`](/api/cdk/classes/secretvalue/)
 
 Use a secret value stored from a Systems Manager (SSM) parameter.
 
@@ -424,7 +424,7 @@ latest version of the parameter.
 
 #### Returns
 
-[`SecretValue`](/public/api/cdk/classes/secretvalue/)
+[`SecretValue`](/api/cdk/classes/secretvalue/)
 
 #### Defined in
 
@@ -434,7 +434,7 @@ node\_modules/aws-cdk-lib/core/lib/secret-value.d.ts:97
 
 ### unsafePlainText()
 
-> `static` **unsafePlainText**(`secret`): [`SecretValue`](/public/api/cdk/classes/secretvalue/)
+> `static` **unsafePlainText**(`secret`): [`SecretValue`](/api/cdk/classes/secretvalue/)
 
 Construct a literal secret value for use with secret-aware constructs
 
@@ -456,7 +456,7 @@ secret values.
 
 #### Returns
 
-[`SecretValue`](/public/api/cdk/classes/secretvalue/)
+[`SecretValue`](/api/cdk/classes/secretvalue/)
 
 #### Example
 

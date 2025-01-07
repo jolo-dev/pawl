@@ -127,7 +127,7 @@ packages/cdk/src/eventbridge.ts:29
 
 ### targets
 
-> **targets**: [`EventTarget`](/public/api/cdk/interfaces/eventtarget/)[]
+> **targets**: [`EventTarget`](/api/cdk/interfaces/eventtarget/)[]
 
 #### Defined in
 

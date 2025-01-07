@@ -16,7 +16,7 @@ an AWS Cognito user pool.
 
 ### new HttpUserPoolAuthorizer()
 
-> **new HttpUserPoolAuthorizer**(`id`, `pool`, `props`?): [`HttpUserPoolAuthorizer`](/public/api/cdk/classes/httpuserpoolauthorizer/)
+> **new HttpUserPoolAuthorizer**(`id`, `pool`, `props`?): [`HttpUserPoolAuthorizer`](/api/cdk/classes/httpuserpoolauthorizer/)
 
 Initialize a Cognito user pool authorizer to be bound with HTTP route.
 
@@ -42,7 +42,7 @@ Properties to configure the authorizer
 
 #### Returns
 
-[`HttpUserPoolAuthorizer`](/public/api/cdk/classes/httpuserpoolauthorizer/)
+[`HttpUserPoolAuthorizer`](/api/cdk/classes/httpuserpoolauthorizer/)
 
 #### Defined in
 

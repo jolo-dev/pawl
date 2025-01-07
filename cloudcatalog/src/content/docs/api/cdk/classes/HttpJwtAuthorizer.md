@@ -16,7 +16,7 @@ an AWS Cognito user pool.
 
 ### new HttpJwtAuthorizer()
 
-> **new HttpJwtAuthorizer**(`id`, `jwtIssuer`, `props`): [`HttpJwtAuthorizer`](/public/api/cdk/classes/httpjwtauthorizer/)
+> **new HttpJwtAuthorizer**(`id`, `jwtIssuer`, `props`): [`HttpJwtAuthorizer`](/api/cdk/classes/httpjwtauthorizer/)
 
 Initialize a JWT authorizer to be bound with HTTP route.
 
@@ -42,7 +42,7 @@ Properties to configure the authorizer
 
 #### Returns
 
-[`HttpJwtAuthorizer`](/public/api/cdk/classes/httpjwtauthorizer/)
+[`HttpJwtAuthorizer`](/api/cdk/classes/httpjwtauthorizer/)
 
 #### Defined in
 

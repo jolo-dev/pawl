@@ -19,13 +19,13 @@ Define a UserPool App Client
 
 ### new UserPoolClient()
 
-> **new UserPoolClient**(`scope`, `id`, `props`): [`UserPoolClient`](/public/api/cdk/classes/userpoolclient/)
+> **new UserPoolClient**(`scope`, `id`, `props`): [`UserPoolClient`](/api/cdk/classes/userpoolclient/)
 
 #### Parameters
 
 ##### scope
 
-[`Construct`](/public/api/cdk/classes/construct/)
+[`Construct`](/api/cdk/classes/construct/)
 
 ##### id
 
@@ -37,7 +37,7 @@ Define a UserPool App Client
 
 #### Returns
 
-[`UserPoolClient`](/public/api/cdk/classes/userpoolclient/)
+[`UserPoolClient`](/api/cdk/classes/userpoolclient/)
 
 #### Overrides
 
@@ -168,7 +168,7 @@ node\_modules/aws-cdk-lib/aws-cognito/lib/user-pool-client.d.ts:335
 
 #### Get Signature
 
-> **get** **userPoolClientSecret**(): [`SecretValue`](/public/api/cdk/classes/secretvalue/)
+> **get** **userPoolClientSecret**(): [`SecretValue`](/api/cdk/classes/secretvalue/)
 
 The generated client secret. Only available if the "generateSecret" props is set to true
 
@@ -176,7 +176,7 @@ The generated client secret. Only available if the "generateSecret" props is set
 
 ##### Returns
 
-[`SecretValue`](/public/api/cdk/classes/secretvalue/)
+[`SecretValue`](/api/cdk/classes/secretvalue/)
 
 #### Implementation of
 
@@ -256,7 +256,7 @@ Import a user pool client given its id.
 
 ##### scope
 
-[`Construct`](/public/api/cdk/classes/construct/)
+[`Construct`](/api/cdk/classes/construct/)
 
 ##### id
 

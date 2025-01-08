@@ -1,0 +1,39 @@
+---
+editUrl: false
+next: false
+prev: false
+title: "ApiProps"
+---
+
+## Properties
+
+### authorizer
+
+> **authorizer**: [`HttpIamAuthorizer`](/cdk/classes/httpiamauthorizer/) \| [`HttpUserPoolAuthorizer`](/cdk/classes/httpuserpoolauthorizer/) \| [`HttpLambdaAuthorizer`](/cdk/classes/httplambdaauthorizer/) \| [`HttpJwtAuthorizer`](/cdk/classes/httpjwtauthorizer/)
+
+#### Defined in
+
+packages/cdk/src/apigateway.ts:16
+
+***
+
+### routes?
+
+> `optional` **routes**: `Record`\<\`ANY /$\{string\}\` \| \`DELETE /$\{string\}\` \| \`GET /$\{string\}\` \| \`HEAD /$\{string\}\` \| \`OPTIONS /$\{string\}\` \| \`PATCH /$\{string\}\` \| \`POST /$\{string\}\` \| \`PUT /$\{string\}\`, [`LambdaFunction`](/cdk/classes/lambdafunction/)\>
+
+Define the routes for the API. Can be a function, proxy to another API, or point to an load balancer
+
+#### Example
+
+```js
+new Api(stack, "api", {
+  routes: {
+    "GET  /notes"      : new LambdaFunction(this, "ApiNotes", entry),
+    "POST /notes/{id}" : new LambdaFunction(this, "ApiNotesId", entry)
+  }
+})
+```
+
+#### Defined in
+
+packages/cdk/src/apigateway.ts:31

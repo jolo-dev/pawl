@@ -1,12 +1,25 @@
 import starlight from "@astrojs/starlight";
 import { defineConfig } from "astro/config";
-import starlightTypeDoc, { typeDocSidebarGroup } from "starlight-typedoc";
+import starlightTypeDoc, {
+  typeDocSidebarGroup,
+  createStarlightTypeDocPlugin,
+} from "starlight-typedoc";
+
+const [cdkStarlightTypeDoc, cdkTypeDocSidebarGroup] = createStarlightTypeDocPlugin();
+const [lambdaStarlightTypeDoc, lambdaTypeDocSidebarGroup] = createStarlightTypeDocPlugin();
+
+const common = {
+  typeDoc: {
+    plugin: ["typedoc-plugin-mermaid", "typedoc-plugin-zod"],
+  },
+  tsconfig: "../tsconfig.build.json",
+};
 
 // https://astro.build/config
 export default defineConfig({
   outDir: "../public",
-  publicDir: "public",
-  base: process.env.NODE_ENV === "production" ? "public" : ".",
+  // publicDir: "public",
+  // base: process.env.NODE_ENV === "production" ? "public" : ".",
   integrations: [
     starlight({
       title: "HEMS AWS-lib",
@@ -15,17 +28,27 @@ export default defineConfig({
           label: "Libraries",
           autogenerate: { directory: "lib" },
         },
-        typeDocSidebarGroup,
+        {
+          label: "References",
+          items: [cdkTypeDocSidebarGroup, lambdaTypeDocSidebarGroup],
+        },
       ],
       plugins: [
-        // Generate the documentation.
-        starlightTypeDoc({
-          entryPoints: ["../packages/cdk/index.ts", "../packages/lambda/index.ts"],
-          tsconfig: "../tsconfig.build.json",
-          typeDoc: {
-            plugin: ["typedoc-plugin-mermaid", "typedoc-plugin-zod"],
+        cdkStarlightTypeDoc({
+          entryPoints: ["../packages/cdk/index.ts"],
+          output: "cdk",
+          sidebar: {
+            label: "@hems-aws/cdk",
           },
-          // watch: true,
+          ...common,
+        }),
+        lambdaStarlightTypeDoc({
+          entryPoints: ["../packages/lambda/index.ts"],
+          output: "lambda",
+          sidebar: {
+            label: "@hems-aws/lambda",
+          },
+          ...common,
         }),
       ],
     }),

@@ -1,6 +1,8 @@
 ---
 title: AWS Lambda
 description: This is an overview of the capabilities of AWS Lambda with HEMS.
+sidebar:
+    order: 3 
 ---
 
 ## AWS Lamda Lib

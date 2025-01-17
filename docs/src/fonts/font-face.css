@@ -1,0 +1,25 @@
+@font-face {
+    font-family: 'EON';
+    /* Use a relative path to the local font file in `url()`. */
+    src: url('./EON_BrixSans-Regular.ttf') format('truetype');
+    font-weight: normal;
+    font-style: normal;
+    font-display: swap;
+}
+@font-face {
+    font-family: 'EON Bold';
+    /* Use a relative path to the local font file in `url()`. */
+    src: url('./EON_BrixSans-Bold.ttf') format('truetype');
+    font-weight: normal;
+    font-style: normal;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: 'EON_Head';
+    /* Use a relative path to the local font file in `url()`. */
+    src: url('./EON_Head.woff') format('woff');
+    font-weight: normal;
+    font-style: normal;
+    font-display: swap;
+}

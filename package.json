@@ -1,8 +1,7 @@
 {
   "name": "hems-aws-lib",
-  "version": "1.0.0",
   "type": "module",
-  "workspaces": ["packages/*", "cloudcatalog"],
+  "workspaces": ["packages/*", "docs"],
   "keywords": [],
   "author": "",
   "license": "ISC",

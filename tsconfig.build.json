@@ -1,4 +1,4 @@
 {
     "extends": "./tsconfig.json",
-    "exclude": ["**/tests/**", "example/**", "cloudcatalog/**", "build.ts", "vitest.workspace.ts"]
+    "exclude": ["**/tests/**", "example/**", "docs/**", "vitest.workspace.ts"]
 }

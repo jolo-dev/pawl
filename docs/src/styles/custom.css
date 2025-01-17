@@ -1,0 +1,11 @@
+:root {
+    --sl-font: 'EON';
+}
+
+h1 {
+    font-family: 'EON_HEAD', serif;
+}
+
+h2, h3 {
+    font-family: 'EON Bold', serif;
+}

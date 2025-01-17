@@ -1,7 +1,7 @@
 <a name="readme-top"></a>
 <div align="center">
 
-# @hem-lib/cdk
+# @hems-aws/cdk
 
 An internal FEH IT package which contains best practices and a small library for using CDK in your next project.
 

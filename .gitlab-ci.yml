@@ -5,10 +5,10 @@ before_script:
   # Functions that should be executed before the build script is run
   - npm install
 
-deploy-cloudcatalog:
+deploy-docs:
   pages: true
   script:
-    - cd cloudcatalog
+    - cd docs
     # Specify the steps involved to build your app here
     - npm run build
   artifacts:

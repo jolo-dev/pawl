@@ -1,0 +1,31 @@
+.DS_Store
+.pyc
+
+# Dependency directories
+node_modules
+jspm_packages
+venv
+.venv
+coverage
+.nyc_output
+
+# Serverless directories
+.serverless
+
+# ignore serverless.yml
+serverless.yml
+
+.idea/
+.vscode/
+
+layer-sdk/src
+
+# ignore SAM CLI created files/dirs
+.aws-sam/
+samconfig.toml
+
+# ignore terraform created files/dirs
+.terraform/
+.terraform.*
+*.tfstate*
+cid.log

@@ -5,7 +5,7 @@ prev: false
 title: "LambdaFunction"
 ---
 
-Defined in: packages/cdk/src/lambda-function.ts:24
+Defined in: packages/cdk/src/lambda-function.ts:31
 
 <div class="mermaid-block"><div class="mermaid dark">%%{init:{"theme":"dark"}}%%
 architecture-beta
@@ -27,7 +27,7 @@ architecture-beta
 
 > **new LambdaFunction**(`scope`, `id`, `props`): [`LambdaFunction`](/cdk/classes/lambdafunction/)
 
-Defined in: packages/cdk/src/lambda-function.ts:41
+Defined in: packages/cdk/src/lambda-function.ts:48
 
 The above function is a TypeScript constructor that creates a Lambda function with specific
 configurations, including using Node.js 22.x runtime and bundling to ESM format for efficiency.
@@ -73,7 +73,7 @@ with specific configurations such as function name,
 
 > `optional` **authorizer**: `boolean`
 
-Defined in: packages/cdk/src/lambda-function.ts:26
+Defined in: packages/cdk/src/lambda-function.ts:33
 
 ***
 
@@ -81,7 +81,7 @@ Defined in: packages/cdk/src/lambda-function.ts:26
 
 > **lambda**: `NodejsFunction`
 
-Defined in: packages/cdk/src/lambda-function.ts:25
+Defined in: packages/cdk/src/lambda-function.ts:32
 
 ***
 
@@ -99,11 +99,23 @@ The tree node.
 
 ***
 
+### prefix
+
+> **prefix**: `string` = `"hems-"`
+
+Defined in: packages/cdk/src/basic-construct.ts:37
+
+#### Inherited from
+
+`BasicConstruct.prefix`
+
+***
+
 ### stack
 
 > `readonly` **stack**: [`Stack`](/cdk/classes/stack/)
 
-Defined in: packages/cdk/src/basic-construct.ts:11
+Defined in: packages/cdk/src/basic-construct.ts:36
 
 #### Inherited from
 
@@ -115,7 +127,7 @@ Defined in: packages/cdk/src/basic-construct.ts:11
 
 > **createAlarm**(`stack`): `void`
 
-Defined in: packages/cdk/src/lambda-function.ts:66
+Defined in: packages/cdk/src/lambda-function.ts:73
 
 #### Parameters
 
@@ -130,6 +142,94 @@ Defined in: packages/cdk/src/lambda-function.ts:66
 #### Overrides
 
 `BasicConstruct.createAlarm`
+
+***
+
+### grantInvoke()
+
+> **grantInvoke**(`construct`, `actions`): [`LambdaFunction`](/cdk/classes/lambdafunction/)
+
+Defined in: packages/cdk/src/lambda-function.ts:116
+
+Grant this Lambda permission to invoke another BasicConstruct
+
+#### Parameters
+
+##### construct
+
+`BasicConstruct`
+
+The construct to invoke
+
+##### actions
+
+`string`[]
+
+The actions to grant
+
+#### Returns
+
+[`LambdaFunction`](/cdk/classes/lambdafunction/)
+
+The BasicLambda instance for method chaining
+
+***
+
+### grantPermission()
+
+> **grantPermission**(`construct`, `policyStatement`): `void`
+
+Defined in: packages/cdk/src/basic-construct.ts:86
+
+Grant specified permissions to another construct
+
+#### Parameters
+
+##### construct
+
+[`Construct`](/cdk/classes/construct/)
+
+The construct to grant permissions to
+
+##### policyStatement
+
+`PolicyStatement`
+
+The permission policy to grant
+
+#### Returns
+
+`void`
+
+#### Inherited from
+
+`BasicConstruct.grantPermission`
+
+***
+
+### grantPermissions()
+
+> **grantPermissions**(`permissions`): `void`
+
+Defined in: packages/cdk/src/basic-construct.ts:101
+
+Grant multiple permissions to constructs
+
+#### Parameters
+
+##### permissions
+
+`ConstructPermission`[]
+
+Array of [construct, policyStatement] tuples
+
+#### Returns
+
+`void`
+
+#### Inherited from
+
+`BasicConstruct.grantPermissions`
 
 ***
 
@@ -232,7 +332,20 @@ body.dark, :root[data-theme="dark"] {
 </style>
 
 <script type="module">
-import mermaid from "https://unpkg.com/mermaid@latest/dist/mermaid.esm.min.mjs";
+import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+
+mermaid.registerIconPacks([
+  {
+    name: 'logos',
+    loader: () =>
+      fetch('https://unpkg.com/@iconify-json/logos@1/icons.json').then((res) => res.json()),
+  },
+  {
+    name: 'hugeicons',
+    loader: () =>
+      fetch('https://unpkg.com/@iconify-json/hugeicons@1/icons.json').then((res) => res.json()),
+  }
+]);
 
 document.documentElement.classList.add("mermaid-enabled");
 

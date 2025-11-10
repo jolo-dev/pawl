@@ -5,7 +5,7 @@ import {
   HttpLambdaResponseType,
   LambdaFunction,
   Stack,
-} from "@hems-lib/cdk";
+} from "@pawl/cdk";
 import { lambdaSrc } from "../src/utils";
 
 export class ApiWithAuthorizerStack extends Stack {

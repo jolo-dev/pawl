@@ -8,17 +8,17 @@
     "deploy": "cdk deploy --all",
     "deploy:local": "npm run localstack && npm run bootstrap:local && npm run cdklocal deploy -- --all",
     "dev": "npm run localstack && npm run cdklocal watch",
-    "localstack": "docker compose -f ./node_modules/@hems-lib/cdk/docker-compose.yml up -d",
+    "localstack": "docker compose -f ./node_modules/@pawl/cdk/docker-compose.yml up -d",
     "remove": "cdk destroy --all",
     "remove:local": "npm run localstack && npm run cdklocal destroy -- --all",
     "synth:local": "npm run cdklocal synth",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "devDependencies": {
-    "@hems-lib/cdk": "../../packages/cdk",
-    "@hems-lib/lambda": "../../packages/lambda",
-    "aws-cdk-local": "^2.18.0",
-    "tsx": "^4.19.2"
+    "@pawl/cdk": "../../packages/cdk",
+    "@pawl/lambda": "../../packages/lambda",
+    "aws-cdk-local": "^3.0.1",
+    "cdk-booster": "^1.1.0"
   },
   "keywords": [],
   "author": "",

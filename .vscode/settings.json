@@ -13,5 +13,5 @@
     "[json]": {
         "editor.defaultFormatter": "biomejs.biome"
     },
-    "livePreview.defaultPreviewPath": "/public/index.html"
+    "livePreview.defaultPreviewPath": "/docs/dist/index.html"
 }

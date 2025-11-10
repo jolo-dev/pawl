@@ -5,7 +5,7 @@ prev: false
 title: "DynamoDbTableWithStreamsProps"
 ---
 
-Defined in: packages/cdk/src/dynamodb-streams.ts:28
+Defined in: packages/cdk/src/dynamodb-streams.ts:29
 
 The DynamoDbTableWithStreamsProp
 
@@ -63,7 +63,7 @@ false
 
 > **dynamoStream**: `"KEYS_ONLY"` \| `"NEW_AND_OLD_IMAGES"` \| `"NEW_IMAGE"` \| `"OLD_IMAGE"`
 
-Defined in: packages/cdk/src/dynamodb-streams.ts:32
+Defined in: packages/cdk/src/dynamodb-streams.ts:33
 
 ***
 
@@ -87,7 +87,7 @@ TableEncryptionV2.dynamoOwnedKey()
 
 > **eventSource**: [`EventSource`](/cdk/interfaces/eventsource/)
 
-Defined in: packages/cdk/src/dynamodb-streams.ts:39
+Defined in: packages/cdk/src/dynamodb-streams.ts:41
 
 ***
 
@@ -95,7 +95,7 @@ Defined in: packages/cdk/src/dynamodb-streams.ts:39
 
 > `optional` **existingTable**: `string`
 
-Defined in: packages/cdk/src/dynamodb-streams.ts:38
+Defined in: packages/cdk/src/dynamodb-streams.ts:40
 
 ***
 
@@ -137,7 +137,7 @@ Kinesis Data Stream to capture item level changes.
 
 > **lambdaFunction**: [`LambdaFunction`](/cdk/classes/lambdafunction/)
 
-Defined in: packages/cdk/src/dynamodb-streams.ts:33
+Defined in: packages/cdk/src/dynamodb-streams.ts:34
 
 ***
 
@@ -163,7 +163,7 @@ Note: You can only provide a maximum of 5 local secondary indexes.
 
 > **partitionKey**: `object`
 
-Defined in: packages/cdk/src/dynamodb-streams.ts:34
+Defined in: packages/cdk/src/dynamodb-streams.ts:35
 
 #### name
 
@@ -172,6 +172,16 @@ Defined in: packages/cdk/src/dynamodb-streams.ts:34
 #### type
 
 > **type**: `"STRING"` \| `"NUMBER"` \| `"BINARY"`
+
+***
+
+### permissions?
+
+> `optional` **permissions**: `ConstructPermission`[]
+
+Defined in: packages/cdk/src/basic-construct.ts:28
+
+Optional permissions to grant during creation
 
 ***
 
@@ -193,7 +203,7 @@ false
 
 ### removalPolicy?
 
-> `readonly` `optional` **removalPolicy**: `RemovalPolicy`
+> `readonly` `optional` **removalPolicy**: `undefined`
 
 Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2.d.ts:212
 

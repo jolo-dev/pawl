@@ -1,0 +1,3 @@
+AWS Lambdas are in TypeScript and always be type-safe. No `any` allowed. Use zod for validation.
+Implement the correct AWS Lambda Powertools for TypeScript best practices.
+Consult MCP server context7 and AWS Core documentation for AWS Lambda Powertools documentation and best practices.

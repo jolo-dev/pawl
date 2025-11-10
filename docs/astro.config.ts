@@ -21,7 +21,8 @@ export default defineConfig({
     starlight({
       title: "pawl",
       logo: {
-        src: "./src/assets/eon-logo.png",
+        dark: "./src/assets/pawl-logo-dark.png",
+        light: "./src/assets/pawl-logo.png",
       },
       customCss: ["./src/fonts/font-face.css", "./src/styles/custom.css"],
       sidebar: [
@@ -37,6 +38,7 @@ export default defineConfig({
               items: [
                 "lib/cdk",
                 "lib/cdk-localdevelopment",
+                "lib/cdk-tutorial",
                 "lib/cdk-readme",
                 cdkTypeDocSidebarGroup,
               ],
@@ -46,6 +48,7 @@ export default defineConfig({
               items: [
                 "lib/lambda",
                 "lib/lambda-localdevelopment",
+                "lib/lambda-tutorial",
                 "lib/lambda-readme",
                 lambdaTypeDocSidebarGroup,
               ],

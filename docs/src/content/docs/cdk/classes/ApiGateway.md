@@ -5,7 +5,7 @@ prev: false
 title: "ApiGateway"
 ---
 
-Defined in: packages/cdk/src/apigateway.ts:52
+Defined in: packages/cdk/src/apigateway.ts:58
 
 This construct is an HTTP API Gateway v2. It has to use an authorizer and can trigger a list
 of AWS Lambdas. The authorizer can be LambdaAuthorizer, IamAuthorizer, CognitoUserPoolAuthorizer, and HttpJwtAuthorizer
@@ -51,7 +51,7 @@ architecture-beta
 
 > **new ApiGateway**(`scope`, `id`, `props`): [`ApiGateway`](/cdk/classes/apigateway/)
 
-Defined in: packages/cdk/src/apigateway.ts:70
+Defined in: packages/cdk/src/apigateway.ts:76
 
 The constructor function initializes an HTTP API with specified routes. Every API GW has an Authorizer(@see foo).
 It is possible to give each route an individual Authorizer.
@@ -107,11 +107,23 @@ The tree node.
 
 ***
 
+### prefix
+
+> **prefix**: `string` = `"hems-"`
+
+Defined in: packages/cdk/src/basic-construct.ts:37
+
+#### Inherited from
+
+`BasicConstruct.prefix`
+
+***
+
 ### stack
 
 > `readonly` **stack**: [`Stack`](/cdk/classes/stack/)
 
-Defined in: packages/cdk/src/basic-construct.ts:11
+Defined in: packages/cdk/src/basic-construct.ts:36
 
 #### Inherited from
 
@@ -123,7 +135,7 @@ Defined in: packages/cdk/src/basic-construct.ts:11
 
 > **addRoute**(`routeKey`, `func`): `void`
 
-Defined in: packages/cdk/src/apigateway.ts:102
+Defined in: packages/cdk/src/apigateway.ts:130
 
 The `addRoute` function in TypeScript adds a route with a specified key and Lambda function to a
 class.
@@ -155,7 +167,7 @@ when the specified route is accessed.
 
 > **createAlarm**(`stack`): `void`
 
-Defined in: packages/cdk/src/apigateway.ts:132
+Defined in: packages/cdk/src/apigateway.ts:160
 
 The function `createAlarm` monitors an HTTP API Gateway using a given stack.
 
@@ -175,6 +187,64 @@ The `stack` parameter is a Stack object that is being passed into the
 #### Overrides
 
 `BasicConstruct.createAlarm`
+
+***
+
+### grantPermission()
+
+> **grantPermission**(`construct`, `policyStatement`): `void`
+
+Defined in: packages/cdk/src/basic-construct.ts:86
+
+Grant specified permissions to another construct
+
+#### Parameters
+
+##### construct
+
+[`Construct`](/cdk/classes/construct/)
+
+The construct to grant permissions to
+
+##### policyStatement
+
+`PolicyStatement`
+
+The permission policy to grant
+
+#### Returns
+
+`void`
+
+#### Inherited from
+
+`BasicConstruct.grantPermission`
+
+***
+
+### grantPermissions()
+
+> **grantPermissions**(`permissions`): `void`
+
+Defined in: packages/cdk/src/basic-construct.ts:101
+
+Grant multiple permissions to constructs
+
+#### Parameters
+
+##### permissions
+
+`ConstructPermission`[]
+
+Array of [construct, policyStatement] tuples
+
+#### Returns
+
+`void`
+
+#### Inherited from
+
+`BasicConstruct.grantPermissions`
 
 ***
 
@@ -277,7 +347,20 @@ body.dark, :root[data-theme="dark"] {
 </style>
 
 <script type="module">
-import mermaid from "https://unpkg.com/mermaid@latest/dist/mermaid.esm.min.mjs";
+import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+
+mermaid.registerIconPacks([
+  {
+    name: 'logos',
+    loader: () =>
+      fetch('https://unpkg.com/@iconify-json/logos@1/icons.json').then((res) => res.json()),
+  },
+  {
+    name: 'hugeicons',
+    loader: () =>
+      fetch('https://unpkg.com/@iconify-json/hugeicons@1/icons.json').then((res) => res.json()),
+  }
+]);
 
 document.documentElement.classList.add("mermaid-enabled");
 

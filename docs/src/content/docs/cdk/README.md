@@ -2,7 +2,7 @@
 editUrl: false
 next: false
 prev: false
-title: "@hems-lib/cdk"
+title: "@pawl/cdk"
 ---
 
 ## Enumerations
@@ -36,7 +36,6 @@ title: "@hems-lib/cdk"
 - [ApiDestinationProps](/cdk/interfaces/apidestinationprops/)
 - [ApiProps](/cdk/interfaces/apiprops/)
 - [DynamoDbTableWithStreamsProps](/cdk/interfaces/dynamodbtablewithstreamsprops/)
-- [EventBridgeProps](/cdk/interfaces/eventbridgeprops/)
 - [EventSource](/cdk/interfaces/eventsource/)
 - [EventTarget](/cdk/interfaces/eventtarget/)
 - [LambdaProps](/cdk/interfaces/lambdaprops/)
@@ -44,6 +43,8 @@ title: "@hems-lib/cdk"
 ## Type Aliases
 
 - [BasicTagsProps](/cdk/type-aliases/basictagsprops/)
+- [EventBridgeProps](/cdk/type-aliases/eventbridgeprops/)
+- [SqsProps](/cdk/type-aliases/sqsprops/)
 
 ## Variables
 

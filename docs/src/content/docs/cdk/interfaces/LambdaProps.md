@@ -5,11 +5,7 @@ prev: false
 title: "LambdaProps"
 ---
 
-Defined in: packages/cdk/src/lambda-function.ts:11
-
-## Extends
-
-- `Omit`\<`NodejsFunctionProps`, `"code"` \| `"runtime"` \| `"handler"` \| `"architecture"`\>
+Defined in: packages/cdk/src/lambda-function.ts:19
 
 ## Properties
 
@@ -30,10 +26,6 @@ https://aws-otel.github.io/docs/getting-started/lambda
 ```ts
 - No ADOT instrumentation
 ```
-
-#### Inherited from
-
-`Omit.adotInstrumentation`
 
 ***
 
@@ -58,10 +50,6 @@ Instead, configure `allowAllIpv6Outbound` directly on the security group.
 false
 ```
 
-#### Inherited from
-
-`Omit.allowAllIpv6Outbound`
-
 ***
 
 ### allowAllOutbound?
@@ -84,10 +72,6 @@ Instead, configure `allowAllOutbound` directly on the security group.
 true
 ```
 
-#### Inherited from
-
-`Omit.allowAllOutbound`
-
 ***
 
 ### allowPublicSubnet?
@@ -109,10 +93,6 @@ https://stackoverflow.com/questions/52992085/why-cant-an-aws-lambda-function-ins
 false
 ```
 
-#### Inherited from
-
-`Omit.allowPublicSubnet`
-
 ***
 
 ### ~~applicationLogLevel?~~
@@ -133,10 +113,6 @@ Use `applicationLogLevelV2` as a property instead.
 "INFO"
 ```
 
-#### Inherited from
-
-`Omit.applicationLogLevel`
-
 ***
 
 ### applicationLogLevelV2?
@@ -153,17 +129,13 @@ Sets the application log level for the function.
 ApplicationLogLevel.INFO
 ```
 
-#### Inherited from
-
-`Omit.applicationLogLevelV2`
-
 ***
 
 ### authorizer?
 
 > `optional` **authorizer**: `boolean`
 
-Defined in: packages/cdk/src/lambda-function.ts:14
+Defined in: packages/cdk/src/lambda-function.ts:21
 
 ***
 
@@ -196,10 +168,6 @@ https://docs.aws.amazon.com/sdk-for-javascript/v3/developer-guide/node-reusing-c
 - false (obsolete) for runtimes >= Node 18, true for runtimes <= Node 16.
 ```
 
-#### Inherited from
-
-`Omit.awsSdkConnectionReuse`
-
 ***
 
 ### bundling?
@@ -217,10 +185,6 @@ Bundling options
   modules are bundled.
 ```
 
-#### Inherited from
-
-`Omit.bundling`
-
 ***
 
 ### codeSigningConfig?
@@ -237,10 +201,6 @@ Code signing config associated with this function
 - Not Sign the Code
 ```
 
-#### Inherited from
-
-`Omit.codeSigningConfig`
-
 ***
 
 ### currentVersionOptions?
@@ -255,10 +215,6 @@ Options for the `lambda.Version` resource automatically created by the
 #### Default
 
 - default options as described in `VersionOptions`
-
-#### Inherited from
-
-`Omit.currentVersionOptions`
 
 ***
 
@@ -275,10 +231,6 @@ If SNS topic is desired, specify `deadLetterTopic` property instead.
 
 - SQS queue with 14 day retention period if `deadLetterQueueEnabled` is `true`
 
-#### Inherited from
-
-`Omit.deadLetterQueue`
-
 ***
 
 ### deadLetterQueueEnabled?
@@ -293,10 +245,6 @@ an SQS queue with default options will be defined for your Function.
 #### Default
 
 - false unless `deadLetterQueue` is set, which implies DLQ is enabled.
-
-#### Inherited from
-
-`Omit.deadLetterQueueEnabled`
 
 ***
 
@@ -315,10 +263,6 @@ rather than an SNS topic. Using an SNS topic as a DLQ requires this property to 
 ```ts
 - no SNS topic
 ```
-
-#### Inherited from
-
-`Omit.deadLetterTopic`
 
 ***
 
@@ -341,10 +285,6 @@ installer (`yarn`, `pnpm`, `bun` or `npm`) along with this lock file.
 - the path is found by walking up parent directories searching for
   a `yarn.lock`, `pnpm-lock.yaml`, `bun.lockb` or `package-lock.json` file
 
-#### Inherited from
-
-`Omit.depsLockFilePath`
-
 ***
 
 ### description?
@@ -361,17 +301,13 @@ A description of the function.
 - No description.
 ```
 
-#### Inherited from
-
-`Omit.description`
-
 ***
 
 ### entry
 
 > **entry**: `string`
 
-Defined in: packages/cdk/src/lambda-function.ts:13
+Defined in: packages/cdk/src/lambda-function.ts:20
 
 Path to the entry file (JavaScript or TypeScript).
 
@@ -381,10 +317,6 @@ Path to the entry file (JavaScript or TypeScript).
 If the `NodejsFunction` is defined in `stack.ts` with `my-handler` as id
 (`new NodejsFunction(this, 'my-handler')`), the construct will look at `stack.my-handler.ts`
 and `stack.my-handler.js`.
-
-#### Overrides
-
-`Omit.entry`
 
 ***
 
@@ -409,10 +341,6 @@ Lambda function source code.
 - No environment variables.
 ```
 
-#### Inherited from
-
-`Omit.environment`
-
 ***
 
 ### environmentEncryption?
@@ -429,10 +357,6 @@ The AWS KMS key that's used to encrypt your function's environment variables.
 - AWS Lambda creates and uses an AWS managed customer master key (CMK).
 ```
 
-#### Inherited from
-
-`Omit.environmentEncryption`
-
 ***
 
 ### ephemeralStorageSize?
@@ -448,10 +372,6 @@ The size of the function’s /tmp directory in MiB.
 ```ts
 512 MiB
 ```
-
-#### Inherited from
-
-`Omit.ephemeralStorageSize`
 
 ***
 
@@ -471,10 +391,6 @@ You can also add event sources using `addEventSource`.
 - No event sources.
 ```
 
-#### Inherited from
-
-`Omit.events`
-
 ***
 
 ### filesystem?
@@ -490,31 +406,6 @@ The filesystem configuration for the lambda function
 ```ts
 - will not mount any filesystem
 ```
-
-#### Inherited from
-
-`Omit.filesystem`
-
-***
-
-### functionName?
-
-> `readonly` `optional` **functionName**: `string`
-
-Defined in: node\_modules/aws-cdk-lib/aws-lambda/lib/function.d.ts:176
-
-A name for the function.
-
-#### Default
-
-```ts
-- AWS CloudFormation generates a unique physical ID and uses that
-ID for the function's name. For more information, see Name Type.
-```
-
-#### Inherited from
-
-`Omit.functionName`
 
 ***
 
@@ -533,10 +424,6 @@ You can call `addToRolePolicy` to the created lambda to add statements post crea
 ```ts
 - No policy statements are added to the created Lambda role.
 ```
-
-#### Inherited from
-
-`Omit.initialPolicy`
 
 ***
 
@@ -562,10 +449,6 @@ the Lambda insights agent installed.
 - No Lambda Insights
 ```
 
-#### Inherited from
-
-`Omit.insightsVersion`
-
 ***
 
 ### ipv6AllowedForDualStack?
@@ -584,10 +467,6 @@ Only used if 'vpc' is supplied.
 false
 ```
 
-#### Inherited from
-
-`Omit.ipv6AllowedForDualStack`
-
 ***
 
 ### layers?
@@ -605,10 +484,6 @@ that can be used by multiple functions.
 ```ts
 - No layers.
 ```
-
-#### Inherited from
-
-`Omit.layers`
 
 ***
 
@@ -630,10 +505,6 @@ Use `loggingFormat` as a property instead.
 "Text"
 ```
 
-#### Inherited from
-
-`Omit.logFormat`
-
 ***
 
 ### loggingFormat?
@@ -649,10 +520,6 @@ Sets the loggingFormat for the function.
 ```ts
 LoggingFormat.TEXT
 ```
-
-#### Inherited from
-
-`Omit.loggingFormat`
 
 ***
 
@@ -675,10 +542,6 @@ If you are deploying to another type of region, please check regional availabili
 #### Default
 
 `/aws/lambda/${this.functionName}` - default log group created by Lambda
-
-#### Inherited from
-
-`Omit.logGroup`
 
 ***
 
@@ -712,10 +575,6 @@ myLogGroup.logGroupName;
 logs.RetentionDays.INFINITE
 ```
 
-#### Inherited from
-
-`Omit.logRetention`
-
 ***
 
 ### logRetentionRetryOptions?
@@ -735,10 +594,6 @@ This is a legacy API and we strongly recommend you migrate to `logGroup` if you 
 ```ts
 - Default AWS SDK retry options.
 ```
-
-#### Inherited from
-
-`Omit.logRetentionRetryOptions`
 
 ***
 
@@ -760,10 +615,6 @@ This is a legacy API and we strongly recommend you migrate to `logGroup` if you 
 - A new role is created.
 ```
 
-#### Inherited from
-
-`Omit.logRetentionRole`
-
 ***
 
 ### maxEventAge?
@@ -784,10 +635,6 @@ Maximum: 6 hours
 Duration.hours(6)
 ```
 
-#### Inherited from
-
-`Omit.maxEventAge`
-
 ***
 
 ### memorySize?
@@ -807,10 +654,6 @@ Developer Guide.
 128
 ```
 
-#### Inherited from
-
-`Omit.memorySize`
-
 ***
 
 ### onFailure?
@@ -827,10 +670,6 @@ The destination for failed invocations.
 - no destination
 ```
 
-#### Inherited from
-
-`Omit.onFailure`
-
 ***
 
 ### onSuccess?
@@ -846,10 +685,6 @@ The destination for successful invocations.
 ```ts
 - no destination
 ```
-
-#### Inherited from
-
-`Omit.onSuccess`
 
 ***
 
@@ -872,9 +707,15 @@ Specify the configuration of Parameters and Secrets Extension
 - No Parameters and Secrets Extension
 ```
 
-#### Inherited from
+***
 
-`Omit.paramsAndSecrets`
+### permissions?
+
+> `optional` **permissions**: `ConstructPermission`[]
+
+Defined in: packages/cdk/src/basic-construct.ts:28
+
+Optional permissions to grant during creation
 
 ***
 
@@ -896,10 +737,6 @@ https://docs.aws.amazon.com/codeguru/latest/profiler-ug/setting-up-lambda.html
 - No profiling.
 ```
 
-#### Inherited from
-
-`Omit.profiling`
-
 ***
 
 ### profilingGroup?
@@ -918,10 +755,6 @@ https://docs.aws.amazon.com/codeguru/latest/profiler-ug/setting-up-lambda.html
 
 - A new profiling group will be created if `profiling` is set.
 
-#### Inherited from
-
-`Omit.profilingGroup`
-
 ***
 
 ### projectRoot?
@@ -935,10 +768,6 @@ The path to the directory containing project config files (`package.json` or `ts
 #### Default
 
 - the directory containing the `depsLockFilePath`
-
-#### Inherited from
-
-`Omit.projectRoot`
 
 ***
 
@@ -956,10 +785,6 @@ It lets Lambda detect and terminate unintended recursive loops.
 ```ts
 RecursiveLoop.Terminate
 ```
-
-#### Inherited from
-
-`Omit.recursiveLoop`
 
 ***
 
@@ -981,10 +806,6 @@ The maximum of concurrent executions you want to reserve for the function.
 
 https://docs.aws.amazon.com/lambda/latest/dg/concurrent-executions.html
 
-#### Inherited from
-
-`Omit.reservedConcurrentExecutions`
-
 ***
 
 ### retryAttempts?
@@ -1003,10 +824,6 @@ Maximum: 2
 ```ts
 2
 ```
-
-#### Inherited from
-
-`Omit.retryAttempts`
 
 ***
 
@@ -1033,10 +850,6 @@ The relevant managed policies are "service-role/AWSLambdaBasicExecutionRole" and
 - A unique role will be generated for this lambda function.
 Both supplied and generated roles can always be changed by calling `addToRolePolicy`.
 
-#### Inherited from
-
-`Omit.role`
-
 ***
 
 ### runtimeManagementMode?
@@ -1052,10 +865,6 @@ Sets the runtime management configuration for a function's version.
 ```ts
 Auto
 ```
-
-#### Inherited from
-
-`Omit.runtimeManagementMode`
 
 ***
 
@@ -1077,10 +886,6 @@ not specified, either by this or securityGroup prop, a dedicated security
 group will be created for this function.
 ```
 
-#### Inherited from
-
-`Omit.securityGroups`
-
 ***
 
 ### snapStart?
@@ -1097,10 +902,6 @@ SnapStart is currently supported for Java 11, Java 17, Python 3.12, Python 3.13,
 ```ts
 - No snapstart
 ```
-
-#### Inherited from
-
-`Omit.snapStart`
 
 ***
 
@@ -1122,10 +923,6 @@ Use `systemLogLevelV2` as a property instead.
 "INFO"
 ```
 
-#### Inherited from
-
-`Omit.systemLogLevel`
-
 ***
 
 ### systemLogLevelV2?
@@ -1141,10 +938,6 @@ Sets the system log level for the function.
 ```ts
 SystemLogLevel.INFO
 ```
-
-#### Inherited from
-
-`Omit.systemLogLevelV2`
 
 ***
 
@@ -1164,10 +957,6 @@ based on the function's expected execution time.
 Duration.seconds(3)
 ```
 
-#### Inherited from
-
-`Omit.timeout`
-
 ***
 
 ### tracing?
@@ -1183,10 +972,6 @@ Enable AWS X-Ray Tracing for Lambda Function.
 ```ts
 Tracing.Disabled
 ```
-
-#### Inherited from
-
-`Omit.tracing`
 
 ***
 
@@ -1206,10 +991,6 @@ This is required when `vpcSubnets` is specified.
 ```ts
 - Function is not placed within a VPC.
 ```
-
-#### Inherited from
-
-`Omit.vpc`
 
 ***
 
@@ -1232,7 +1013,3 @@ public subnets is not allowed (unless `allowPublicSubnet` is set to `true`).
 ```ts
 - the Vpc default strategy if not specified
 ```
-
-#### Inherited from
-
-`Omit.vpcSubnets`

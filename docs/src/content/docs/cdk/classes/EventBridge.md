@@ -5,7 +5,7 @@ prev: false
 title: "EventBridge"
 ---
 
-Defined in: packages/cdk/src/eventbridge.ts:72
+Defined in: packages/cdk/src/eventbridge.ts:73
 
 The Eventbridge Construct consists of an Eventbus that can have **multiple** rule with different targets (see below).
 Every failed message will be put into a DLQ.
@@ -76,7 +76,7 @@ new EventBridge(this, "test", {
 
 > **new EventBridge**(`scope`, `id`, `props`): [`EventBridge`](/cdk/classes/eventbridge/)
 
-Defined in: packages/cdk/src/eventbridge.ts:88
+Defined in: packages/cdk/src/eventbridge.ts:89
 
 The function creates an EventBridge with specified targets and sets up corresponding rules for
 each target.
@@ -101,7 +101,7 @@ others and is typically provided by the user when instantiating the stack.
 
 ##### props
 
-[`EventBridgeProps`](/cdk/interfaces/eventbridgeprops/)
+[`EventBridgeProps`](/cdk/type-aliases/eventbridgeprops/)
 
 The `props` parameter in the constructor function seems to be of
 type `EventBridgeProps`. It likely contains information and configurations related to setting up
@@ -122,7 +122,7 @@ such as the event bus name, targets for the rules, and
 
 > **eventBus**: `EventBus`
 
-Defined in: packages/cdk/src/eventbridge.ts:73
+Defined in: packages/cdk/src/eventbridge.ts:74
 
 ***
 
@@ -140,11 +140,23 @@ The tree node.
 
 ***
 
+### prefix
+
+> **prefix**: `string` = `"hems-"`
+
+Defined in: packages/cdk/src/basic-construct.ts:37
+
+#### Inherited from
+
+`BasicConstruct.prefix`
+
+***
+
 ### stack
 
 > `readonly` **stack**: [`Stack`](/cdk/classes/stack/)
 
-Defined in: packages/cdk/src/basic-construct.ts:11
+Defined in: packages/cdk/src/basic-construct.ts:36
 
 #### Inherited from
 
@@ -156,7 +168,7 @@ Defined in: packages/cdk/src/basic-construct.ts:11
 
 > **createAlarm**(`stack`): `void`
 
-Defined in: packages/cdk/src/eventbridge.ts:178
+Defined in: packages/cdk/src/eventbridge.ts:179
 
 The function createAlarm creates an alarm factory for monitoring a stack using the node ID and
 eventbridge.
@@ -184,7 +196,7 @@ The `stack` parameter is a Stack object that is being passed to the
 
 > **createRule**(`ruleId`, `target`, `eventPattern`): `Rule`
 
-Defined in: packages/cdk/src/eventbridge.ts:164
+Defined in: packages/cdk/src/eventbridge.ts:165
 
 The function `createRule` creates a new Rule object with the specified ruleId, target, and
 eventPattern.
@@ -221,6 +233,64 @@ attributes such as source, detail type, and other fields to filter
 `Rule`
 
 A Rule object is being returned.
+
+***
+
+### grantPermission()
+
+> **grantPermission**(`construct`, `policyStatement`): `void`
+
+Defined in: packages/cdk/src/basic-construct.ts:86
+
+Grant specified permissions to another construct
+
+#### Parameters
+
+##### construct
+
+[`Construct`](/cdk/classes/construct/)
+
+The construct to grant permissions to
+
+##### policyStatement
+
+`PolicyStatement`
+
+The permission policy to grant
+
+#### Returns
+
+`void`
+
+#### Inherited from
+
+`BasicConstruct.grantPermission`
+
+***
+
+### grantPermissions()
+
+> **grantPermissions**(`permissions`): `void`
+
+Defined in: packages/cdk/src/basic-construct.ts:101
+
+Grant multiple permissions to constructs
+
+#### Parameters
+
+##### permissions
+
+`ConstructPermission`[]
+
+Array of [construct, policyStatement] tuples
+
+#### Returns
+
+`void`
+
+#### Inherited from
+
+`BasicConstruct.grantPermissions`
 
 ***
 
@@ -323,7 +393,20 @@ body.dark, :root[data-theme="dark"] {
 </style>
 
 <script type="module">
-import mermaid from "https://unpkg.com/mermaid@latest/dist/mermaid.esm.min.mjs";
+import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+
+mermaid.registerIconPacks([
+  {
+    name: 'logos',
+    loader: () =>
+      fetch('https://unpkg.com/@iconify-json/logos@1/icons.json').then((res) => res.json()),
+  },
+  {
+    name: 'hugeicons',
+    loader: () =>
+      fetch('https://unpkg.com/@iconify-json/hugeicons@1/icons.json').then((res) => res.json()),
+  }
+]);
 
 document.documentElement.classList.add("mermaid-enabled");
 

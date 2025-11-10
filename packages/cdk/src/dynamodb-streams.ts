@@ -1,3 +1,4 @@
+import { RemovalPolicy } from "aws-cdk-lib";
 import {
   AttributeType,
   StreamViewType,
@@ -10,9 +11,9 @@ import {
   type DynamoEventSourceProps,
 } from "aws-cdk-lib/aws-lambda-event-sources";
 import type { MonitoringFacade } from "cdk-monitoring-constructs";
-import { BasicConstruct } from "./basic-construct";
+import { BasicConstruct, type BasicConstructProps, type PolicyStatement } from "./basic-construct";
 import type { LambdaFunction } from "./lambda-function";
-import type { Stack } from "./stack";
+import type { Construct, Stack } from "./stack";
 
 /**
  * @interface
@@ -35,9 +36,10 @@ export type DynamoDbTableWithStreamsProps = Omit<
     name: string;
     type: "STRING" | "NUMBER" | "BINARY";
   };
+  removalPolicy?: "retain" | "destroy";
   existingTable?: string;
   eventSource: EventSource;
-};
+} & BasicConstructProps;
 
 /**
  * A Construct which uses DynamoDB Global Tables.
@@ -72,8 +74,10 @@ export class DynamoDbTableWithStreams extends BasicConstruct {
         name: props.partitionKey.name,
         type: AttributeType[props.partitionKey.type],
       },
-      tableName: `${id}`,
+      tableName: this.toPascalCase(id),
       dynamoStream: StreamViewType[props.dynamoStream],
+      removalPolicy:
+        props.removalPolicy === "retain" ? RemovalPolicy.RETAIN : RemovalPolicy.DESTROY,
     });
 
     props.lambdaFunction.lambda.addEventSource(
@@ -97,6 +101,17 @@ export class DynamoDbTableWithStreams extends BasicConstruct {
     return stack.monitoring.monitorDynamoTable({
       table: this.table,
     });
+  }
+
+  private toPascalCase(input: string): string {
+    return input
+      .replace(/[-_]+/g, " ") // Replace hyphens and underscores with spaces
+      .replace(/(\w)(\w*)/g, (_, firstChar, rest) => firstChar.toUpperCase() + rest.toLowerCase())
+      .replace(/\s+/g, ""); // Remove all spaces
+  }
+
+  protected applyPermissionPolicy(construct: Construct, policyStatement: PolicyStatement): void {
+    console.log("needs to be implemented");
   }
 }
 

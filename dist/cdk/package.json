@@ -1,8 +1,8 @@
 {
-  "name": "@hems-lib/cdk",
-  "version": "0.0.0",
-  "private": true,
+  "name": "@pawl/cdk",
+  "version": "0.0.1",
   "type": "module",
+  "module": "index.js",
   "scripts": {
     "test": "vitest run",
     "test:cdk:synth": "cdk --app 'npx tsx ./tests/cdk-stack/index.ts' synth"

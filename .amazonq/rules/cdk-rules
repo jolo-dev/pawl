@@ -1,0 +1,4 @@
+This is an AWS CDK construct library.
+Consult the MCPs context7 for third-party libraries and AWS CDK MCP for AWS CDK specific implementations and AWS Core Documentation for other AWS related topics.
+Each Construct should extend the ../packages/cdk/src/basic-construct.ts and be implemented accordingly.
+It is in TypeScript and everything is type-safe and not allowed to have `any` implemented. Use zod for validation.

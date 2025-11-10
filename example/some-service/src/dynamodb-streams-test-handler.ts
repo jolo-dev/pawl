@@ -1,4 +1,4 @@
-import { useDynamoDbStreamsHandler } from "@hems-lib/lambda";
+import { useDynamoDbStreamsHandler } from "@pawl/lambda";
 
 const dynamoDbTypes: Record<string, string> = {
   NEW_IMAGE: "insert",

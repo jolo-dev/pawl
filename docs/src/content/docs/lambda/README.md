@@ -2,7 +2,7 @@
 editUrl: false
 next: false
 prev: false
-title: "@hems-lib/lambda"
+title: "@pawl/lambda"
 ---
 
 ## Variables

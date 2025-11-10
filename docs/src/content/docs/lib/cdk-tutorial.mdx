@@ -1,0 +1,464 @@
+---
+title: Tutorial
+description: A tutorial for using the pawl's CDK construct library for better onboarding
+---
+
+In this tutorial, we want to understand how to build infrastructure
+with `@pawl/cdk` and how we can deploy it.
+
+Let's build a real-world scenario.
+
+## Architecture
+
+This is what we will build in this tutorial.
+
+![CDK Architecture](./src/assets/cdk-tutorial.excalidraw.svg)
+
+> Our app emits events. But since this can be too many, we add a queue here
+> which works as a buffer so that whenever the Lambda is ready,
+> it can pick up the event and save it to a DynamoDB table.
+> We add also a stream to the table, whenever there is a new element,
+> we send out a Lambda that sends out an welcoming E-Mail via a third-party provider.
+
+## Getting Started
+
+### Add pawl into your .npmrc
+
+Most-likely your `.npmrc` is inside your home directory (on Mac and Linux: `~`). Add following line
+
+```sh
+@pawl:registry=https://git.eon-cds.de/api/v4/projects/24549/packages/npm/
+//git.eon-cds.de/api/v4/projects/24549/packages/npm/:_authToken="<TOKEN>"
+always-auth=true
+```
+
+`<TOKEN>` should be the same for `@eon-home`.
+
+### Add pawl's Template
+
+It is easier to get started using our template.
+But you can also add it manually.
+
+```sh
+npm create @pawl/cdk-template
+```
+
+### Manually/ Adding to existing
+
+```sh
+npm install @pawl/cdk
+```
+
+### File Structure and Organization
+
+First get familiar with the file structure:
+
+import { FileTree } from '@astrojs/starlight/components';
+
+<FileTree>
+
+- src
+  - lambda.ts
+- stacks
+  - stack.ts
+- cdk.json
+- index.ts (for deployment)
+- local.dev.ts (for local development)
+- package-lock.json
+- package.json
+- README.md
+- tsconfig.json
+
+</FileTree>
+
+Everything related to infrastructure aka CDK should go in the `stacks`- folder.
+
+## Creating your first stack
+
+Open the `stacks/stack.ts` and add following line
+
+```ts
+import { Stack, type Construct } from "@pawl/cdk"
+
+export class TutorialStack extends Stack {
+  constructor(scope: Construct, id: string){
+    super(scope, id);
+  }
+}
+```
+
+So far, it looks like CDK but imported from `pawl`.
+
+First, we add an `Eventbridge`. An `Eventbridge`- construct comes with an
+Eventbus and DLQ (see [here](../cdk/classes/EventBridge.md)).
+
+```ts
+import { type Construct, Stack, EventBridge } from "@pawl/cdk";
+
+export class TutorialStack extends Stack {
+  constructor(scope: Construct, id: string) {
+    super(scope, id);
+    new EventBridge(this, "user-event", {
+        eventBusName: 'user-event-bus'
+    })
+  }
+}
+```
+
+Now, your IDE should complaint, because it needs a target in `targets`.
+For that we choose an SQS, so we define it as variable.
+
+```ts
+import { type Construct, Stack, EventBridge, Sqs } from "@pawl/cdk";
+
+export class TutorialStack extends Stack {
+  constructor(scope: Construct, id: string) {
+    super(scope, id);
+
+    const sqs = new Sqs(this, 'user-queue', )
+
+    new EventBridge(this, "user-event", {
+        eventBusName: 'user-event-bus',
+        targets: [{
+            type: sqs
+        }]
+    })
+  }
+}
+```
+
+But your IDE should complaint because of the wrong types (Thank you TypeScript 💙).
+
+The `Sqs`- construct wants to take a Lambda function as an argument.
+From our architecture diagram, this is also what we want to achieve.
+In real-world every message needs to be consumed and mostly it is a Lambda function.
+But it could also be an EC2 or SNS topic.
+
+Back to the `Sqs`, we could nest the Lambda inside the `Sqs`
+but let's keep it modular by creating variables.
+The Sqs has a dead-letter queue (DLQ) attached because that's best practice to have one.
+We then can define, how often we want to send the messages from the DLQ back to the queue.
+
+But still, your IDE still complaints because `EventTarget` of `EventBridge` needs an `eventPattern`.
+You can find various event pattern by AWS [here](https://docs.aws.amazon.com/eventbridge/latest/userguide/eb-event-patterns.html). 
+
+```ts
+import { type Construct, EventBridge, LambdaFunction, Sqs, Stack } from "@pawl/cdk";
+
+export class TutorialStack extends Stack {
+  constructor(scope: Construct, id: string) {
+    super(scope, id);
+
+    const messageProcessorHandler = new LambdaFunction(this, "messageProcessorHandler", {
+        entry: "we come to that in a sec",
+      });
+
+    const sqs = new Sqs(this, 'user-queue', {
+        fn: messageProcessorHandler,
+        retry: 2
+    })
+
+    new EventBridge(this, "user-event", {
+        eventBusName: 'user-event-bus',
+        targets: [{
+            type: sqs,
+             eventPattern: {
+                detail: {
+                    event: 'user-added'
+                }
+            }
+        }]
+    })
+  }
+}
+```
+
+
+The `LambdaFunction` `messageProcessorHandler` has a property `entry`
+that takes the path to the handler.
+We store the lambda handler inside the `src`- folder.
+Let's call it `messageProcessorHandler.ts`.
+
+<FileTree>
+- src
+  - **messageProcessorHandler.ts**
+- stacks
+  - stack.ts
+- ...
+</FileTree>
+
+```ts
+// in src/messageProcessorHandler.ts
+import { useSqsHandler } from "@pawl/lambda";
+
+export const handler = useSqsHandler("messageProcessorHandler", async (event, logger) => {
+  logger.info(event.Records[0].messageId);
+});
+```
+
+Let's point in the `stacks/stack.ts` to this function.
+```ts
+// in stacks/stack.ts
+import { LambdaFunction, Sqs, EventBridge } from "@pawl/cdk"
+
+const messageProcessorHandler = new LambdaFunction(this, "messageProcessorHandler", {
+  entry: "src/messageProcessorHandler.ts". // That's all
+});
+
+// rest of the code (see above)
+```
+
+import { Aside } from '@astrojs/starlight/components';
+
+<Aside type="tip">
+In a more complex project structure, it is recommended to use `path` from [NodeJS module](https://nodejs.org/docs/latest-v22.x/api/path.html).
+</Aside>
+
+## Local Development
+
+We can check our stack so far locally. As a requirement we will use [Localstack](https://docs.localstack.cloud/overview/) in a Docker container. Thus, you need to have Docker enabled.
+You may have noticed the `local.dev.ts` in the root of this project
+
+
+<FileTree>
+
+- src/
+- stacks/
+- cdk.json
+- index.ts (for deployment)
+- **local.dev.ts (for local development)**
+- ...
+
+</FileTree>
+
+```ts
+// local.dev.ts
+import { defineStacks } from "@pawl/cdk";
+import { TutorialStack } from "./stacks/stack";
+
+defineStacks(TutorialStack);
+```
+
+To run Localstack
+
+```sh
+npm run deploy:local
+```
+
+After accepting the deployment, you should see something like
+
+```sh
+ ✅  TutorialStack
+
+✨  Deployment time: 35.47s
+
+Outputs:
+TutorialStack.usereventEventbususereventARN931CA147 = arn:aws:events:eu-central-1:000000000000:event-bus/user-event-bus
+TutorialStack.usereventEventbususereventName7FDA774B = user-event-bus
+Stack ARN:
+arn:aws:cloudformation:eu-central-1:000000000000:stack/TutorialStack/02569d0d
+
+✨  Total time: 38.07s
+```
+
+<Aside type="tip">
+
+Localstack offers a WebUI but you need a login for that. You can go to [https://app.localstack.cloud/](https://app.localstack.cloud/) to register.
+
+Find the your stack [here](https://app.localstack.cloud/inst/default/resources/cloudformation/stacks/TutorialStack/resources) (Switch to `eu-central-1`).
+
+</Aside>
+
+You should be able to get the stack by running following command
+
+```sh
+AWS_ACCESS_KEY_ID=test AWS_SECRET_ACCESS_KEY=test AWS_DEFAULT_REGION=eu-central-1 \
+  aws --endpoint-url=https://localhost.localstack.cloud:4566 cloudformation describe-stacks
+```
+
+To remove the stack locally, run following command
+
+```sh
+npm run remove:local
+```
+
+## Continue Adding DynamoDB
+
+Now, we will add a DynamoDB table that triggers a Lambda function whenever
+there is a new image to the `stacks/stack.ts`.
+The `DynamoDbTableWithStreams`- construct needs a lambda function
+which points to the respective handler function.
+
+```ts
+// in stacks/stack.ts
+import { DynamoDbTableWithStreams, Sqs, EventBridge, LambdaFunction } from '@pawl/cdk'
+
+// inside the Stack class
+
+const sendWelcomeMessageHandler = new LambdaFunction(this, 'sendWelcomeMessage', {
+  entry: "src/sendWelcomeMessageHandler.ts"
+})
+
+const streams = new DynamoDbTableWithStreams(this,  'MessageEvent', {
+  partitionKey: { 
+    name: "Id",
+    type: "STRING"
+  },
+  dynamoStream: "NEW_IMAGE",
+  lambdaFunction: sendWelcomeMessageHandler,
+  eventSource: {
+    startingPosition: "LATEST",
+  },
+})
+
+// Rest of the code
+```
+
+The `DynamoDbTableWithStreams` has a table with `partitionKey`
+and streams to a Lambda function `sendWelcomeMessageHandler`.
+
+With that we need to add a new handler in `src`:
+
+<FileTree>
+- src
+  - messageProcessorHandler.ts
+  - **sendWelcomeMessageHandler.ts**
+- stacks
+  - stack.ts
+- ...
+</FileTree>
+
+Now, is the question how can the `messageProcessorHandler` get the
+information of the DynamoDB Table and how do we give permission to that LambdaFunction
+to write into the DynamoDB.
+
+Every Construct from `@pawl/cdk` has a `permissions`- property.
+That `permissions` take an array of constructs.
+That gives permission to the construct to allow for example read or write to it.
+In this case, we need to say that `messageProcessorHandler` has permission
+to the DynamoDbTableWithStreams `streams`.
+
+```ts
+const messageProcessorHandler = new LambdaFunction(this, "messageProcessorHandler", {
+  entry: "src/messageProcessorHandler.ts". 
+});
+
+// sendWelcomeMessageHandler
+
+const streams = new DynamoDbTableWithStreams(this,  'MessageEvent', {
+  partitionKey: {
+    name: "Id",
+    type: "String"
+  },
+  dynamoStream: "NEW_IMAGES",
+  lambdaFunction: sendWelcomeMessageHandler,
+  eventSource: {
+    startingPosition: "LATEST",
+  },
+  permissions: [[,messageProcessorHandler, ""]]
+})
+```
+
+In the background, the `pawl` applies the correct IAM policies between these constructs.
+
+However, we have a little problem. How does the `messageProcessorHandler` know about the
+DynamoDbTableWithStreams?
+
+First, let's think the way we implement infrastructure.
+We suggest to read the diagram [above](#architecture) FileTreerom right to left.
+And so you should apply the code.
+Let's summarize and apply the left shift here step-by-step:
+
+import { Steps } from '@astrojs/starlight/components';
+
+<Steps>
+
+1. Imports
+
+   ```ts
+    import { DynamoDbTableWithStreams, Sqs, EventBridge, LambdaFunction } from '@pawl/cdk'
+   ```
+
+2. Implement the `sendWelcomeMessageHandler`
+
+   ```ts
+    const sendWelcomeMessageHandler = new LambdaFunction(this, 'sendWelcomeMessage', {
+      entry: "src/sendWelcomeMessage.ts"
+    })
+   ```
+
+3. Implement the DynamoDB with streams
+
+    ```ts
+    const streams = new DynamoDbTableWithStreams(this,  'MessageEvent', {
+      partitionKey: {
+        name: "Id",
+        type: "String"
+      },
+      dynamoStream: "NEW_IMAGES",
+      lambdaFunction: sendWelcomeMessageHandler,
+      eventSource: {
+        startingPosition: "LATEST",
+      },
+    })
+    ```
+
+4. Add a `messageProcessorHandler`
+
+    ```ts
+    const messageProcessorHandler = new LambdaFunction(this, "messageProcessorHandler", {
+      entry: "src/messageProcessorHandler.ts".
+    });
+    ```
+
+5. Sqs acts like a buffer for the `messageProcessorHandler`
+
+    ```ts
+    const queue = new Sqs(this, "UserQueue", {
+      fn: messageProcessorHandler,
+    });
+    ```
+
+6. Finally, the `EventBridge`
+
+    ```ts
+    new EventBridge(this, "UserEvent", {
+      eventBusName: "UserEventBus",
+      targets: [{
+        type: queue
+      }]
+    });
+    ```
+
+</Steps>
+
+Now, the `streams`- variable that contains the DynamoDB table can be used in the `messageProcessorHandler`.
+by passing the table ARN as an environment variable of the Lambda and grant it to put items to the table.
+
+```ts
+// inside stacks/stack.ts
+const streams = new DynamoDbTableWithStreams()
+const messageProcessorHandler = new LambdaFunction(this, "messageProcessorHandler", {
+  entry: "src/messageProcessorHandler.ts",
+  environment: {
+    DYNAMO_TABLE: streams.table.tableArn,
+  },
+});
+
+streams.grantPermission(messageProcessorHandler, {
+  actions: ["dynamodb:PutItems"],
+  effect: "allow",
+});
+```
+
+`grantPermission` is a wrapper to build IAM policies to your role.
+
+Let's deploy it again locally.
+
+```sh
+npm run deploy:local
+```
+
+Congratulations! You have mastered pawl's CDK 🎉.
+
+If you want to learn more about pawl's Lambda, check this out.

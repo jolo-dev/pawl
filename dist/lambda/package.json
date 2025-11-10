@@ -1,11 +1,8 @@
 {
-  "name": "@hems-lib/lambda",
-  "version": "1.0.0",
+  "name": "@pawl/lambda",
+  "version": "0.0.1",
   "type": "module",
-  "private": "true",
-  "scripts": {
-    "test": "vitest run"
-  },
+  "module": "index.js",
   "keywords": [],
   "author": "",
   "license": "ISC",

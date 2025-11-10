@@ -5,17 +5,17 @@ prev: false
 title: "Sqs"
 ---
 
-Defined in: packages/cdk/src/sqs.ts:25
+Defined in: packages/cdk/src/sqs.ts:22
 
 <div class="mermaid-block"><div class="mermaid dark">%%{init:{"theme":"dark"}}%%
 architecture-beta
  service sqs(logos:aws-sqs)[AWS SQS]
- service dlq(logos:aws-dlq)[AWS DLQ]</div><div class="mermaid light">%%{init:{"theme":"default"}}%%
+ service dlq(logos:aws-sqs)[AWS DLQ]</div><div class="mermaid light">%%{init:{"theme":"default"}}%%
 architecture-beta
  service sqs(logos:aws-sqs)[AWS SQS]
- service dlq(logos:aws-dlq)[AWS DLQ]</div><pre><code class="language-mermaid">architecture-beta
+ service dlq(logos:aws-sqs)[AWS DLQ]</div><pre><code class="language-mermaid">architecture-beta
  service sqs(logos:aws-sqs)[AWS SQS]
- service dlq(logos:aws-dlq)[AWS DLQ]</code></pre></div>
+ service dlq(logos:aws-sqs)[AWS DLQ]</code></pre></div>
 
 ## Extends
 
@@ -27,7 +27,7 @@ architecture-beta
 
 > **new Sqs**(`scope`, `id`, `props`): [`Sqs`](/cdk/classes/sqs/)
 
-Defined in: packages/cdk/src/sqs.ts:41
+Defined in: packages/cdk/src/sqs.ts:37
 
 The constructor function creates an SQS queue with a dead-letter queue (DLQ) and sets up event
 source mapping for a Lambda function to consume messages from the queue.
@@ -48,12 +48,11 @@ context, allowing you to manage and deploy related resources together
 `string`
 
 The `id` parameter in the constructor function represents the identifier or
-name for the resources being created within the stack. It is used to uniquely identify and name
-the SNS topic, SQS queues, and other resources created within the constructor.
+name for the resources being created within the stack.
 
 ##### props
 
-`SqsProps`
+[`SqsProps`](/cdk/type-aliases/sqsprops/)
 
 The `props` parameter in the constructor function contains the
 configuration properties for setting up the SQS (Simple Queue Service) and SNS (Simple
@@ -83,11 +82,23 @@ The tree node.
 
 ***
 
+### prefix
+
+> **prefix**: `string` = `"hems-"`
+
+Defined in: packages/cdk/src/basic-construct.ts:37
+
+#### Inherited from
+
+`BasicConstruct.prefix`
+
+***
+
 ### queue
 
 > **queue**: `Queue`
 
-Defined in: packages/cdk/src/sqs.ts:26
+Defined in: packages/cdk/src/sqs.ts:23
 
 ***
 
@@ -95,7 +106,7 @@ Defined in: packages/cdk/src/sqs.ts:26
 
 > `readonly` **stack**: [`Stack`](/cdk/classes/stack/)
 
-Defined in: packages/cdk/src/basic-construct.ts:11
+Defined in: packages/cdk/src/basic-construct.ts:36
 
 #### Inherited from
 
@@ -107,7 +118,7 @@ Defined in: packages/cdk/src/basic-construct.ts:11
 
 > **createAlarm**(`stack`): `void`
 
-Defined in: packages/cdk/src/sqs.ts:88
+Defined in: packages/cdk/src/sqs.ts:73
 
 The `createAlarm` function sets up monitoring for an SQS queue in a given stack.
 
@@ -127,6 +138,64 @@ The `stack` parameter is a Stack object that is being passed to the
 #### Overrides
 
 `BasicConstruct.createAlarm`
+
+***
+
+### grantPermission()
+
+> **grantPermission**(`construct`, `policyStatement`): `void`
+
+Defined in: packages/cdk/src/basic-construct.ts:86
+
+Grant specified permissions to another construct
+
+#### Parameters
+
+##### construct
+
+[`Construct`](/cdk/classes/construct/)
+
+The construct to grant permissions to
+
+##### policyStatement
+
+`PolicyStatement`
+
+The permission policy to grant
+
+#### Returns
+
+`void`
+
+#### Inherited from
+
+`BasicConstruct.grantPermission`
+
+***
+
+### grantPermissions()
+
+> **grantPermissions**(`permissions`): `void`
+
+Defined in: packages/cdk/src/basic-construct.ts:101
+
+Grant multiple permissions to constructs
+
+#### Parameters
+
+##### permissions
+
+`ConstructPermission`[]
+
+Array of [construct, policyStatement] tuples
+
+#### Returns
+
+`void`
+
+#### Inherited from
+
+`BasicConstruct.grantPermissions`
 
 ***
 
@@ -229,7 +298,20 @@ body.dark, :root[data-theme="dark"] {
 </style>
 
 <script type="module">
-import mermaid from "https://unpkg.com/mermaid@latest/dist/mermaid.esm.min.mjs";
+import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+
+mermaid.registerIconPacks([
+  {
+    name: 'logos',
+    loader: () =>
+      fetch('https://unpkg.com/@iconify-json/logos@1/icons.json').then((res) => res.json()),
+  },
+  {
+    name: 'hugeicons',
+    loader: () =>
+      fetch('https://unpkg.com/@iconify-json/hugeicons@1/icons.json').then((res) => res.json()),
+  }
+]);
 
 document.documentElement.classList.add("mermaid-enabled");
 

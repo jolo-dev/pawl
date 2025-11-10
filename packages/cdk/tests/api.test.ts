@@ -1,5 +1,5 @@
 import * as path from "node:path";
-import { ApiGateway, LambdaFunction, Stack } from "@hems-lib/cdk";
+import { ApiGateway, LambdaFunction, Stack } from "@pawl/cdk";
 import { Template } from "aws-cdk-lib/assertions";
 import type { Construct } from "constructs";
 import { describe, expect, test } from "vitest";

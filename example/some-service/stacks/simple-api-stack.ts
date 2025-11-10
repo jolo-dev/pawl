@@ -1,4 +1,4 @@
-// import { ApiGateway, type Construct, LambdaFunction, Stack } from "@hems-lib/cdk";
+// import { ApiGateway, type Construct, LambdaFunction, Stack } from "@pawl/cdk";
 // import { lambdaSrc } from "../src/utils";
 
 // export class SimpleApiStack extends Stack {

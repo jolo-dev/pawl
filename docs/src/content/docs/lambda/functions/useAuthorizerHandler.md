@@ -5,7 +5,7 @@ prev: false
 title: "useAuthorizerHandler"
 ---
 
-> **useAuthorizerHandler**\<`T`\>(`serviceName`, `handleRequest`): `HandlerWithHooks`\<`T` *extends* *typeof* [`SIMPLE`](/lambda/variables/authorizer/#simple) ? `APIGatewayRequestSimpleAuthorizerHandlerV2` : `APIGatewayRequestIAMAuthorizerHandlerV2`, `APIGatewayRequestAuthorizerEventV2`, `T` *extends* *typeof* [`SIMPLE`](/lambda/variables/authorizer/#simple) ? `APIGatewaySimpleAuthorizerResult` : `APIGatewayIAMAuthorizerResult`\>
+> **useAuthorizerHandler**\<`T`\>(`serviceName`, `handleRequest`): `HandlerWithHooks`\<`T` *extends* `"simple"` ? `APIGatewayRequestSimpleAuthorizerHandlerV2` : `APIGatewayRequestIAMAuthorizerHandlerV2`, `APIGatewayRequestAuthorizerEventV2`, `T` *extends* `"simple"` ? `APIGatewaySimpleAuthorizerResult` : `APIGatewayIAMAuthorizerResult`\>
 
 Defined in: authorizer-handler.ts:34
 
@@ -33,7 +33,7 @@ The `handleRequest` parameter is a function that takes two arguments:
 
 ## Returns
 
-`HandlerWithHooks`\<`T` *extends* *typeof* [`SIMPLE`](/lambda/variables/authorizer/#simple) ? `APIGatewayRequestSimpleAuthorizerHandlerV2` : `APIGatewayRequestIAMAuthorizerHandlerV2`, `APIGatewayRequestAuthorizerEventV2`, `T` *extends* *typeof* [`SIMPLE`](/lambda/variables/authorizer/#simple) ? `APIGatewaySimpleAuthorizerResult` : `APIGatewayIAMAuthorizerResult`\>
+`HandlerWithHooks`\<`T` *extends* `"simple"` ? `APIGatewayRequestSimpleAuthorizerHandlerV2` : `APIGatewayRequestIAMAuthorizerHandlerV2`, `APIGatewayRequestAuthorizerEventV2`, `T` *extends* `"simple"` ? `APIGatewaySimpleAuthorizerResult` : `APIGatewayIAMAuthorizerResult`\>
 
 The `useAuthorizerHandler` function returns a handler function with hooks for handling API
 Gateway request authorizer events. The specific type of handler returned depends on the type of

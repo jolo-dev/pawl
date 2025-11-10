@@ -5,7 +5,7 @@ prev: false
 title: "DynamoDbTableWithStreams"
 ---
 
-Defined in: packages/cdk/src/dynamodb-streams.ts:54
+Defined in: packages/cdk/src/dynamodb-streams.ts:56
 
 A Construct which uses DynamoDB Global Tables.
 You can import an existing Table otherwise it will create a new table with Streams enabled
@@ -34,7 +34,7 @@ architecture-beta
 
 > **new DynamoDbTableWithStreams**(`scope`, `id`, `props`): [`DynamoDbTableWithStreams`](/cdk/classes/dynamodbtablewithstreams/)
 
-Defined in: packages/cdk/src/dynamodb-streams.ts:67
+Defined in: packages/cdk/src/dynamodb-streams.ts:69
 
 The constructor function creates a DynamoDB table with streams and adds a Lambda function as an
 event source.
@@ -87,11 +87,23 @@ The tree node.
 
 ***
 
+### prefix
+
+> **prefix**: `string` = `"hems-"`
+
+Defined in: packages/cdk/src/basic-construct.ts:37
+
+#### Inherited from
+
+`BasicConstruct.prefix`
+
+***
+
 ### stack
 
 > `readonly` **stack**: [`Stack`](/cdk/classes/stack/)
 
-Defined in: packages/cdk/src/basic-construct.ts:11
+Defined in: packages/cdk/src/basic-construct.ts:36
 
 #### Inherited from
 
@@ -103,7 +115,7 @@ Defined in: packages/cdk/src/basic-construct.ts:11
 
 > **table**: [`Table`](/cdk/classes/table/)
 
-Defined in: packages/cdk/src/dynamodb-streams.ts:55
+Defined in: packages/cdk/src/dynamodb-streams.ts:57
 
 ## Methods
 
@@ -111,7 +123,7 @@ Defined in: packages/cdk/src/dynamodb-streams.ts:55
 
 > **createAlarm**(`stack`): `MonitoringFacade`
 
-Defined in: packages/cdk/src/dynamodb-streams.ts:96
+Defined in: packages/cdk/src/dynamodb-streams.ts:100
 
 The function createAlarm takes a Stack object as input and returns a MonitoringFacade object that
 monitors a DynamoDB table specified in the input stack.
@@ -134,6 +146,64 @@ A MonitoringFacade object is being returned.
 #### Overrides
 
 `BasicConstruct.createAlarm`
+
+***
+
+### grantPermission()
+
+> **grantPermission**(`construct`, `policyStatement`): `void`
+
+Defined in: packages/cdk/src/basic-construct.ts:86
+
+Grant specified permissions to another construct
+
+#### Parameters
+
+##### construct
+
+[`Construct`](/cdk/classes/construct/)
+
+The construct to grant permissions to
+
+##### policyStatement
+
+`PolicyStatement`
+
+The permission policy to grant
+
+#### Returns
+
+`void`
+
+#### Inherited from
+
+`BasicConstruct.grantPermission`
+
+***
+
+### grantPermissions()
+
+> **grantPermissions**(`permissions`): `void`
+
+Defined in: packages/cdk/src/basic-construct.ts:101
+
+Grant multiple permissions to constructs
+
+#### Parameters
+
+##### permissions
+
+`ConstructPermission`[]
+
+Array of [construct, policyStatement] tuples
+
+#### Returns
+
+`void`
+
+#### Inherited from
+
+`BasicConstruct.grantPermissions`
 
 ***
 
@@ -236,7 +306,20 @@ body.dark, :root[data-theme="dark"] {
 </style>
 
 <script type="module">
-import mermaid from "https://unpkg.com/mermaid@latest/dist/mermaid.esm.min.mjs";
+import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+
+mermaid.registerIconPacks([
+  {
+    name: 'logos',
+    loader: () =>
+      fetch('https://unpkg.com/@iconify-json/logos@1/icons.json').then((res) => res.json()),
+  },
+  {
+    name: 'hugeicons',
+    loader: () =>
+      fetch('https://unpkg.com/@iconify-json/hugeicons@1/icons.json').then((res) => res.json()),
+  }
+]);
 
 document.documentElement.classList.add("mermaid-enabled");
 

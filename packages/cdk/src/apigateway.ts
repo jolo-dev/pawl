@@ -1,4 +1,10 @@
-import { HttpApi, HttpMethod, HttpNoneAuthorizer } from "aws-cdk-lib/aws-apigatewayv2";
+import {
+  type CfnStage,
+  HttpApi,
+  type HttpMethod,
+  type HttpNoneAuthorizer,
+  type HttpRouteIntegration,
+} from "aws-cdk-lib/aws-apigatewayv2";
 import {
   HttpIamAuthorizer,
   HttpJwtAuthorizer,
@@ -7,28 +13,38 @@ import {
   HttpUserPoolAuthorizer,
 } from "aws-cdk-lib/aws-apigatewayv2-authorizers";
 import { HttpLambdaIntegration } from "aws-cdk-lib/aws-apigatewayv2-integrations";
+import { LogGroup } from "aws-cdk-lib/aws-logs";
 import { CfnOutput } from "aws-cdk-lib/core";
-import { BasicConstruct } from "./basic-construct";
+import { BasicConstruct, type BasicConstructProps, type PolicyStatement } from "./basic-construct";
+import type { EventBridge } from "./eventbridge";
+import { HttpEventBridgeIntegration } from "./http-eventbridge-integration";
 import type { LambdaFunction } from "./lambda-function";
-import type { Stack } from "./stack";
+import type { Construct, Stack } from "./stack";
 
-export interface ApiProps {
-  authorizer: HttpIamAuthorizer | HttpUserPoolAuthorizer | HttpLambdaAuthorizer | HttpJwtAuthorizer;
+type AuthorizerType =
+  | HttpIamAuthorizer
+  | HttpUserPoolAuthorizer
+  | HttpLambdaAuthorizer
+  | HttpJwtAuthorizer
+  | HttpNoneAuthorizer;
+
+export interface ApiProps extends BasicConstructProps {
+  authorizer: AuthorizerType;
   /**
    * Define the routes for the API. Can be a function, proxy to another API, or point to an load balancer
    *
    * @example
-   *
    * ```js
    * new Api(stack, "api", {
    *   routes: {
    *     "GET  /notes"      : new LambdaFunction(this, "ApiNotes", entry),
    *     "POST /notes/{id}" : new LambdaFunction(this, "ApiNotesId", entry)
+   *     "POST /notes/{id}" : new LambdaFunction(this, "ApiNotesId", entry)
    *   }
    * })
    * ```
    */
-  routes?: Record<`${HttpMethod} /${string}`, LambdaFunction>;
+  routes?: Record<`${HttpMethod} /${string}`, LambdaFunction | EventBridge>;
 }
 
 /**
@@ -71,12 +87,34 @@ export class ApiGateway extends BasicConstruct {
     super(scope, id);
 
     this.httpApi = new HttpApi(this, "ApiGateway", {
-      apiName: `${id}-apigateway`,
+      apiName: `${this.prefix}${id}-apigateway`,
       defaultAuthorizer: props.authorizer,
     });
+
+    // Little hack to add logs: https://github.com/aws/aws-cdk/issues/11100#issuecomment-782213423
+    const logs = new LogGroup(this, `${id}-logs`, {
+      logGroupName: `/aws/vendedlogs/${this.prefix}/${id}/logs`,
+    });
+    const stage = this.httpApi.defaultStage?.node.defaultChild as CfnStage;
+    stage.accessLogSettings = {
+      destinationArn: logs.logGroupArn,
+      format: JSON.stringify({
+        requestId: "$context.requestId",
+        ip: "$context.identity.sourceIp",
+        caller: "$context.identity.caller",
+        user: "$context.identity.user",
+        requestTime: "$context.requestTime",
+        httpMethod: "$context.httpMethod",
+        resourcePath: "$context.resourcePath",
+        status: "$context.status",
+        protocol: "$context.protocol",
+        responseLength: "$context.responseLength",
+      }),
+    };
+
     if (props.routes) {
-      for (const [routeKey, func] of Object.entries(props.routes)) {
-        this.route(routeKey as `${HttpMethod} /${string}`, func);
+      for (const [routeKey, target] of Object.entries(props.routes)) {
+        this.route(routeKey as `${HttpMethod} /${string}`, target, props.authorizer);
       }
     }
 
@@ -96,11 +134,15 @@ export class ApiGateway extends BasicConstruct {
    * @param routeKey - The `routeKey` parameter is a string that represents a combination of an HTTP
    * method (such as GET, POST, PUT, DELETE, etc.) and a route path (such as `/users`, `/products`,
    * etc.). It is used to define a specific route for handling incoming requests in a web
-   * @param {LambdaFunction} func - The `func` parameter is a Lambda function that will be executed
+   * @param {LambdaFunction} target - The `target` parameter is a Lambda function that will be executed
    * when the specified route is accessed.
    */
-  addRoute(routeKey: `${HttpMethod} /${string}`, func: LambdaFunction) {
-    this.route(routeKey, func);
+  addRoute(
+    routeKey: `${HttpMethod} /${string}`,
+    target: LambdaFunction | EventBridge,
+    authorizer: AuthorizerType,
+  ): void {
+    this.route(routeKey, target, authorizer);
   }
 
   /**
@@ -108,19 +150,34 @@ export class ApiGateway extends BasicConstruct {
    * @param routeKey - The `routeKey` parameter is a string that represents the HTTP method and path
    * for a specific route. It is formatted as ` /`, where `` is the
    * HTTP method (e.g., GET, POST) and `` is the path for the route
-   * @param {LambdaFunction} func - The `func` parameter is an object that contains information about
+   * @param {LambdaFunction | EventBridge} target - The `target` parameter is an object that contains information about
    * the Lambda function to be integrated with the route. It typically includes the Lambda function
    * itself and an optional authorizer for authentication and authorization purposes.
    */
-  private route(routeKey: `${HttpMethod} /${string}`, func: LambdaFunction) {
+  private route(
+    routeKey: `${HttpMethod} /${string}`,
+    target: LambdaFunction | EventBridge,
+    authorizer: AuthorizerType,
+  ): void {
     const [method, path] = routeKey.split(" ");
+
+    let integration: HttpRouteIntegration;
+
+    if ("lambda" in target) {
+      // LambdaFunction target
+      integration = new HttpLambdaIntegration(`${method}${path}Integration`, target.lambda);
+    } else {
+      // EventBridge target
+      integration = new HttpEventBridgeIntegration(`${method}${path}Integration`, {
+        eventBus: target.eventBus,
+      });
+    }
 
     this.httpApi.addRoutes({
       path,
-      methods: [HttpMethod[method as keyof typeof HttpMethod]],
-      integration: new HttpLambdaIntegration(`${method}${path}Integration`, func.lambda),
-      authorizer:
-        func.authorizer === false ? new HttpNoneAuthorizer() : this.httpApi.defaultAuthorizer,
+      methods: [method as HttpMethod],
+      integration,
+      authorizer,
     });
   }
 
@@ -133,6 +190,10 @@ export class ApiGateway extends BasicConstruct {
     stack.monitoring.monitorApiGatewayV2HttpApi({
       api: this.httpApi,
     });
+  }
+
+  protected applyPermissionPolicy(construct: Construct, policyStatement: PolicyStatement): void {
+    throw new Error("Method not implemented.");
   }
 }
 

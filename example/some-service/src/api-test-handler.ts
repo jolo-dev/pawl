@@ -1,4 +1,4 @@
-import { useApiHandler } from "@hems-lib/lambda";
+import { useApiHandler } from "@pawl/lambda";
 
 export const handler = useApiHandler("api-test-handler", async (event, logger) => {
   logger.info(`event ${JSON.stringify(event)}`);

@@ -1,19 +1,26 @@
 import { Duration } from "aws-cdk-lib";
+import {
+  Effect,
+  PolicyStatement as IamPolicyStatement,
+  ServicePrincipal,
+} from "aws-cdk-lib/aws-iam";
 import { Architecture, Runtime } from "aws-cdk-lib/aws-lambda";
 import {
   NodejsFunction,
   type NodejsFunctionProps,
   OutputFormat,
 } from "aws-cdk-lib/aws-lambda-nodejs";
-import { BasicConstruct } from "./basic-construct";
-import type { Stack } from "./stack";
+import { BasicConstruct, type BasicConstructProps, type PolicyStatement } from "./basic-construct";
+import type { Construct, Stack } from "./stack";
 
-export interface LambdaProps
-  extends Omit<NodejsFunctionProps, "code" | "runtime" | "handler" | "architecture"> {
+/**
+ * @interface
+ */
+export type LambdaProps = {
   entry: string;
   authorizer?: boolean;
-}
-
+} & Omit<NodejsFunctionProps, "functionName" | "code" | "runtime" | "handler" | "architecture"> &
+  BasicConstructProps;
 /**
  * ```mermaid
  * architecture-beta
@@ -43,7 +50,7 @@ export class LambdaFunction extends BasicConstruct {
     this.authorizer = props.authorizer;
     this.lambda = new NodejsFunction(this, "LambdaFunction", {
       ...props,
-      functionName: `${id}-lambda`,
+      functionName: `${this.prefix}${id}-lambda`,
       architecture: Architecture.ARM_64, // for efficiency
       runtime: Runtime.NODEJS_22_X, // The NODEJS_LATEST would point to Node 18
       // Bundle to ESM
@@ -64,8 +71,6 @@ export class LambdaFunction extends BasicConstruct {
   }
 
   createAlarm(stack: Stack): void {
-    console.log(stack);
-
     stack.monitoring.monitorLambdaFunction({
       lambdaFunction: this.lambda,
       addLatencyP99Alarm: {
@@ -74,5 +79,45 @@ export class LambdaFunction extends BasicConstruct {
         },
       },
     });
+  }
+
+  /**
+   * Implementation of the abstract method to apply permission policies to this resource
+   * @param construct The construct that will be granted permissions to this Lambda
+   * @param policyStatement The permission policy to apply
+   */
+  protected applyPermissionPolicy(construct: Construct, policyStatement: PolicyStatement): void {
+    // First, translate our generic PolicyStatement to AWS IAM PolicyStatement
+    const iamPolicyStatement = new IamPolicyStatement({
+      effect: policyStatement.effect === "allow" ? Effect.ALLOW : Effect.DENY,
+      actions: policyStatement.actions,
+      resources: [policyStatement.resource || this.lambda.functionArn],
+    });
+
+    // Check if the construct is a service principal
+    if (construct instanceof ServicePrincipal) {
+      // Apply the policy directly
+      if (policyStatement.effect === "allow") {
+        this.lambda.addPermission(`${construct.service}Permission`, {
+          principal: construct,
+          action: policyStatement.actions.join(","),
+        });
+      }
+    }
+    this.lambda.addToRolePolicy(iamPolicyStatement);
+  }
+
+  /**
+   * Grant this Lambda permission to invoke another BasicConstruct
+   * @param construct The construct to invoke
+   * @param actions The actions to grant
+   * @returns The BasicLambda instance for method chaining
+   */
+  public grantInvoke(construct: BasicConstruct, actions: string[]): LambdaFunction {
+    construct.grantPermission(this, {
+      effect: "allow",
+      actions: actions,
+    });
+    return this;
   }
 }

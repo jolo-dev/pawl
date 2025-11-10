@@ -6,7 +6,7 @@
 //   LambdaFunction,
 //   Stack,
 //   UserPool,
-// } from "@hems-lib/cdk";
+// } from "@pawl/cdk";
 // import { lambdaSrc } from "../src/utils";
 
 // export class CognitoAuthorizerStack extends Stack {

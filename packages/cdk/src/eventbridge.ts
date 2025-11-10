@@ -6,28 +6,36 @@ import {
   type IRuleTarget,
   Rule,
 } from "aws-cdk-lib/aws-events";
+import { Pipe, type ISource } from "@aws-cdk/aws-pipes-alpha";
+import { SqsSource, DynamoDBSource, KinesisSource } from "@aws-cdk/aws-pipes-sources-alpha";
+import { EventBridgeTarget } from "@aws-cdk/aws-pipes-targets-alpha";
 import * as eventtarget from "aws-cdk-lib/aws-events-targets";
 import { Queue, RedrivePermission } from "aws-cdk-lib/aws-sqs";
-
 import { ApiDestination } from "./api-destination";
-import { BasicConstruct } from "./basic-construct";
+import { BasicConstruct, type BasicConstructProps, type PolicyStatement } from "./basic-construct";
 import { LambdaFunction } from "./lambda-function";
 import { Sqs } from "./sqs";
-import { Stack } from "./stack";
+import { type Construct, Stack } from "./stack";
 
 /**
  * @interface
  */
 export type EventTarget = {
-  type: LambdaFunction | ApiDestination | Sqs | EventBridge;
+  type: LambdaFunction | ApiDestination | Sqs | EventBridge | EventPipe;
   eventPattern: EventPattern;
 };
 
-export interface EventBridgeProps extends Omit<EventBusProps, "deadLetterQueue"> {
+export type EventPipe = {
+  source: ISource;
+  targetEventBus: EventBus;
+};
+
+export type EventBridgeProps = {
   eventBusName: string;
   targets: EventTarget[];
   secrets?: EventTarget extends ApiDestination ? SecretValue : undefined;
-}
+} & Omit<EventBusProps, "eventBusName" | "deadLetterQueue"> &
+  BasicConstructProps;
 
 /**
  * The Eventbridge Construct consists of an Eventbus that can have **multiple** rule with different targets (see below).
@@ -43,6 +51,7 @@ export interface EventBridgeProps extends Omit<EventBusProps, "deadLetterQueue">
     service sqs(logos:aws-sqs)[AWS SQS] in rules
     service api(hugeicons:api)[Api Destination] in rules
     service eventbridgerule(logos:aws-eventbridge)[AWS EventBus] in rules
+    service pipes(logos:aws-eventbridge)[AWS Pipes] in rules
     service dlq(logos:aws-sqs)[DLQ]
     api{group}:R --> L:eventbridge
     eventbridge:B --> T:dlq
@@ -64,6 +73,13 @@ export interface EventBridgeProps extends Omit<EventBusProps, "deadLetterQueue">
         description: "This goes to an API",
         endpoint: "https://foo.bar",
       }),
+      eventPattern
+    },
+    {
+      type: {
+        source: new SqsSource(myQueue), // or new DynamoDBSource(myTable), or new KinesisSource(myStream)
+        targetEventBus: myTargetEventBus
+      },
       eventPattern
     }],
   });
@@ -89,7 +105,7 @@ export class EventBridge extends BasicConstruct {
     super(scope, id);
 
     const dlq = new Queue(this, "DLQ", {
-      queueName: `${props.eventBusName}-dlq`,
+      queueName: `${this.prefix}${props.eventBusName}-dlq`,
       redriveAllowPolicy: {
         redrivePermission: RedrivePermission.ALLOW_ALL,
       },
@@ -121,7 +137,7 @@ export class EventBridge extends BasicConstruct {
         this.createRule(
           "SqsRule",
           new eventtarget.SqsQueue(target.type.queue, {
-            messageGroupId: `${Stack.of(this).stackName}-sqs`,
+            messageGroupId: target.type.queue.fifo ? `${Stack.of(this).stackName}-sqs` : undefined,
           }),
           target.eventPattern,
         );
@@ -131,6 +147,12 @@ export class EventBridge extends BasicConstruct {
           new eventtarget.EventBus(target.type.eventBus),
           target.eventPattern,
         );
+      } else if ('source' in target.type && 'targetEventBus' in target.type) {
+        // EventPipe target - source is already an ISource implementation
+        new Pipe(this, "EventPipe", {
+          source: target.type.source,
+          target: new EventBridgeTarget(target.type.targetEventBus),
+        });
       }
     }
 
@@ -177,5 +199,9 @@ export class EventBridge extends BasicConstruct {
    */
   createAlarm(stack: Stack): void {
     stack.monitoring.createAlarmFactory(`${this.node.id}-eventbridge`);
+  }
+
+  protected applyPermissionPolicy(construct: Construct, policyStatement: PolicyStatement): void {
+    throw new Error("Method not implemented.");
   }
 }

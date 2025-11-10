@@ -5,7 +5,7 @@ prev: false
 title: "EventSource"
 ---
 
-Defined in: packages/cdk/src/dynamodb-streams.ts:20
+Defined in: packages/cdk/src/dynamodb-streams.ts:21
 
 ## Properties
 
@@ -268,7 +268,7 @@ the record expires in the event source.
 
 > **startingPosition**: `"LATEST"` \| `"TRIM_HORIZON"` \| `"AT_TIMESTAMP"`
 
-Defined in: packages/cdk/src/dynamodb-streams.ts:21
+Defined in: packages/cdk/src/dynamodb-streams.ts:22
 
 ***
 

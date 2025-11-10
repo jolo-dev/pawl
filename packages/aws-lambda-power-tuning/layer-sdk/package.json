@@ -1,0 +1,13 @@
+{
+  "name": "aws-sdk-layer",
+  "version": "1.0.0",
+  "description": "A layer used by Lambda functions in this project.",
+  "author": "Alex Casalboni <alex@alexcasalboni.com>",
+  "licence": "MIT-0",
+  "scripts": {},
+  "private": true,
+  "dependencies": {
+    "@aws-sdk/client-lambda": "^3.651.1",
+    "@aws-sdk/client-s3": "^3.651.1"
+  }
+}

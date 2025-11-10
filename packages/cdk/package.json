@@ -1,7 +1,6 @@
 {
   "name": "@pawl/cdk",
   "version": "0.0.1",
-  "private": true,
   "type": "module",
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
@@ -9,11 +8,15 @@
     "test:cdk:synth": "cdk --app 'npx tsx ./tests/cdk-stack/index.ts' synth"
   },
   "devDependencies": {
-    "aws-cdk": "^2.173.1",
-    "aws-cdk-lib": "^2.173.1",
-    "constructs": "10.4.2"
+    "aws-cdk": "^2.1030.0",
+    "aws-cdk-lib": "^2.220.0",
+    "constructs": "10.4.2",
+    "tsdown": "^0.15.7"
   },
   "dependencies": {
+    "@aws-cdk/aws-pipes-alpha": "^2.220.0-alpha.0",
+    "@aws-cdk/aws-pipes-sources-alpha": "^2.220.0-alpha.0",
+    "@aws-cdk/aws-pipes-targets-alpha": "^2.220.0-alpha.0",
     "cdk-monitoring-constructs": "^9.1.2",
     "cdk-nag": "^2.34.23"
   }

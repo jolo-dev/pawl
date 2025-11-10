@@ -1,4 +1,4 @@
-import { useEventbridgeHandler } from "@hems-lib/lambda";
+import { useEventbridgeHandler } from "@pawl/lambda";
 import z from "zod";
 
 const userSchema = z.object({

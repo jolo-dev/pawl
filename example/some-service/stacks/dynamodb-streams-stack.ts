@@ -1,4 +1,4 @@
-import { type Construct, DynamoDbTableWithStreams, LambdaFunction, Stack } from "@hems-lib/cdk";
+import { type Construct, DynamoDbTableWithStreams, LambdaFunction, Stack } from "@pawl/cdk";
 import { lambdaSrc } from "../src/utils";
 
 export class DynamoDbStreamsStack extends Stack {

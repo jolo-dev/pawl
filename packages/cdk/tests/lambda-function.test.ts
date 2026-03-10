@@ -1,10 +1,10 @@
+import { describe, expect, test } from "bun:test";
 import * as path from "node:path";
 import { Template } from "aws-cdk-lib/assertions";
 import type { StackProps } from "aws-cdk-lib/core";
-import { describe, expect, test } from "vitest";
 import { type Construct, Stack } from "../../cdk/src/stack";
 import { LambdaFunction } from "../src/lambda-function";
-import app from "./utils";
+import { createTestApp } from "./utils";
 
 class LambdaTestStack extends Stack {
 	constructor(scope: Construct, id: string, props?: StackProps) {
@@ -17,7 +17,7 @@ class LambdaTestStack extends Stack {
 
 describe("LambdaTestStack", () => {
 	// WHEN
-	const stack = new LambdaTestStack(app, "TestStack");
+	const stack = new LambdaTestStack(createTestApp(), "TestStack");
 
 	// THEN
 	test("if lambda cdk stack is created with correct properties", () => {
@@ -27,7 +27,7 @@ describe("LambdaTestStack", () => {
 		template.hasResourceProperties("AWS::Lambda::Function", {
 			Handler: "index.handler",
 			Runtime: "nodejs22.x",
-			FunctionName: "TestLambdaFunction-lambda",
+			FunctionName: "foo-bar-TestLambdaFunction-lambda",
 			// Order is important
 			Tags: [
 				{

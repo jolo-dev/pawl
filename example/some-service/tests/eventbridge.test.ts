@@ -1,9 +1,10 @@
+import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import {
 	LocalstackContainer,
 	type StartedLocalStackContainer,
 } from "@testcontainers/localstack";
 import { $ } from "bun";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import * as path from "node:path";
 
 describe("EventbridgeStack", () => {
 	let localstack: StartedLocalStackContainer;
@@ -33,10 +34,12 @@ describe("EventbridgeStack", () => {
 			AWS_ENDPOINT_URL_S3: s3Endpoint, //
 			LOCAL: "true", // This is used in the CDK stack to determine whether to use the local API Gateway or the real one
 		};
-		const cdkApp =
-			"bun -e \"import { defineStacks } from '@pawl/cdk'; import { EventBridgeStack } from './stacks/eventbridge-stack'; defineStacks(EventBridgeStack);\"";
-		await $`npx cdklocal bootstrap --app ${cdkApp}`.env(env);
-		await $`npx cdklocal deploy --app ${cdkApp} --require-approval never`.env(
+
+		const cdkApp = `bun run ${path.join(__dirname, "..")}/local.dev.ts`;
+		await $`npx cdklocal bootstrap --app ${cdkApp} --context stage=dev --context team=foo`.env(
+			env,
+		);
+		await $`npx cdklocal deploy EventBridgeStack --app ${cdkApp} --require-approval never --context stage=dev --context team=foo`.env(
 			env,
 		);
 	}, 120000);

@@ -1,9 +1,9 @@
+import { describe, it } from "bun:test";
 import { Template } from "aws-cdk-lib/assertions";
 import { HttpApi } from "aws-cdk-lib/aws-apigatewayv2";
-import { describe, it } from "vitest";
 import { BasicConstruct } from "../src/basic-construct";
 import { type Construct, Stack } from "../src/stack";
-import app from "./utils";
+import { createTestApp } from "./utils";
 
 describe("basic-construct", () => {
 	class TestConstruct extends BasicConstruct {
@@ -22,7 +22,7 @@ describe("basic-construct", () => {
 			new TestConstruct(this, "TestBasicConstruct");
 		}
 	}
-	const stack = new TestStack(app, "TestStack");
+	const stack = new TestStack(createTestApp(), "TestStack");
 	const template = Template.fromStack(stack);
 
 	it("should check if context are set", () => {

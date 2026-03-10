@@ -1,9 +1,10 @@
+import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import {
 	LocalstackContainer,
 	type StartedLocalStackContainer,
 } from "@testcontainers/localstack";
 import { $ } from "bun";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import path from "node:path";
 
 describe("SimpleApiStack", () => {
 	let localstack: StartedLocalStackContainer;
@@ -33,8 +34,11 @@ describe("SimpleApiStack", () => {
 			AWS_ENDPOINT_URL_S3: s3Endpoint, //
 			LOCAL: "true", // This is used in the CDK stack to determine whether to use the local API Gateway or the real one
 		};
-		await $`bun cdklocal bootstrap`.env(env);
-		await $`bun cdklocal deploy --require-approval never --outputs-file /tmp/cdk-outputs.json`.env(
+		const cdkApp = `bun run ${path.join(__dirname, "..")}/local.dev.ts`;
+		await $`npx cdklocal bootstrap --app ${cdkApp} --context stage=dev --context team=foo`.env(
+			env,
+		);
+		await $`npx cdklocal deploy SimpleApiStack --app ${cdkApp} --require-approval never --outputs-file /tmp/cdk-outputs.json --context stage=dev --context team=foo`.env(
 			env,
 		);
 	}, 120000);

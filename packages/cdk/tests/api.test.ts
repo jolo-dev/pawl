@@ -1,9 +1,11 @@
+import { describe, expect, test } from "bun:test";
 import * as path from "node:path";
-import { ApiGateway, LambdaFunction, Stack } from "@pawl/cdk";
 import { Template } from "aws-cdk-lib/assertions";
 import type { Construct } from "constructs";
-import { describe, expect, test } from "vitest";
-import app from "./utils";
+import { ApiGateway } from "../src/apigateway";
+import { LambdaFunction } from "../src/lambda-function";
+import { Stack } from "../src/stack";
+import { createTestApp } from "./utils";
 
 class ApiTestStack extends Stack {
 	constructor(scope: Construct, id: string) {
@@ -23,13 +25,13 @@ class ApiTestStack extends Stack {
 
 describe("Api", () => {
 	// WHEN
-	const stack = new ApiTestStack(app, "ApiTestStack");
+	const stack = new ApiTestStack(createTestApp(), "ApiTestStack");
 	test("if api cdk stack is created with correct properties", () => {
 		expect(stack).toBeDefined();
 
 		const template = Template.fromStack(stack);
 		template.hasResourceProperties("AWS::ApiGatewayV2::Api", {
-			Name: "TestApiGateway-apigateway",
+			Name: "foo-bar-TestApiGateway-apigateway",
 		});
 		template.hasResourceProperties("AWS::ApiGatewayV2::Route", {
 			RouteKey: "GET /test",

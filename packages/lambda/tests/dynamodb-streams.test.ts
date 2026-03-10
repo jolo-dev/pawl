@@ -1,10 +1,10 @@
+import { describe, expect, it, mock } from "bun:test";
 import { Logger } from "@aws-lambda-powertools/logger";
-import { describe, expect, it, vi } from "vitest";
 import { useDynamoDbStreamsHandler } from "../src/dynamodb-streams-handler";
 
-vi.mock("@aws-lambda-powertools/logger", () => ({
-	Logger: vi.fn().mockImplementation(() => ({
-		info: vi.fn(),
+mock.module("@aws-lambda-powertools/logger", () => ({
+	Logger: mock(() => ({
+		info: mock(() => {}),
 	})),
 }));
 
@@ -13,12 +13,12 @@ describe("dynamodb-streams", () => {
 	const context = require("./context.json");
 
 	it("should check the validity of handler", async () => {
-		const spy = vi.fn();
+		const spy = mock(() => {});
 
 		const handler = useDynamoDbStreamsHandler("dynamodbstreamsTest", spy);
 		const _logger = new Logger();
 		await handler(event, context, () => {});
 		// expect(spy).toBeCalledWith({ ...event, ...logger });
-		expect(spy).toBeCalledTimes(1);
+		expect(spy).toHaveBeenCalledTimes(1);
 	});
 });

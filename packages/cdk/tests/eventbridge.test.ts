@@ -1,13 +1,13 @@
+import { describe, it } from "bun:test";
 import * as path from "node:path";
 import { SecretValue } from "aws-cdk-lib";
 import { Template } from "aws-cdk-lib/assertions";
 import type { Construct } from "constructs";
-import { describe, it } from "vitest";
 import { ApiDestination, Authorization } from "../src/api-destination";
 import { EventBridge } from "../src/eventbridge";
 import { LambdaFunction } from "../src/lambda-function";
 import { Stack } from "../src/stack";
-import app from "./utils";
+import { createTestApp } from "./utils";
 
 describe("eventbridge", () => {
 	class TestStack extends Stack {
@@ -20,26 +20,35 @@ describe("eventbridge", () => {
 					"lambda",
 					"dynamodb-streams-test-handler.ts",
 				),
+				bundling: {
+					externalModules: ["@pawl/lambda"],
+				},
 			});
 
 			const apiDestination = new ApiDestination(this, "ApiDestination", {
 				apiDestinationName: "TestApiDestination",
-				authorization: {
-					type: Authorization.basic("foo", SecretValue.secretsManager("bar")),
-				},
+				authorization: Authorization.basic(
+					"foo",
+					SecretValue.secretsManager("bar"),
+				),
 				description: "To Foobar",
 				endpoint: "fooo",
 				httpMethod: "GET",
 			});
 
+			const eventPattern = { source: ["foo"] };
+
 			new EventBridge(this, "TestEventBridge", {
 				eventBusName: "TestEventBus",
-				targets: [lambdaFunction, apiDestination],
+				targets: [
+					{ type: lambdaFunction, eventPattern },
+					{ type: apiDestination, eventPattern },
+				],
 			});
 		}
 	}
 
-	const stack = new TestStack(app, "EventBridgeTest");
+	const stack = new TestStack(createTestApp(), "EventBridgeTest");
 	const template = Template.fromStack(stack);
 	it("should contain an eventbus, a Lambda Function as target and an API Destination", () => {
 		// console.log(JSON.stringify(template.toJSON()));

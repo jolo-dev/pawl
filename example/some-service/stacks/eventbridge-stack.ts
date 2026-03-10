@@ -20,11 +20,11 @@ export class EventBridgeStack extends Stack {
 			entry: lambdaSrc("eventbridge-user-handler"),
 		});
 
-		const sqsLambda = new LambdaFunction(this, "Test-Eventbridge-Sqs-Lambda", {
+		const sqsLambda = new LambdaFunction(this, "Test-Eventbridge-Sqs", {
 			entry: lambdaSrc("sqs-handler"),
 		});
 
-		const sqs = new Sqs(this, "Foo-EventBridge-Sqs", {
+		const sqs = new Sqs(this, "Foo-EventBridge", {
 			fn: sqsLambda,
 			retry: 3,
 			fifo: true,

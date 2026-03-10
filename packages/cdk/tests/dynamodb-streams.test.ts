@@ -1,10 +1,10 @@
+import { describe, it } from "bun:test";
 import * as path from "node:path";
 import { Template } from "aws-cdk-lib/assertions";
-import { describe, it } from "vitest";
 import { DynamoDbTableWithStreams } from "../src/dynamodb-streams";
 import { LambdaFunction } from "../src/lambda-function";
 import { type Construct, Stack } from "../src/stack";
-import app from "./utils";
+import { createTestApp } from "./utils";
 
 describe("dynamodb-streams", () => {
 	class TestStack extends Stack {
@@ -20,6 +20,9 @@ describe("dynamodb-streams", () => {
 						"lambda",
 						"dynamodb-streams-test-handler.ts",
 					),
+					bundling: {
+						externalModules: ["@pawl/lambda"],
+					},
 				},
 			);
 
@@ -37,7 +40,7 @@ describe("dynamodb-streams", () => {
 		}
 	}
 
-	const stack = new TestStack(app, "DynamoDbStreamTest");
+	const stack = new TestStack(createTestApp(), "DynamoDbStreamTest");
 	const template = Template.fromStack(stack);
 	it("should have streams enabled", () => {
 		template.hasResource("AWS::DynamoDB::GlobalTable", {

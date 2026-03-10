@@ -2,8 +2,14 @@ import { App } from "aws-cdk-lib/core";
 
 const teamTag = "foo";
 const stageTag = "bar";
-const app = new App();
-app.node.setContext("team", teamTag);
-app.node.setContext("stage", stageTag);
 
+export function createTestApp() {
+	const app = new App();
+	app.node.setContext("team", teamTag);
+	app.node.setContext("stage", stageTag);
+	return app;
+}
+
+// For backward compatibility
+const app = createTestApp();
 export default app;

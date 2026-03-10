@@ -9,6 +9,7 @@ import {
 	HttpIamAuthorizer,
 	HttpJwtAuthorizer,
 	HttpLambdaAuthorizer,
+	HttpLambdaResponseType,
 	HttpUserPoolAuthorizer,
 } from "aws-cdk-lib/aws-apigatewayv2-authorizers";
 import { HttpLambdaIntegration } from "aws-cdk-lib/aws-apigatewayv2-integrations";
@@ -219,4 +220,5 @@ export {
 	HttpLambdaAuthorizer,
 	HttpJwtAuthorizer,
 	HttpNoneAuthorizer,
+	HttpLambdaResponseType,
 };

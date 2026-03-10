@@ -1,13 +1,14 @@
 {
-	"name": "device-data-ingestion-service",
+	"name": "some-service",
 	"version": "1.0.0",
 	"author": "",
 	"devDependencies": {
-		"@pawl/cdk": "../../packages/cdk",
-		"@pawl/lambda": "../../packages/lambda",
-		"aws-cdk-local": "^3.0.1",
+		"@pawl/cdk": "workspace:*",
+		"@pawl/lambda": "workspace:*",
 		"@testcontainers/localstack": "^11.11.0",
-		"cdk-booster": "^1.2.4"
+		"@types/bun": "catalog:",
+		"aws-cdk-local": "^3.0.1",
+		"cdk-booster": "^1.2.5"
 	},
 	"description": "",
 	"keywords": [],
@@ -21,7 +22,7 @@
 		"remove": "cdk destroy --all",
 		"remove:local": "bun run localstack && bun run cdklocal destroy -- --all",
 		"synth:local": "bun run cdklocal synth",
-		"test": "vitest"
+		"test": "bun test"
 	},
 	"type": "module"
 }

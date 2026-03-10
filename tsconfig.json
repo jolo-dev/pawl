@@ -1,24 +1,16 @@
 {
-  "extends": "@tsconfig/node22/tsconfig.json",
-  "compilerOptions": {
-    "module": "ESNext",
-    "moduleResolution": "bundler",
-    "allowJs": true,
-    "resolveJsonModule": true,
-    "esModuleInterop": true,
-    "paths": {
-      "@hems-lib/cdk": [
-        "cdk/index.ts"
-      ],
-      "@hems-lib/lambda": [
-        "lambda/index.ts"
-      ]
-    },
-    "baseUrl": "./"
-  },
-  "exclude": [
-    "**/cdk.out/**",
-    "**/dist/**",
-    "node_modules/**"
-  ]
+	"extends": "@tsconfig/node22/tsconfig.json",
+	"compilerOptions": {
+		"module": "ESNext",
+		"moduleResolution": "bundler",
+		"allowJs": true,
+		"resolveJsonModule": true,
+		"esModuleInterop": true,
+		"paths": {
+			"@hems-lib/cdk": ["cdk/index.ts"],
+			"@hems-lib/lambda": ["lambda/index.ts"]
+		},
+		"baseUrl": "./"
+	},
+	"exclude": ["**/cdk.out/**", "**/dist/**", "node_modules/**"]
 }

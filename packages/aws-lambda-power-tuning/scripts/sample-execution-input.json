@@ -1,8 +1,0 @@
-{
-  "lambdaARN": "arn:aws:lambda:eu-central-1:314850041943:function:lambda-emobility-firmware-post-settings-api",
-  "powerValues": [128, 256, 512, 1024, 2048],
-  "num": 10,
-  "payload": {},
-  "parallelInvocation": true,
-  "strategy": "cost"
-}

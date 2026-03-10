@@ -1,14 +1,14 @@
 {
-  "callbackWaitsForEmptyEventLoop": false,
-  "functionName": "testFunction",
-  "functionVersion": "1.0",
-  "invokedFunctionArn": "arn:aws:lambda:region:account-id:function:testFunction",
-  "memoryLimitInMB": "128",
-  "awsRequestId": "test-request-id",
-  "logGroupName": "test-log-group",
-  "logStreamName": "test-log-stream",
-  "getRemainingTimeInMillis": 300000,
-  "done": {},
-  "fail": {},
-  "succeed": {}
+	"callbackWaitsForEmptyEventLoop": false,
+	"functionName": "testFunction",
+	"functionVersion": "1.0",
+	"invokedFunctionArn": "arn:aws:lambda:region:account-id:function:testFunction",
+	"memoryLimitInMB": "128",
+	"awsRequestId": "test-request-id",
+	"logGroupName": "test-log-group",
+	"logStreamName": "test-log-stream",
+	"getRemainingTimeInMillis": 300000,
+	"done": {},
+	"fail": {},
+	"succeed": {}
 }

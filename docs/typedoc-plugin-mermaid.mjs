@@ -1,15 +1,16 @@
 import * as s from "html-escaper";
 import {
-  Converter as c,
-  MarkdownEvent as h,
-  ReflectionKind as k,
-  ParameterType as l,
-  PageEvent as p,
+	Converter as c,
+	MarkdownEvent as h,
+	ReflectionKind as k,
+	ParameterType as l,
+	PageEvent as p,
 } from "typedoc";
-var n = Object.freeze,
-  g = Object.defineProperty,
-  u = (t, e) => n(g(t, "raw", { value: n(t.slice()) })),
-  o;
+
+const n = Object.freeze;
+const g = Object.defineProperty;
+const u = (t, _e) => n(g(t, "raw", { value: n(t.slice()) }));
+let o;
 const f = String.raw`
 <style>
 :root.mermaid-enabled .mermaid-block > pre {
@@ -53,10 +54,10 @@ body.dark, :root[data-theme="dark"] {
 </style>
 `;
 function y(t) {
-  return String.raw(
-    o ||
-      (o = u([
-        `
+	return String.raw(
+		o ||
+			(o = u([
+				`
 <script type="module">
 import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
 
@@ -90,103 +91,108 @@ requestAnimationFrame(function check() {
     requestAnimationFrame(check);
   }
 });
-<\/script>
+</script>
 `,
-      ])),
-    t,
-  );
+			])),
+		t,
+	);
 }
-const m = '<div class="mermaid-block">',
-  v = "</div>";
+const m = '<div class="mermaid-block">';
+const v = "</div>";
 class b {
-  constructor(e) {
-    this.app = e;
-  }
-  initialize() {
-    this.app.options.addDeclaration({
-      help: "[Mermaid Plugin] The version of mermaid.js to use.",
-      name: "mermaidVersion",
-      type: l.String,
-      defaultValue: "latest",
-    }),
-      this.app.converter.on(c.EVENT_RESOLVE_BEGIN, (e) => {
-        this.onConverterResolveBegin(e);
-      }),
-      this.app.renderer.on(p.END, (e) => {
-        this.onEndPage(e);
-      }),
-      this.app.renderer.on(
-        h.PARSE,
-        (e) => {
-          this.onParseMarkdown(e);
-        },
-        1e3,
-      );
-  }
-  onConverterResolveBegin(e) {
-    for (const i of e.project.getReflectionsByKind(k.All)) {
-      const { comment: r } = i;
-      r &&
-        (r.summary
-          .filter((a) => a.kind === "code")
-          .forEach((a) => {
-            a.text = this.handleMermaidCodeBlocks(a.text);
-          }),
-        r.getTags("@mermaid").forEach((a) => {
-          const d = a.content[0];
-          d != null && d.text && (d.text = this.handleMermaidTag(d.text));
-        }));
-    }
-  }
-  /**
-   * Convert the text of `@mermaid` tags.
-   *
-   * This first line will be the title. It will be wrapped in an h4.
-   * All other lines are mermaid code and will be converted into a mermaid block.
-   */
-  handleMermaidTag(e) {
-    var a;
-    const i = ((a = /^.*/.exec(e)) == null ? void 0 : a[0]) ?? "",
-      r = e.slice(i.length);
-    return `#### ${i}
+	constructor(e) {
+		this.app = e;
+	}
+	initialize() {
+		this.app.options.addDeclaration({
+			help: "[Mermaid Plugin] The version of mermaid.js to use.",
+			name: "mermaidVersion",
+			type: l.String,
+			defaultValue: "latest",
+		}),
+			this.app.converter.on(c.EVENT_RESOLVE_BEGIN, (e) => {
+				this.onConverterResolveBegin(e);
+			}),
+			this.app.renderer.on(p.END, (e) => {
+				this.onEndPage(e);
+			}),
+			this.app.renderer.on(
+				h.PARSE,
+				(e) => {
+					this.onParseMarkdown(e);
+				},
+				1e3,
+			);
+	}
+	onConverterResolveBegin(e) {
+		for (const i of e.project.getReflectionsByKind(k.All)) {
+			const { comment: r } = i;
+			r &&
+				(r.summary
+					.filter((a) => a.kind === "code")
+					.forEach((a) => {
+						a.text = this.handleMermaidCodeBlocks(a.text);
+					}),
+				r.getTags("@mermaid").forEach((a) => {
+					const d = a.content[0];
+					d?.text && (d.text = this.handleMermaidTag(d.text));
+				}));
+		}
+	}
+	/**
+	 * Convert the text of `@mermaid` tags.
+	 *
+	 * This first line will be the title. It will be wrapped in an h4.
+	 * All other lines are mermaid code and will be converted into a mermaid block.
+	 */
+	handleMermaidTag(e) {
+		let a;
+		const i = ((a = /^.*/.exec(e)) == null ? void 0 : a[0]) ?? "";
+		const r = e.slice(i.length);
+		return `#### ${i}
 
 ${this.toMermaidBlock(r)}`;
-  }
-  /**
-   * Replaces mermaid code blocks in Markdown text with mermaid blocks.
-   */
-  handleMermaidCodeBlocks(e) {
-    return e.replace(/^```mermaid[ \t\r]*\n([\s\S]*?)^```[ \t]*$/gm, (i, r) =>
-      this.toMermaidBlock(r),
-    );
-  }
-  /**
-   * Creates a mermaid block for the given mermaid code.
-   */
-  toMermaidBlock(e) {
-    const i = s.escape(e.trim()),
-      r = `<div class="mermaid dark">%%{init:{"theme":"dark"}}%%
-${i}</div>`,
-      a = `<div class="mermaid light">%%{init:{"theme":"default"}}%%
-${i}</div>`,
-      d = `<pre><code class="language-mermaid">${i}</code></pre>`;
-    return m + r + a + d + v;
-  }
-  onEndPage(e) {
-    e.contents !== void 0 && (e.contents = this.insertMermaidScript(e.contents));
-  }
-  onParseMarkdown(e) {
-    e.parsedText = this.handleMermaidCodeBlocks(e.parsedText);
-  }
-  insertMermaidScript(e) {
-    if (!e.includes(m)) return e;
-    const i = e.indexOf("</head>");
-    e = e.slice(0, i) + f + e.slice(i);
-    const r = e.lastIndexOf("</body>");
-    return e.slice(0, r) + y(this.app.options.getValue("mermaidVersion")) + e.slice(r);
-  }
+	}
+	/**
+	 * Replaces mermaid code blocks in Markdown text with mermaid blocks.
+	 */
+	handleMermaidCodeBlocks(e) {
+		return e.replace(/^```mermaid[ \t\r]*\n([\s\S]*?)^```[ \t]*$/gm, (_i, r) =>
+			this.toMermaidBlock(r),
+		);
+	}
+	/**
+	 * Creates a mermaid block for the given mermaid code.
+	 */
+	toMermaidBlock(e) {
+		const i = s.escape(e.trim());
+		const r = `<div class="mermaid dark">%%{init:{"theme":"dark"}}%%
+${i}</div>`;
+		const a = `<div class="mermaid light">%%{init:{"theme":"default"}}%%
+${i}</div>`;
+		const d = `<pre><code class="language-mermaid">${i}</code></pre>`;
+		return m + r + a + d + v;
+	}
+	onEndPage(e) {
+		e.contents !== void 0 &&
+			(e.contents = this.insertMermaidScript(e.contents));
+	}
+	onParseMarkdown(e) {
+		e.parsedText = this.handleMermaidCodeBlocks(e.parsedText);
+	}
+	insertMermaidScript(e) {
+		if (!e.includes(m)) return e;
+		const i = e.indexOf("</head>");
+		e = e.slice(0, i) + f + e.slice(i);
+		const r = e.lastIndexOf("</body>");
+		return (
+			e.slice(0, r) +
+			y(this.app.options.getValue("mermaidVersion")) +
+			e.slice(r)
+		);
+	}
 }
 function M(t) {
-  new b(t).initialize();
+	new b(t).initialize();
 }
 export { M as load };

@@ -6,16 +6,16 @@ import type { Construct } from "constructs";
  * @param stacks - Array of stacks to define.
  */
 export function defineStacks(
-  ...stacks: (new (
-    scope: Construct,
-    id: string,
-    props?: StackProps,
-  ) => Stack)[]
+	...stacks: (new (
+		scope: Construct,
+		id: string,
+		props?: StackProps,
+	) => Stack)[]
 ) {
-  const app = new App();
-  for (const stack of stacks) {
-    new stack(app, stack.name);
-  }
+	const app = new App();
+	for (const stack of stacks) {
+		new stack(app, stack.name);
+	}
 
-  app.synth();
+	app.synth();
 }

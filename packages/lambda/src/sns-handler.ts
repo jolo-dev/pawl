@@ -15,8 +15,8 @@ import type { HandlerWithHooks } from "./base/hooks";
  * `useSnsHandler` function returns a `HandlerWithHooks<SNS
  */
 export function useSnsHandler(
-  serviceName: string,
-  handleRequest: (event: SNSEvent, logger: Logger) => Promise<void>,
+	serviceName: string,
+	handleRequest: (event: SNSEvent, logger: Logger) => Promise<void>,
 ): HandlerWithHooks<SNSHandler, SNSEvent> {
-  return handlerFactory<SNSEvent>(serviceName, handleRequest);
+	return handlerFactory<SNSEvent>(serviceName, handleRequest);
 }

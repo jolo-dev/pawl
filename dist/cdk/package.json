@@ -1,19 +1,19 @@
 {
-  "name": "@pawl/cdk",
-  "version": "0.0.1",
-  "type": "module",
-  "module": "index.js",
-  "scripts": {
-    "test": "vitest run",
-    "test:cdk:synth": "cdk --app 'npx tsx ./tests/cdk-stack/index.ts' synth"
-  },
-  "devDependencies": {
-    "aws-cdk": "^2.173.1",
-    "aws-cdk-lib": "^2.173.1",
-    "constructs": "10.4.2"
-  },
-  "dependencies": {
-    "cdk-monitoring-constructs": "^9.1.2",
-    "cdk-nag": "^2.34.23"
-  }
+	"name": "@pawl/cdk",
+	"version": "0.0.1",
+	"type": "module",
+	"module": "index.js",
+	"scripts": {
+		"test": "vitest run",
+		"test:cdk:synth": "cdk --app 'npx tsx ./tests/cdk-stack/index.ts' synth"
+	},
+	"devDependencies": {
+		"aws-cdk": "^2.173.1",
+		"aws-cdk-lib": "^2.173.1",
+		"constructs": "10.4.2"
+	},
+	"dependencies": {
+		"cdk-monitoring-constructs": "^9.1.2",
+		"cdk-nag": "^2.34.23"
+	}
 }

@@ -14,8 +14,8 @@ import type { HandlerWithHooks } from "./base/hooks";
  * `useSqsHandler` function returns a `HandlerWithHooks<SQS
  */
 export function useSqsHandler(
-  serviceName: string,
-  handleRequest: (event: SQSEvent, logger: Logger) => Promise<void>,
+	serviceName: string,
+	handleRequest: (event: SQSEvent, logger: Logger) => Promise<void>,
 ): HandlerWithHooks<SQSHandler, SQSEvent> {
-  return handlerFactory<SQSEvent>(serviceName, handleRequest);
+	return handlerFactory<SQSEvent>(serviceName, handleRequest);
 }

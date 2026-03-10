@@ -11,14 +11,17 @@ const stacksDir = path.join(__dirname, "stacks");
 const stacksToDefine = []; // Array to hold stack classes
 
 for (const stackDef of fs.readdirSync(stacksDir)) {
-  const stack = await import(`${stacksDir}/${stackDef}`);
+	const stack = await import(`${stacksDir}/${stackDef}`);
 
-  // Dynamically find the classes
-  for (const key in stack) {
-    if (typeof stack[key] === "function" && stack[key].prototype.constructor.name !== "Object") {
-      stacksToDefine.push(stack[key]);
-    }
-  }
+	// Dynamically find the classes
+	for (const key in stack) {
+		if (
+			typeof stack[key] === "function" &&
+			stack[key].prototype.constructor.name !== "Object"
+		) {
+			stacksToDefine.push(stack[key]);
+		}
+	}
 }
 
 defineStacks(...stacksToDefine);

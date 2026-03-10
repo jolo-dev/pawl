@@ -3,27 +3,27 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useSqsHandler } from "../src/sqs-handler";
 
 vi.mock("@aws-lambda-powertools/logger", () => ({
-  Logger: vi.fn().mockImplementation(() => ({
-    info: vi.fn(),
-  })),
+	Logger: vi.fn().mockImplementation(() => ({
+		info: vi.fn(),
+	})),
 }));
 
 describe("sqs-handler", () => {
-  const event = require("./sqs-event.json");
-  const context = require("./context.json");
+	const event = require("./sqs-event.json");
+	const context = require("./context.json");
 
-  let mockLogger: Logger;
+	let _mockLogger: Logger;
 
-  beforeEach(() => {
-    mockLogger = new Logger({ serviceName: "foo" });
-  });
+	beforeEach(() => {
+		_mockLogger = new Logger({ serviceName: "foo" });
+	});
 
-  it("should call the handler with sqs event", async () => {
-    const spy = vi.fn();
-    const handler = useSqsHandler("foo", spy);
+	it("should call the handler with sqs event", async () => {
+		const spy = vi.fn();
+		const handler = useSqsHandler("foo", spy);
 
-    await handler(event, context, () => {});
+		await handler(event, context, () => {});
 
-    expect(spy).toBeCalledTimes(1);
-  });
+		expect(spy).toBeCalledTimes(1);
+	});
 });

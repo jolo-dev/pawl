@@ -13,15 +13,19 @@ import { handlerFactory } from "./base/handler-factory";
  * using the `handlerFactory` function, which is passed the `serviceName` and `handleRequest` function
  * provided to the `useEventbridgeHandler` function.
  */
-export function useEventbridgeHandler<TDetailType extends string, TDetail, TResult>(
-  serviceName: string,
-  handleRequest: (
-    event: EventBridgeEvent<TDetailType, TDetail>,
-    logger: Logger,
-  ) => Promise<TResult>,
+export function useEventbridgeHandler<
+	TDetailType extends string,
+	TDetail,
+	TResult,
+>(
+	serviceName: string,
+	handleRequest: (
+		event: EventBridgeEvent<TDetailType, TDetail>,
+		logger: Logger,
+	) => Promise<TResult>,
 ) {
-  return handlerFactory<EventBridgeEvent<TDetailType, TDetail>, TResult>(
-    serviceName,
-    handleRequest,
-  );
+	return handlerFactory<EventBridgeEvent<TDetailType, TDetail>, TResult>(
+		serviceName,
+		handleRequest,
+	);
 }

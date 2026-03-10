@@ -7,38 +7,38 @@ import { LambdaFunction } from "../src/lambda-function";
 import app from "./utils";
 
 class LambdaTestStack extends Stack {
-  constructor(scope: Construct, id: string, props?: StackProps) {
-    super(scope, id, props);
-    new LambdaFunction(this, "TestLambdaFunction", {
-      entry: path.join(__dirname, "lambda", "test-lambda.ts"),
-    });
-  }
+	constructor(scope: Construct, id: string, props?: StackProps) {
+		super(scope, id, props);
+		new LambdaFunction(this, "TestLambdaFunction", {
+			entry: path.join(__dirname, "lambda", "test-lambda.ts"),
+		});
+	}
 }
 
 describe("LambdaTestStack", () => {
-  // WHEN
-  const stack = new LambdaTestStack(app, "TestStack");
+	// WHEN
+	const stack = new LambdaTestStack(app, "TestStack");
 
-  // THEN
-  test("if lambda cdk stack is created with correct properties", () => {
-    expect(stack).toBeDefined();
+	// THEN
+	test("if lambda cdk stack is created with correct properties", () => {
+		expect(stack).toBeDefined();
 
-    const template = Template.fromStack(stack);
-    template.hasResourceProperties("AWS::Lambda::Function", {
-      Handler: "index.handler",
-      Runtime: "nodejs22.x",
-      FunctionName: "TestLambdaFunction-lambda",
-      // Order is important
-      Tags: [
-        {
-          Key: "stage",
-          Value: "bar",
-        },
-        {
-          Key: "team",
-          Value: "foo",
-        },
-      ],
-    });
-  });
+		const template = Template.fromStack(stack);
+		template.hasResourceProperties("AWS::Lambda::Function", {
+			Handler: "index.handler",
+			Runtime: "nodejs22.x",
+			FunctionName: "TestLambdaFunction-lambda",
+			// Order is important
+			Tags: [
+				{
+					Key: "stage",
+					Value: "bar",
+				},
+				{
+					Key: "team",
+					Value: "foo",
+				},
+			],
+		});
+	});
 });

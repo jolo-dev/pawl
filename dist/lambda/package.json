@@ -1,18 +1,18 @@
 {
-  "name": "@pawl/lambda",
-  "version": "0.0.1",
-  "type": "module",
-  "module": "index.js",
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "description": "",
-  "dependencies": {
-    "@aws-lambda-powertools/logger": "^2.10.0",
-    "@aws-lambda-powertools/metrics": "^2.10.0",
-    "@aws-lambda-powertools/tracer": "^2.10.0"
-  },
-  "devDependencies": {
-    "@types/aws-lambda": "^8.10.145"
-  }
+	"name": "@pawl/lambda",
+	"version": "0.0.1",
+	"type": "module",
+	"module": "index.js",
+	"keywords": [],
+	"author": "",
+	"license": "ISC",
+	"description": "",
+	"dependencies": {
+		"@aws-lambda-powertools/logger": "^2.10.0",
+		"@aws-lambda-powertools/metrics": "^2.10.0",
+		"@aws-lambda-powertools/tracer": "^2.10.0"
+	},
+	"devDependencies": {
+		"@types/aws-lambda": "^8.10.145"
+	}
 }

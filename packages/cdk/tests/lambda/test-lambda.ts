@@ -1,3 +1,3 @@
 export const handler = () => {
-  console.log("Hello, world!");
+	console.log("Hello, world!");
 };

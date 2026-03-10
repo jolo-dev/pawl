@@ -1,9 +1,0 @@
-{
-  "check-coverage": true,
-  "extension": [
-    ".js"
-  ],
-  "include": [
-    "lambda/**/*"
-  ]
-}

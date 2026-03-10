@@ -49,8 +49,7 @@ jobs:
       - name: Run tests
         run: bun test
 
-      - name: Save Docker images
-        description: This caches and avoid to redownloading the images especially the Localstack as it is big.
+      - name: Cache Docker images
         if: success()
         run: |
           if [ -n "$DOCKER_IMAGES" ]; then

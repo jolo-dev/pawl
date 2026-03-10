@@ -1,4 +1,5 @@
 export * from "./src/apigateway";
+export * from "./src/apigateway-v1";
 export * from "./src/basic-tags";
 export * from "./src/lambda-function";
 export * from "./src/define-stack";

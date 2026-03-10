@@ -34,7 +34,7 @@ export interface BasicConstructProps {
  */
 export abstract class BasicConstruct extends Construct {
   readonly stack: Stack;
-  public prefix = "hems-";
+  public prefix = "";
   /**
    * Stores the permissions granted to other constructs
    */

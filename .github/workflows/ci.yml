@@ -1,0 +1,66 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      docker_images:
+        description: "Docker images to cache (newline-separated)"
+        required: false
+        type: string
+
+env:
+  DOCKER_IMAGES: ${{ inputs.docker_images || '' }}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Lint and format check
+        run: bunx biome check .
+
+      - name: Restore Docker images
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: /tmp/tc-images.tar
+          key: tc-docker-${{ hashFiles('.github/tc-docker.lock') }}
+
+      - name: Load images if cache hit
+        if: steps.cache.outputs.cache-hit == 'true'
+        run: docker load -i /tmp/tc-images.tar
+
+      - name: Set Docker images as env vars
+        run: |
+          echo "LOCALSTACK_IMAGE=$(grep localstack .github/tc-docker.lock)" >> $GITHUB_ENV
+          echo "RYUK_IMAGE=$(grep ryuk .github/tc-docker.lock)" >> $GITHUB_ENV
+
+      - name: Run tests
+        run: bun test
+
+      - name: Save Docker images
+        description: This caches and avoid to redownloading the images especially the Localstack as it is big.
+        if: success()
+        run: |
+          if [ -n "$DOCKER_IMAGES" ]; then
+            images="$DOCKER_IMAGES"
+          else
+            images=$(cat .github/tc-docker.lock)
+          fi
+
+          for image in $images; do
+            docker pull $image
+          done
+
+          docker save $images > /tmp/tc-images.tar

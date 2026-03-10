@@ -2,14 +2,13 @@ import {
   type CfnStage,
   HttpApi,
   type HttpMethod,
-  type HttpNoneAuthorizer,
+  HttpNoneAuthorizer,
   type HttpRouteIntegration,
 } from "aws-cdk-lib/aws-apigatewayv2";
 import {
   HttpIamAuthorizer,
   HttpJwtAuthorizer,
   HttpLambdaAuthorizer,
-  HttpLambdaResponseType,
   HttpUserPoolAuthorizer,
 } from "aws-cdk-lib/aws-apigatewayv2-authorizers";
 import { HttpLambdaIntegration } from "aws-cdk-lib/aws-apigatewayv2-integrations";
@@ -29,7 +28,7 @@ type AuthorizerType =
   | HttpNoneAuthorizer;
 
 export interface ApiProps extends BasicConstructProps {
-  authorizer: AuthorizerType;
+  authorizer?: AuthorizerType;
   /**
    * Define the routes for the API. Can be a function, proxy to another API, or point to an load balancer
    *
@@ -140,7 +139,7 @@ export class ApiGateway extends BasicConstruct {
   addRoute(
     routeKey: `${HttpMethod} /${string}`,
     target: LambdaFunction | EventBridge,
-    authorizer: AuthorizerType,
+    authorizer?: AuthorizerType,
   ): void {
     this.route(routeKey, target, authorizer);
   }
@@ -157,7 +156,7 @@ export class ApiGateway extends BasicConstruct {
   private route(
     routeKey: `${HttpMethod} /${string}`,
     target: LambdaFunction | EventBridge,
-    authorizer: AuthorizerType,
+    authorizer?: AuthorizerType,
   ): void {
     const [method, path] = routeKey.split(" ");
 
@@ -201,6 +200,6 @@ export {
   HttpIamAuthorizer,
   HttpUserPoolAuthorizer,
   HttpLambdaAuthorizer,
-  HttpLambdaResponseType,
   HttpJwtAuthorizer,
+  HttpNoneAuthorizer,
 };

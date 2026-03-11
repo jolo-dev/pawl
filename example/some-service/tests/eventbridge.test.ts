@@ -31,6 +31,8 @@ describe("EventbridgeStack", () => {
 
 		env = {
 			...process.env,
+			AWS_PROFILE: "000000000",
+			AWS_DEFAULT_REGION: "eu-central-1",
 			AWS_ACCESS_KEY_ID: "test",
 			AWS_SECRET_ACCESS_KEY: "test",
 			AWS_ENDPOINT_URL: endpoint, // The Localstack Container creates a random port, so we need to set it in the environment for CDK Local

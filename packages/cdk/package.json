@@ -9,9 +9,9 @@
 	},
 	"devDependencies": {
 		"aws-cdk": "^2.1030.0",
-		"aws-cdk-lib": "^2.220.0",
-		"constructs": "10.4.2",
-		"tsdown": "^0.15.7"
+		"cdk-nag": "^2.34.23",
+		"zod": "catalog:",
+		"@tsconfig/node22": "catalog:"
 	},
 	"dependencies": {
 		"@aws-cdk/aws-pipes-alpha": "^2.220.0-alpha.0",
@@ -19,6 +19,7 @@
 		"@aws-cdk/aws-pipes-targets-alpha": "^2.220.0-alpha.0",
 		"cdk-monitoring-constructs": "^9.1.2",
 		"@pawl/lambda": "workspace:*",
-		"cdk-nag": "^2.34.23"
+		"aws-cdk-lib": "^2.220.0",
+		"constructs": "10.4.2"
 	}
 }

@@ -4,9 +4,10 @@ import {
 	type StartedLocalStackContainer,
 } from "@testcontainers/localstack";
 import { $ } from "bun";
-import * as path from "node:path";
+import path from "node:path";
+import { log } from "node:console";
 
-describe("EventbridgeStack", () => {
+describe("SimpleApiStack", () => {
 	let localstack: StartedLocalStackContainer;
 	let endpoint: string;
 	let env: Record<string, string>;
@@ -24,9 +25,10 @@ describe("EventbridgeStack", () => {
 			])
 			.start();
 		endpoint = localstack.getConnectionUri();
-
+		console.log(endpoint);
 		const port = new URL(endpoint).port;
-		const s3Endpoint = `http://s3.localhost.localstack.cloud:${port}`; // This seems to be the only way to get the correct S3 endpoint for Testcontainers, as it uses a different hostname than the other services
+		const url = new URL(endpoint);
+		const s3Endpoint = `http://s3.${url.hostname}:${port}`; // This seems to be the only way to get the correct S3 endpoint for Testcontainers, as it uses a different hostname than the other services
 
 		env = {
 			...process.env,
@@ -34,12 +36,11 @@ describe("EventbridgeStack", () => {
 			AWS_ENDPOINT_URL_S3: s3Endpoint, //
 			LOCAL: "true", // This is used in the CDK stack to determine whether to use the local API Gateway or the real one
 		};
-
 		const cdkApp = `bun run ${path.join(__dirname, "..")}/local.dev.ts`;
 		await $`npx cdklocal bootstrap --app ${cdkApp} --context stage=dev --context team=foo`.env(
 			env,
 		);
-		await $`npx cdklocal deploy EventBridgeStack --app ${cdkApp} --require-approval never --context stage=dev --context team=foo`.env(
+		await $`npx cdklocal deploy SimpleApiStack --app ${cdkApp} --require-approval never --outputs-file /tmp/cdk-outputs.json --context stage=dev --context team=foo`.env(
 			env,
 		);
 	}, 120000);
@@ -48,28 +49,17 @@ describe("EventbridgeStack", () => {
 		await localstack.stop();
 	});
 
-	it("should send a message to the Eventbridge", async () => {
-		const detail = JSON.stringify({
-			id: 1,
-			email: "test@test.com",
-			address: { street: "Main St", number: 1, postcode: 12345 },
-		});
+	it("should return 200 from GET /foo via REST API", async () => {
+		const outputs = await Bun.file("/tmp/cdk-outputs.json").json();
+		const stackOutputs = Object.values(outputs)[0] as Record<string, string>;
+		const cfnUrl = Object.values(stackOutputs).find((v) =>
+			v.includes("execute-api"),
+		)!;
+		// LocalStack REST API: extract API ID and build the localhost-reachable URL
+		const apiId = new URL(cfnUrl).hostname.split(".")[0];
+		const apiUrl = `${endpoint}/restapis/${apiId}/prod/_user_request_`;
 
-		// Put an event on the bus
-		const putResult =
-			await $`aws events put-events --endpoint-url ${endpoint} --region us-east-1 --entries ${JSON.stringify([{ Source: "foo", DetailType: "user", Detail: detail, EventBusName: "TestEventBus" }])}`
-				.env(env)
-				.json();
-		expect(putResult.FailedEntryCount).toBe(0);
-
-		// Wait for async Lambda invocation
-		await new Promise((r) => setTimeout(r, 5000));
-
-		// Check CloudWatch logs for the Lambda processing the event
-		const logs =
-			await $`aws logs filter-log-events --endpoint-url ${endpoint} --region us-east-1 --log-group-name /aws/lambda/foo-dev-Test-Eventbridge-lambda --filter-pattern "User with ID"`
-				.env(env)
-				.json();
-		expect(logs.events.length).toBeGreaterThan(0);
-	}, 30000);
+		const res = await fetch(`${apiUrl}/foo`);
+		expect(res.status).toBe(200);
+	});
 });

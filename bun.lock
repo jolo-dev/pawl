@@ -600,6 +600,10 @@
 
     "readdir-glob/minimatch": ["minimatch@5.1.9", "", { "dependencies": { "brace-expansion": "^2.0.1" } }, "sha512-7o1wEA2RyMP7Iu7GNba9vc0RWWGACJOCZBJX2GJWip0ikV+wcOsgVuY9uE8CPiyQhkGFSlhuSkZPavN7u1c2Fw=="],
 
+    "tutorial/@pawl/cdk": ["@pawl/cdk@file:packages/cdk", { "dependencies": { "@aws-cdk/aws-pipes-alpha": "^2.220.0-alpha.0", "@aws-cdk/aws-pipes-sources-alpha": "^2.220.0-alpha.0", "@aws-cdk/aws-pipes-targets-alpha": "^2.220.0-alpha.0", "@pawl/lambda": "workspace:*", "aws-cdk-lib": "^2.220.0", "cdk-monitoring-constructs": "^9.1.2", "constructs": "10.4.2" }, "devDependencies": { "@tsconfig/node22": "catalog:", "aws-cdk": "^2.1030.0", "cdk-nag": "^2.34.23", "zod": "catalog:" } }],
+
+    "tutorial/@pawl/lambda": ["@pawl/lambda@file:packages/lambda", { "dependencies": { "@aws-lambda-powertools/logger": "^2.10.0", "@aws-lambda-powertools/metrics": "^2.10.0", "@aws-lambda-powertools/tracer": "^2.10.0" }, "devDependencies": { "@types/aws-lambda": "^8.10.145" } }],
+
     "tutorial/aws-cdk-local": ["aws-cdk-local@2.19.2", "", { "dependencies": { "diff": "^5.0.0" }, "bin": { "cdklocal": "bin/cdklocal" } }, "sha512-1aT+yD4bN23Zgqjyd7AbLOFTK04xM8L7GBWPdAridqG20cyptnDCmRY7iYwWPx19LnJAA0HaiTxoWQTxDwuFLA=="],
 
     "@isaacs/cliui/string-width/emoji-regex": ["emoji-regex@9.2.2", "", {}, "sha512-L18DaJsXSUk2+42pv8mLs5jJT2hqFkFE4j21wOmgbUqsZ2hL72NsUU785g9RXgo3s0ZNgVl42TiHp3ZtOv/Vyg=="],
@@ -617,6 +621,8 @@
     "lazystream/readable-stream/string_decoder": ["string_decoder@1.1.1", "", { "dependencies": { "safe-buffer": "~5.1.0" } }, "sha512-n/ShnvDi6FHbbVfviro+WojiFzv+s8MPMHBczVePfUpDJLwoLT0ht1l4YwBCbi8pJAveEEdnkHyPyTP/mzRfwg=="],
 
     "readdir-glob/minimatch/brace-expansion": ["brace-expansion@2.0.2", "", { "dependencies": { "balanced-match": "^1.0.0" } }, "sha512-Jt0vHyM+jmUBqojB7E1NIYadt0vI0Qxjxd2TErW94wDz+E2LAm5vKMXXwg6ZZBTHPuUlDgQHKXvjGBdfcF1ZDQ=="],
+
+    "tutorial/@pawl/cdk/@pawl/lambda": ["@pawl/lambda@file:packages/lambda", { "dependencies": { "@aws-lambda-powertools/logger": "^2.10.0", "@aws-lambda-powertools/metrics": "^2.10.0", "@aws-lambda-powertools/tracer": "^2.10.0" }, "devDependencies": { "@types/aws-lambda": "^8.10.145" } }],
 
     "dockerode/tar-fs/tar-stream/readable-stream": ["readable-stream@3.6.2", "", { "dependencies": { "inherits": "^2.0.3", "string_decoder": "^1.1.1", "util-deprecate": "^1.0.1" } }, "sha512-9u/sniCrY3D5WdsERHzHE4G2YCXqoG5FTHUiCC4SIbr6XcLZBY05ya9EKjYek9O5xOAwjGq+1JdGBAS7Q9ScoA=="],
 

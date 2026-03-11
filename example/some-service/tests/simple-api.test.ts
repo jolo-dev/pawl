@@ -32,6 +32,8 @@ describe("SimpleApiStack", () => {
 
 		env = {
 			...process.env,
+			AWS_ACCESS_KEY_ID: "test",
+			AWS_SECRET_ACCESS_KEY: "test",
 			AWS_ENDPOINT_URL: endpoint, // The Localstack Container creates a random port, so we need to set it in the environment for CDK Local
 			AWS_ENDPOINT_URL_S3: s3Endpoint, //
 			LOCAL: "true", // This is used in the CDK stack to determine whether to use the local API Gateway or the real one

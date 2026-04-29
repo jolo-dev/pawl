@@ -1,6 +1,6 @@
 ---
 title: README
-description: This is an overview about the AWS Lambda library for HEMS.
+description: Overview of the @pawl/lambda handler library.
 ---
 
 import Lambda from '../../../../../packages/lambda/README.md'

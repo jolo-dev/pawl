@@ -1,89 +1,97 @@
-<a name="readme-top"></a>
 <div align="center">
 
-# @hems-aws/cdk
+# @pawl/cdk
 
-An internal FEH IT package which contains best practices and a small library for using CDK in your next project.
+Opinionated AWS CDK constructs with built-in compliance, IAM, alarms, and tags.
 
 </div>
 
- <details>
-<summary>Table of Contents</summary>
+## About
 
-- [@hem-lib/cdk](#hem-libcdk)
-  - [ℹ️ About the Project](#-about-the-project)
-  - [❓ Why](#-why)
-  - [⚙ ️Setup](#-setup)
-    - [Pre-requisite](#pre-requisite)
-    - [Installation](#installation)
-    - [Context](#context)
-  - [Troubleshooting](#troubleshooting)
+`@pawl/cdk` provides high-level CDK constructs that enforce best practices out of the box. Each construct includes proper IAM permissions, CloudWatch alarms, tagging, and passes cdk-nag compliance checks.
 
-</details>
+This should be the only CDK dependency in your project — no need to import `aws-cdk-lib`, `aws-cdk`, or `constructs` directly.
 
-## ℹ️ About the Project
+## Available Constructs
 
-This is an internal package which contains constructs and helper methods to create your infrastructure with CDK. It contains all the necessary organisational requirements.
-This should be the only package to put as dependency and no need to require the `aws-cdk-lib`, `aws-cdk` or `constructs`.
+| Construct | Description |
+|-----------|-------------|
+| `ApiGateway` | HTTP API Gateway with Lambda integration |
+| `LambdaFunction` | Lambda function with Powertools, bundling, and alarms |
+| `EventBridge` | EventBridge rules with targets |
+| `Sqs` | SQS queue with DLQ and alarms |
+| `DynamoDbTableWithStreams` | DynamoDB table with stream processing |
+| `ApiDestination` | EventBridge API destination |
+| `Stack` | Base stack with tags and context |
+| `LocalStack` | Localstack integration for local development |
 
-## ❓ Why
+## Setup
 
-- Best practices for the FEH IT at E.ON.
-- Abstract AWS CDK away by providing **"building blocks"**
-  - Using the right AWS resources
-  - Providing pre-defined Constructs
-  - Just trust your IDE
-- Organisational-wide accepted
-  - Includes Tags
-  - Contains the right permissions
+### Prerequisites
 
-## ⚙ ️Setup
-
-### Pre-requisite
-
-- Docker
-- (For deploying) [aws configure sso](https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-sso.html)
-  - `aws sso login --profile my-profile`
+- Docker (for local development)
+- [AWS SSO configured](https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-sso.html) (for deploying)
 
 ### Installation
 
-- `npm install`
-
-> For Local Development: All the following commands required to deploy the stack at least once to Localstack `npm run deploy:local`
+```bash
+bun add @pawl/cdk
+```
 
 ### Context
 
-Each stack has to [set context](https://docs.aws.amazon.com/cdk/v2/guide/get_context_var.html).
-The context is needed for the [tags](./src/basic-tags.ts) and other resource/imports.
+Each stack requires [CDK context](https://docs.aws.amazon.com/cdk/v2/guide/get_context_var.html) for tags and resource configuration.
 
-- via `cdk.context.json`
-- via a `context`- block in `cdk.json`
-- via in your Stack directly `this.setContext("key", "value")`
-- via CLI `npx cdk -c key=value`
+Set context via:
+- `cdk.context.json`
+- A `context` block in `cdk.json`
+- In your stack: `this.node.setContext("key", "value")`
+- CLI: `npx cdk -c key=value`
 
-## 🐬 Local deployment
+## Usage
 
-You can deploy it locally against [Localstack](https://docs.localstack.cloud/overview/) in order to validate your CDK-stack.
+```typescript
+import { ApiGateway, LambdaFunction, defineStacks } from "@pawl/cdk";
 
-You need to bootstrap and deploy first:
+defineStacks((app) => {
+  const stack = new Stack(app, "MyStack");
 
-```sh
-npm run deploy:local
+  const fn = new LambdaFunction(stack, "Handler", {
+    entry: "./src/handler.ts",
+    serviceName: "my-service",
+  });
+
+  new ApiGateway(stack, "Api", {
+    lambdaFunction: fn,
+  });
+});
+```
+
+## Local Development
+
+Deploy locally against [Localstack](https://docs.localstack.cloud/):
+
+```bash
+npx cdk deploy --app "npx tsx index.ts" --require-approval never
 ```
 
 ### Dev Mode
 
-You need to adjust your [`local.dev.ts`](local.dev.ts) and define the folder of your Lambdas. The `@hems-lib/cdk` comes with a `Local` method.
-All the [requirements](#pre-requisite) should be meet.
+Use the `Local` helper for hot-reloading Lambda functions during development:
 
-```sh
-npm run dev
+```typescript
+import { Local } from "@pawl/cdk";
+
+Local({ lambdaDir: "./src" });
 ```
+
+Changes are reflected automatically via [CDK hotswap](https://aws.amazon.com/blogs/containers/accelerating-development-feedback-loops-with-aws-cdk-hotswap-deployments-for-amazon-ecs/).
 
 ## Troubleshooting
 
-It could happen that redeploying fails.
-Try to remove the stack `npm run remove:local` and then redeploy `npm run deploy:local`.
+If redeploying fails locally, remove the stack and redeploy:
 
-<p align="right"><a href="#readme-top">(Back to top)</a></p>
-
+```bash
+npx cdk destroy --app "npx tsx index.ts" --all
+npx cdk deploy --app "npx tsx index.ts" --require-approval never
+```

@@ -30,30 +30,35 @@ export class EventBridgeStack extends Stack {
 			fifo: true,
 		});
 
+		const targets = [
+			{
+				type: lambda,
+				eventPattern,
+			},
+			{
+				type: sqs,
+				eventPattern,
+			},
+		];
+
+		if (!process.env.LOCAL) {
+			targets.push({
+				type: new ApiDestination(this, "ApiDestination", {
+					apiDestinationName: "foo",
+					authorization: Authorization.basic(
+						"foo",
+						SecretValue.unsafePlainText("test-unsafe"),
+					),
+					description: "This goes to an API",
+					endpoint: "https://foo.bar",
+				}),
+				eventPattern,
+			});
+		}
+
 		new EventBridge(this, "test", {
 			eventBusName: "TestEventBus",
-			targets: [
-				{
-					type: lambda,
-					eventPattern,
-				},
-				{
-					type: new ApiDestination(this, "ApiDestination", {
-						apiDestinationName: "foo",
-						authorization: Authorization.basic(
-							"foo",
-							SecretValue.unsafePlainText("test-unsafe"),
-						),
-						description: "This goes to an API",
-						endpoint: "https://foo.bar",
-					}),
-					eventPattern,
-				},
-				{
-					type: sqs,
-					eventPattern,
-				},
-			],
+			targets,
 		});
 	}
 }

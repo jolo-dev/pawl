@@ -1,6 +1,6 @@
 ---
 title: Tutorial
-description: A tutorial for using the pawl's CDK construct library for better onboarding
+description: A tutorial for using pawl's CDK construct library
 ---
 
 In this tutorial, we want to understand how to build infrastructure
@@ -22,31 +22,10 @@ This is what we will build in this tutorial.
 
 ## Getting Started
 
-### Add pawl into your .npmrc
-
-Most-likely your `.npmrc` is inside your home directory (on Mac and Linux: `~`). Add following line
+### Install pawl
 
 ```sh
-@pawl:registry=https://git.eon-cds.de/api/v4/projects/24549/packages/npm/
-//git.eon-cds.de/api/v4/projects/24549/packages/npm/:_authToken="<TOKEN>"
-always-auth=true
-```
-
-`<TOKEN>` should be the same for `@eon-home`.
-
-### Add pawl's Template
-
-It is easier to get started using our template.
-But you can also add it manually.
-
-```sh
-npm create @pawl/cdk-template
-```
-
-### Manually/ Adding to existing
-
-```sh
-npm install @pawl/cdk
+bun add @pawl/cdk
 ```
 
 ### File Structure and Organization

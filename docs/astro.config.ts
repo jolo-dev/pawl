@@ -18,7 +18,7 @@ const common = {
 export default defineConfig({
 	outDir: "../public",
 	// publicDir: "public",
-	base: process.env.NODE_ENV === "production" ? "j64223/aws-lib/" : ".",
+	base: process.env.NODE_ENV === "production" ? "/pawl/" : ".",
 	integrations: [
 		starlight({
 			title: "pawl",

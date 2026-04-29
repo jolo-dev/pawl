@@ -29,8 +29,8 @@ export interface BasicConstructProps {
 }
 
 /**
- * An abstract class to define our constructs in HEMS.
- * It contains default behaviour such as tagging (see [BasicTags](./basic-tags.ts)), CFN outputting and monitoring
+ * An abstract class to define pawl constructs.
+ * It contains default behaviour such as tagging (see [BasicTags](./basic-tags.ts)), CFN outputting and monitoring.
  */
 export abstract class BasicConstruct extends Construct {
 	readonly stack: Stack;

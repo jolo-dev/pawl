@@ -1,5 +1,5 @@
 {
-	"name": "@hems-pawl/docs",
+	"name": "@pawl/docs",
 	"type": "module",
 	"version": "0.0.1",
 	"scripts": {

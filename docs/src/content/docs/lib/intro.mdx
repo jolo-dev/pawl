@@ -1,17 +1,17 @@
 ---
 title: Introduction
-description: An internal HEMS library with powerful constructs, templates and helper functions for AWS development.
+description: pawl — Proficient AWS Library with powerful constructs, templates, and handler wrappers for AWS development.
 sidebar:
     order: 1
 ---
 
-*pawl* (**P**roficient **AW**S **L**ibrary) (pronounce: pɔːl) is a one stop shop that contains best practices of using AWS CDK, AWS Lambda, SAM templates, and any AWS related library for HEMS.
-The goal is that it is the only dependency that provides coding primitives to deploy your service successfully. In addition, these libraries are company compliant and contain best practices when dealing with AWS.
+*pawl* (**P**roficient **AW**S **L**ibrary) (pronounce: pɔːl) is a one-stop shop that contains best practices for using AWS CDK, AWS Lambda, and any AWS-related library.
+The goal is that it is the only dependency that provides coding primitives to deploy your service successfully. In addition, these libraries are compliant and contain best practices when dealing with AWS.
 Furthermore, it should simplify the infrastructure decision so that the developer can focus on logic implementation.
 
 ## Features
 
-This repository offers
+This repository offers:
 
 - Standards and Best practices
 - Powerful AWS CDK Constructs
@@ -26,37 +26,26 @@ The following problems will be addressed.
 
 ### Avoid different versions
 
-Currently, we have multiple repositories. A problem could be to that we have different version for each repositories.
+When working across multiple repositories, version drift becomes a problem. Different repos may use different versions of `aws-cdk-lib` or Node.js runtimes.
 
 ![Problem 1 - Different versions](../../../assets/problem-1.excalidraw.svg)
 
-AWS CDK wants you to install it globally, which may leads to different versions on your machine. Furthermore, the repositories could 
+AWS CDK wants you to install it globally, which may lead to different versions on your machine.
 
 ### Different implementation
 
-Another problem is the different ways to implement AWS Resources. For example, in one repository the older API GW is used whereas the another repo uses the newer version or different NodeJS versions are used.
+Another problem is the different ways to implement AWS Resources. For example, in one repository the older API Gateway is used whereas another repo uses the newer version, or different Node.js versions are used.
 
 ![Problem 2 - Different Implementation for same thing](../../../assets/problem-2.excalidraw.svg)
 
-### No Compliant AWS Resources
+### Non-compliant AWS Resources
 
-From compliance perspective, it could be that the AWS resource has to fullfil compliance such as
-be in the right VPC or having encryption enabled.
-The coding blocks should make it easy to choose the right networking or even to abstract these.
+From a compliance perspective, AWS resources may need to fulfill requirements such as being in the right VPC or having encryption enabled. The constructs make it easy to choose the right configuration and abstract these concerns away.
 
 ![Problem 3 - Non-Compliance](../../../assets/problem-3.excalidraw.svg)
 
-## Pre-Requisite
+## Prerequisites
 
 - Docker
-
-### `.npmrc`
-
-Every library of `@pawl` is coming from the Gitlab registry. Make sure you add
-
-```sh
-@pawl:registry=https://git.eon-cds.de/api/v4/projects/24549/packages/npm/
-//git.eon-cds.de/api/v4/projects/24549/packages/npm/:_authToken="glpat-<your_token>"
-```
-
-It most likely that you have a token from `@eon-home`. You can use that.
+- Bun (latest)
+- Node.js 22+

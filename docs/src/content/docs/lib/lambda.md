@@ -1,14 +1,14 @@
 ---
 title: Getting Started
-description: This is an overview of the capabilities of AWS Lambda with HEMS.
+description: Overview of the @pawl/lambda handler library.
 ---
 
-## AWS Lamda Library
+## AWS Lambda Library
 
-The AWS Lambda lib is a wrapper.
-It includes AWS Lambda Powertools and Zod is completely typesafe.
+`@pawl/lambda` is a typed wrapper around AWS Lambda handlers.
+It includes AWS Lambda Powertools and is completely type-safe with Zod validation.
 
 ### Why?
 
-With this library, we standardize our Lambdas. That means the developer does not need to care about the logger, X-Ray etc.
-Furthermore, this is a helper library to not worry about how to handle the `aws-lambda`. 
+This library standardizes Lambda handlers. Developers don't need to worry about configuring the logger, X-Ray tracing, or metrics.
+It's a helper library that abstracts away the complexity of raw `aws-lambda` types and Powertools setup.

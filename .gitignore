@@ -2,6 +2,7 @@
 !jest.config.js
 *.d.ts
 node_modules
+dist
 
 # CDK asset staging directory
 .cdk.staging
@@ -22,3 +23,6 @@ volume
 .DS_Store
 # for gitlab pages
 public
+
+# AI agent personal overrides
+AGENTS.override.md

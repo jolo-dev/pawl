@@ -1,76 +1,53 @@
- <a name="readme-top"></a>
-
 <div align="center">
 
-# @hem-lib/lambda
+# @pawl/lambda
 
-An internal FEH IT package which contains best practices and a small library for using AWS Lambda in your next project.
+Typed AWS Lambda handler wrappers with built-in Powertools (Logger, Tracer, Metrics).
 
 </div>
 
- <details>
-<summary>Table of Contents</summary>
+## About
 
-- [@hem-lib/lambda](#hem-liblambda)
-  - [ℹ️ About the Project](#about-the-project)
-  - [⚙ ️Setup](#setup)
-    - [Installation](#installation)
-</details>
+`@pawl/lambda` provides correctly typed Lambda handler functions that automatically wire up [AWS Lambda Powertools](https://docs.powertools.aws.dev/lambda/typescript/latest/) for observability. No boilerplate — just write your business logic.
 
-## ℹ️ About the Project
+## Installation
 
-This is an internal package which contains typed AWS Lambda methods to use AWS Lambda with best practices.
-It contains all the necessary organisational requirements by leveraging the core of [AWS Lambda Powertools](https://docs.powertools.aws.dev/lambda/typescript/latest/) such as Logger, Tracer, etc.
-
-## ❓ Why
-
-- Standardized implementation of AWS Lambda withing FEH IT
-- Correctly typed Lambda Handler
-- No worrying about AWS LAmbda Powertools
+```bash
+bun add @pawl/lambda
+```
 
 ## Usage
 
-```sh
-npm install @hems-lib/lambda
-```
+The handler must be `export`-ed. The first parameter is the service name (used for CloudWatch identification). The second parameter is an async callback with the typed `event` and an optional `logger`.
 
-It is aligned with the `@hems-lib/cdk`.
-First, the `handler` has to be `export`-ed. Otherwise, the handler won't be found.
-The first parameter is the name of the service. This will identify the Lambda in Cloudwatch.
-The second parameter is a callback async function which has `event` and an optional [`logger`](https://docs.powertools.aws.dev/lambda/typescript/latest/core/logger/) from Powertools.
-The `event` is respectively typed.
+```typescript
+import { useApiHandler } from "@pawl/lambda";
 
-For example:
-
-```ts
-import { useApiHandler } from "@hems-lib/lambda";
-
-export const handler = useApiHandler("eig-control-charging", async (event, logger) => {
-                                                                    //^ APIGatewayProxyEventV2
-  logger.info('This is an optional logger')
+export const handler = useApiHandler("my-service", async (event, logger) => {
+  logger.info("Request received");
   return {
     statusCode: 200,
     body: JSON.stringify({ message: "Hello World!" }),
   };
 });
-
-
 ```
 
-Here the structure of each events:
+## Available Handlers
 
-| handler | Event Type |
+| Handler | Event Type |
 |---------|------------|
-| useApiHandler | [APIGatewayProxyEventV2](https://typestrong.org/typedoc-auto-docs/_types_aws-lambda/interfaces/APIGatewayProxyEventV2.html) |
-| useSqsHandler | Array<[SQSEvent](https://typestrong.org/typedoc-auto-docs/_types_aws-lambda/interfaces/SQSEvent.html)> |
-| useEventBridge | [EventBridgeEvent](https://typestrong.org/typedoc-auto-docs/_types_aws-lambda/interfaces/EventBridgeEvent.html) |
-| useDynamoDbStream | Array<[DynamoDBStreamEvent](https://typestrong.org/typedoc-auto-docs/_types_aws-lambda/interfaces/DynamoDBStreamEvent.html)> |
+| `useApiHandler` | `APIGatewayProxyEventV2` |
+| `useSqsHandler` | `SQSEvent` (array of records) |
+| `useEventbridgeHandler` | `EventBridgeEvent` |
+| `useDynamoDbStreamsHandler` | `DynamoDBStreamEvent` (array of records) |
+| `useSnsHandler` | `SNSEvent` |
+| `useAuthorizerHandler` | Custom authorizer event |
 
-## Development
+## Adding a New Handler
 
-If you are missing a Handler, you can extend the `src` by adding your Handler and use the `handlerFactory`.
+If you need a handler for an event source not listed above, extend the library:
 
-```ts
+```typescript
 import type { Logger } from "@aws-lambda-powertools/logger";
 import type { S3Event, S3Handler } from "aws-lambda";
 import { handlerFactory } from "./base/handler-factory";
@@ -84,11 +61,8 @@ export function useS3Handler(
 }
 ```
 
-Don't forget to export the handler in the [`index.ts`](./index.ts).
+Then export from `index.ts`:
 
-```ts
+```typescript
 export { useS3Handler } from "./src/s3-handler";
 ```
-
-
-<p align="right"><a href="#readme-top">Top ⬆️</a></p>

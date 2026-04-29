@@ -3,31 +3,44 @@ import {
 	LocalstackContainer,
 	type StartedLocalStackContainer,
 } from "@testcontainers/localstack";
+import { GenericContainer, type StartedTestContainer, Wait } from "testcontainers";
 import { $ } from "bun";
 import * as path from "node:path";
 
 describe("EventbridgeStack", () => {
-	let localstack: StartedLocalStackContainer;
+	let localstack: StartedLocalStackContainer | StartedTestContainer;
 	let endpoint: string;
 	let env: Record<string, string>;
-	const image = process.env.LOCALSTACK_IMAGE || "localstack/localstack:latest";
+	const image = process.env.LOCALSTACK_IMAGE || "nahuelnucera/ministack:latest";
 
 	beforeAll(async () => {
-		localstack = await new LocalstackContainer(image)
-			// Localstack needs access to the Docker socket to run the Lambda functions, so we need to bind mount it
-			.withBindMounts([
-				{
-					source: "/var/run/docker.sock",
-					target: "/var/run/docker.sock",
-					mode: "rw",
-				},
-			])
-			.start();
-		endpoint = localstack.getConnectionUri();
+		const isMinistack = image.includes("ministack");
+
+		if (isMinistack) {
+			localstack = await new GenericContainer(image)
+				.withExposedPorts(4566)
+				.withWaitStrategy(Wait.forLogMessage("Ready."))
+				.withStartupTimeout(30_000)
+				.start();
+			endpoint = `http://${localstack.getHost()}:${localstack.getMappedPort(4566)}`;
+		} else {
+			localstack = await new LocalstackContainer(image)
+				.withBindMounts([
+					{
+						source: "/var/run/docker.sock",
+						target: "/var/run/docker.sock",
+						mode: "rw",
+					},
+				])
+				.start();
+			endpoint = (localstack as StartedLocalStackContainer).getConnectionUri();
+		}
 		console.log(endpoint);
 		const port = new URL(endpoint).port;
 		const url = new URL(endpoint);
-		const s3Endpoint = `http://s3.${url.hostname}:${port}`; // This seems to be the only way to get the correct S3 endpoint for Testcontainers, as it uses a different hostname than the other services
+		const s3Endpoint = isMinistack
+			? endpoint
+			: `http://s3.${url.hostname}:${port}`;
 
 		env = {
 			...process.env,
@@ -35,7 +48,7 @@ describe("EventbridgeStack", () => {
 			AWS_ACCESS_KEY_ID: "test",
 			AWS_SECRET_ACCESS_KEY: "test",
 			AWS_ENDPOINT_URL: endpoint, // The Localstack Container creates a random port, so we need to set it in the environment for CDK Local
-			AWS_ENDPOINT_URL_S3: s3Endpoint, //
+			AWS_ENDPOINT_URL_S3: s3Endpoint,
 			LOCAL: "true", // This is used in the CDK stack to determine whether to use the local API Gateway or the real one
 		};
 
@@ -67,7 +80,7 @@ describe("EventbridgeStack", () => {
 		expect(putResult.FailedEntryCount).toBe(0);
 
 		// Wait for async Lambda invocation
-		await new Promise((r) => setTimeout(r, 5000));
+		await new Promise((r) => setTimeout(r, 10000));
 
 		// Check CloudWatch logs for the Lambda processing the event
 		const logs =

@@ -61,9 +61,12 @@ export class ApiGatewayV1 extends BasicConstruct {
 				allowOrigins: Cors.ALL_ORIGINS,
 				allowMethods: Cors.ALL_METHODS,
 			},
+			cloudWatchRole: !process.env.LOCAL,
 			deployOptions: {
 				stageName: "prod",
-				accessLogDestination: new LogGroupLogDestination(logs),
+				...(!process.env.LOCAL && {
+					accessLogDestination: new LogGroupLogDestination(logs),
+				}),
 			},
 		});
 

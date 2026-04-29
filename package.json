@@ -9,7 +9,9 @@
 	"license": "ISC",
 	"scripts": {
 		"test": "bun test",
-		"build": "bun run --filter '*' build"
+		"build": "bun run --filter '*' build",
+		"lint": "bunx biome check .",
+		"lint:fix": "bunx biome check . --write"
 	},
 	"type": "module",
 	"workspaces": {

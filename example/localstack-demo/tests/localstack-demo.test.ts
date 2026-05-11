@@ -6,7 +6,7 @@ import {
 } from "@testcontainers/localstack";
 import { $ } from "bun";
 
-describe("SimpleApiStack", () => {
+describe("LocalstackDemo", () => {
 	let localstack: StartedLocalStackContainer;
 	let endpoint: string;
 	let env: Record<string, string>;
@@ -28,12 +28,9 @@ describe("SimpleApiStack", () => {
 		console.log("Localstack started", localstack.getId());
 		endpoint = localstack.getConnectionUri();
 		console.log(endpoint);
-		const isMinistack = image.includes("ministack");
 		const port = new URL(endpoint).port;
 		const url = new URL(endpoint);
-		const s3Endpoint = isMinistack
-			? endpoint
-			: `http://s3.${url.hostname}:${port}`;
+		const s3Endpoint = `http://s3.${url.hostname}:${port}`;
 
 		env = {
 			...process.env,
@@ -49,7 +46,7 @@ describe("SimpleApiStack", () => {
 		await $`npx cdklocal bootstrap --app ${cdkApp} --context stage=dev --context team=foo`.env(
 			env,
 		);
-		await $`npx cdklocal deploy SimpleApiStack --app ${cdkApp} --require-approval never --outputs-file /tmp/cdk-outputs.json --context stage=dev --context team=foo`.env(
+		await $`npx cdklocal deploy LocalstackDemoStack --app ${cdkApp} --require-approval never --outputs-file /tmp/cdk-outputs.json --context stage=dev --context team=foo`.env(
 			env,
 		);
 	}, 120000);
@@ -58,29 +55,34 @@ describe("SimpleApiStack", () => {
 		await localstack.stop();
 	});
 
-	it("should return 200 from GET /foo via REST API", async () => {
-		const outputs = await Bun.file("/tmp/cdk-outputs.json").json();
-		const stackOutputs = Object.values(outputs)[0] as Record<string, string>;
-		const cfnUrl = Object.values(stackOutputs).find((v) =>
-			v.includes("execute-api"),
+	it("should send a message to sqs and triggers a Lambda", async () => {
+		const queues =
+			await $`aws sqs list-queues --endpoint-url ${endpoint} --region us-east-1`
+				.env(env)
+				.json();
+		const queueUrl = (queues.QueueUrls as string[]).find((url) =>
+			url.includes("-sqs.fifo"),
 		);
-		if (!cfnUrl) throw new Error("No execute-api URL found in stack outputs");
-		console.log("API Gateway URL:", cfnUrl);
-		const apiId = new URL(cfnUrl).hostname.split(".")[0];
-		const isMinistack = image.includes("ministack");
 
-		let res: Response;
-		if (isMinistack) {
-			// Ministack data plane: route via Host header, stage name is "prod" (not the prefixed CFN output)
-			res = await fetch(`${endpoint}/prod/foo`, {
-				headers: { Host: `${apiId}.execute-api.localhost` },
-			});
-		} else {
-			// LocalStack REST API path format
-			const apiUrl = `${endpoint}/restapis/${apiId}/prod/_user_request_`;
-			res = await fetch(`${apiUrl}/foo`);
-		}
+		console.log("queueUrl", queueUrl);
 
-		expect(res.status).toBe(200);
-	});
+		const sqsMessage = JSON.stringify({
+			message: "Hi",
+		});
+
+		await $`aws sqs send-message --endpoint-url ${endpoint} --region us-east-1 --queue-url ${queueUrl} --message-body ${sqsMessage} --message-group-id test`
+			.env(env)
+			.json();
+
+		// Wait for Lambda to be triggered by SQS
+		await new Promise((r) => setTimeout(r, 5000));
+
+		// Check CloudWatch logs for the Lambda processing the message
+		const logs =
+			await $`aws logs filter-log-events --endpoint-url ${endpoint} --region us-east-1 --log-group-name /aws/lambda/foo-dev-LocalstackLambda-lambda --filter-pattern "Hi"`
+				.env(env)
+				.json();
+
+		expect(logs.events.length).toBeGreaterThan(0);
+	}, 30000);
 });

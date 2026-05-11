@@ -5,6 +5,7 @@ import {
 } from "@aws-sdk/client-bedrock";
 import {
 	CreateTokenCommand,
+	type CreateTokenCommandOutput,
 	RegisterClientCommand,
 	SSOOIDCClient,
 	StartDeviceAuthorizationCommand,
@@ -74,10 +75,10 @@ export async function ssoLogin(profile: string): Promise<void> {
 	);
 
 	console.log(`Opening browser for SSO login:\n${verificationUriComplete}`);
-	await $`open ${verificationUriComplete!}`.quiet();
+	await $`open ${verificationUriComplete ?? ""}`.quiet();
 
 	const pollMs = (interval ?? 5) * 1000;
-	let token;
+	let token: CreateTokenCommandOutput | undefined;
 	while (!token) {
 		await new Promise((r) => setTimeout(r, pollMs));
 		try {
@@ -89,9 +90,10 @@ export async function ssoLogin(profile: string): Promise<void> {
 					grantType: "urn:ietf:params:oauth:grant-type:device_code",
 				}),
 			);
-		} catch (e: any) {
-			if (e.name === "AuthorizationPendingException") continue;
-			if (e.name === "SlowDownException") {
+		} catch (e: unknown) {
+			const err = e as { name?: string };
+			if (err.name === "AuthorizationPendingException") continue;
+			if (err.name === "SlowDownException") {
 				await new Promise((r) => setTimeout(r, pollMs));
 				continue;
 			}

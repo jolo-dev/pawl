@@ -94,15 +94,16 @@ for (const m of allModels) {
 	}
 	if (!scope) scope = "base";
 
-	const prov = baseId.split(".")[0]!;
-	if (!groups.has(baseId)) {
+	const prov = baseId.split(".")[0];
+	if (!groups.has(baseId) && prov) {
 		groups.set(baseId, {
 			baseName: m.name.replace(/ \((US|EU|Global)\)$/, ""),
 			provider: prov,
 			variants: new Map(),
 		});
 	}
-	groups.get(baseId)!.variants.set(scope, m);
+	const group = groups.get(baseId);
+	if (group) group.variants.set(scope, m);
 }
 
 // Build provider list
@@ -150,10 +151,14 @@ while (true) {
 		modelChoice = mc;
 		step = "scope";
 	} else {
-		const group = groups.get(modelChoice)!;
+		const group = groups.get(modelChoice);
+		if (!group) {
+			step = "model";
+			continue;
+		}
 		const scopes = [...group.variants.keys()];
-		if (scopes.length === 1) {
-			scope = scopes[0]!;
+		if (scopes.length === 1 && scopes[0]) {
+			scope = scopes[0];
 			break;
 		}
 		const sc = await select<string | symbol>({
@@ -183,14 +188,26 @@ if (typeof region !== "string") process.exit(0);
 process.env.AWS_REGION = region;
 
 // Patch all base model IDs with region-appropriate inference profile prefix
-const regionPrefix = region.startsWith("eu-") ? "eu." : region.startsWith("ap-") ? "ap." : "us.";
+const regionPrefix = region.startsWith("eu-")
+	? "eu."
+	: region.startsWith("ap-")
+		? "ap."
+		: "us.";
 for (const m of allModels) {
-	if (!m.id.startsWith("us.") && !m.id.startsWith("eu.") && !m.id.startsWith("global.")) {
+	if (
+		!m.id.startsWith("us.") &&
+		!m.id.startsWith("eu.") &&
+		!m.id.startsWith("global.")
+	) {
 		m.id = `${regionPrefix}${m.id}`;
 	}
 }
 
-const model = groups.get(modelChoice)!.variants.get(scope)!;
+const model = groups.get(modelChoice)?.variants.get(scope);
+if (!model) {
+	log.error("Could not resolve model");
+	process.exit(1);
+}
 
 // Verify Bedrock access
 const b = spinner();
@@ -216,15 +233,17 @@ const createRuntime: CreateAgentSessionRuntimeFactory = async ({
 	sessionManager,
 	sessionStartEvent,
 }) => {
-	const services = await createAgentSessionServices({ cwd });
+	const services = await createAgentSessionServices({
+		cwd,
+		authStorage,
+		modelRegistry,
+	});
 	return {
 		...(await createAgentSessionFromServices({
 			services,
 			sessionManager,
 			sessionStartEvent,
 			model,
-			authStorage,
-			modelRegistry,
 		})),
 		services,
 		diagnostics: services.diagnostics,

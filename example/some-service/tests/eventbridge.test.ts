@@ -1,17 +1,22 @@
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
+import * as path from "node:path";
 import {
 	LocalstackContainer,
 	type StartedLocalStackContainer,
 } from "@testcontainers/localstack";
-import { GenericContainer, type StartedTestContainer, Wait } from "testcontainers";
 import { $ } from "bun";
-import * as path from "node:path";
+import {
+	GenericContainer,
+	type StartedTestContainer,
+	Wait,
+} from "testcontainers";
 
 describe("EventbridgeStack", () => {
 	let localstack: StartedLocalStackContainer | StartedTestContainer;
 	let endpoint: string;
 	let env: Record<string, string>;
-	const image = process.env.LOCALSTACK_IMAGE || "nahuelnucera/ministack:latest";
+	const image =
+		process.env.LOCALSTACK_IMAGE || "localstack/localstack:community-archive";
 
 	beforeAll(async () => {
 		const isMinistack = image.includes("ministack");

@@ -216,9 +216,9 @@ export class ApiGateway extends BasicConstruct {
 
 export {
 	HttpIamAuthorizer,
-	HttpUserPoolAuthorizer,
-	HttpLambdaAuthorizer,
 	HttpJwtAuthorizer,
-	HttpNoneAuthorizer,
+	HttpLambdaAuthorizer,
 	HttpLambdaResponseType,
+	HttpNoneAuthorizer,
+	HttpUserPoolAuthorizer,
 };

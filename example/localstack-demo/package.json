@@ -1,0 +1,28 @@
+{
+	"name": "localstack-demo",
+	"version": "1.0.0",
+	"author": "",
+	"devDependencies": {
+		"@pawl/cdk": "workspace:*",
+		"@pawl/lambda": "workspace:*",
+		"@testcontainers/localstack": "^11.11.0",
+		"@types/bun": "catalog:",
+		"aws-cdk-local": "^3.0.1",
+		"cdk-booster": "^1.2.5"
+	},
+	"description": "",
+	"keywords": [],
+	"scripts": {
+		"bootstrap:local": "bun run localstack && bun run cdklocal bootstrap --all",
+		"cdklocal": "AWS_PROFILE=000000000 AWS_ACCESS_KEY_ID=test AWS_SECRET_ACCESS_KEY=test AWS_DEFAULT_REGION=eu-central-1 cdklocal --app 'bun local.dev.ts'",
+		"deploy": "cdk deploy --all",
+		"deploy:local": "bun run localstack && bun run bootstrap:local && bun run cdklocal deploy -- --all",
+		"dev": "bun run localstack && bun run cdklocal watch",
+		"localstack": "docker compose -f ./node_modules/@pawl/cdk/docker-compose.yml up -d",
+		"remove": "cdk destroy --all",
+		"remove:local": "bun run localstack && bun run cdklocal destroy -- --all",
+		"synth:local": "bun run cdklocal synth",
+		"test": "bun test"
+	},
+	"type": "module"
+}

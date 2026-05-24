@@ -36,5 +36,10 @@ describe("Api", () => {
 		template.hasResourceProperties("AWS::ApiGatewayV2::Route", {
 			RouteKey: "GET /test",
 		});
+		template.hasResource("AWS::Lambda::Function", {
+			Properties: {
+				FunctionName: "foo-bar-TestLambdaFunction-lambda",
+			},
+		});
 	});
 });

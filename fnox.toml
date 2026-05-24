@@ -1,0 +1,9 @@
+default_provider = "ssm"
+
+[providers.ssm]
+type = "aws-ps"
+region = "eu-central-1"
+prefix = "/pawl"
+
+[secrets]
+"LOCALSTACK_AUTH_TOKEN" = { provider = "ssm", value = "/localstack/token" }

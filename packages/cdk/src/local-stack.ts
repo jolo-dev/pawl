@@ -6,7 +6,7 @@ import { Stack } from "./stack";
 
 interface LocalStackProps {
 	lambdaDir: string;
-	runtime: "node20" | "node22";
+	runtime: "node22" | "node24";
 }
 
 export class LocalStack extends Stack {

@@ -8,18 +8,21 @@
 		"test:cdk:synth": "cdk --app 'npx tsx ./tests/cdk-stack/index.ts' synth"
 	},
 	"devDependencies": {
-		"aws-cdk": "^2.1030.0",
-		"cdk-nag": "^2.34.23",
-		"zod": "catalog:",
-		"@tsconfig/node22": "catalog:"
+		"@testcontainers/localstack": "^12.0.0",
+		"@tsconfig/node22": "catalog:",
+		"aws-cdk": "^2.1124.1",
+		"aws-cdk-local": "^3.0.4",
+		"cdk-nag": "^2.38.2",
+		"zod": "catalog:"
 	},
 	"dependencies": {
-		"@aws-cdk/aws-pipes-alpha": "^2.220.0-alpha.0",
-		"@aws-cdk/aws-pipes-sources-alpha": "^2.220.0-alpha.0",
-		"@aws-cdk/aws-pipes-targets-alpha": "^2.220.0-alpha.0",
-		"cdk-monitoring-constructs": "^9.1.2",
+		"@aws-cdk/aws-bedrock-agentcore-alpha": "^2.257.0-alpha.0",
+		"@aws-cdk/aws-pipes-alpha": "^2.257.0-alpha.0",
+		"@aws-cdk/aws-pipes-sources-alpha": "^2.257.0-alpha.0",
+		"@aws-cdk/aws-pipes-targets-alpha": "^2.257.0-alpha.0",
 		"@pawl/lambda": "workspace:*",
-		"aws-cdk-lib": "^2.220.0",
-		"constructs": "10.4.2"
+		"aws-cdk-lib": "^2.257.0",
+		"cdk-monitoring-constructs": "^10.0.0",
+		"constructs": "10.6.0"
 	}
 }

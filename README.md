@@ -11,6 +11,7 @@ Opinionated CDK constructs, Lambda handler wrappers, and an AI-powered infrastru
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178c6.svg)](https://www.typescriptlang.org/)
 [![CDK](https://img.shields.io/badge/AWS_CDK-2.x-ff9900.svg)](https://aws.amazon.com/cdk/)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](./CONTRIBUTING.md)
+[![Tested with LocalStack](https://img.shields.io/badge/Tested%20with-LocalStack-1D2D44.svg)](https://localstack.cloud/)
 
 </div>
 

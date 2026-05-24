@@ -5,17 +5,23 @@ import {
 	type StartedLocalStackContainer,
 } from "@testcontainers/localstack";
 import { $ } from "bun";
+import { throwError } from "../src/utils";
 
 describe("SimpleApiStack", () => {
 	let localstack: StartedLocalStackContainer;
 	let endpoint: string;
 	let env: Record<string, string>;
 	const image =
-		process.env.LOCALSTACK_IMAGE || "localstack/localstack:community-archive";
+		process.env.LOCALSTACK_IMAGE || "localstack/localstack:2026.4.2";
 
 	beforeAll(async () => {
 		console.log("Starting Localstack...");
 		localstack = await new LocalstackContainer(image)
+			.withEnvironment({
+				LOCALSTACK_AUTH_TOKEN:
+					process.env.LOCALSTACK_AUTH_TOKEN ??
+					throwError("LOCALSTACK_AUTH_TOKEN is missing"), // TODO
+			})
 			// Localstack needs access to the Docker socket to run the Lambda functions, so we need to bind mount it
 			.withBindMounts([
 				{
@@ -42,7 +48,7 @@ describe("SimpleApiStack", () => {
 			AWS_SECRET_ACCESS_KEY: "test",
 			AWS_ENDPOINT_URL: endpoint, // The Localstack Container creates a random port, so we need to set it in the environment for CDK Local
 			AWS_ENDPOINT_URL_S3: s3Endpoint,
-			LOCAL: "true", // This is used in the CDK stack to determine whether to use the local API Gateway or the real one
+			// LOCAL: "true", // This is used in the CDK stack to determine whether to use the local API Gateway or the real one
 		};
 
 		const cdkApp = `bun run ${path.join(__dirname, "..")}/local.dev.ts`;

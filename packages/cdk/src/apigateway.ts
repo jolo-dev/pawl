@@ -24,6 +24,7 @@ import type { EventBridge } from "./eventbridge";
 import { HttpEventBridgeIntegration } from "./http-eventbridge-integration";
 import type { LambdaFunction } from "./lambda-function";
 import type { Construct, Stack } from "./stack";
+import { resolveScope } from "./stack-function";
 
 type AuthorizerType =
 	| HttpIamAuthorizer
@@ -70,7 +71,7 @@ export interface ApiProps extends BasicConstructProps {
  *
  */
 export class ApiGateway extends BasicConstruct {
-	private httpApi: HttpApi;
+	readonly httpApi: HttpApi;
 
 	/**
 	 * The constructor function initializes an HTTP API with specified routes. Every API GW has an Authorizer(@see {@link foo}).
@@ -87,7 +88,22 @@ export class ApiGateway extends BasicConstruct {
 	 * property for setting a default authorizer for the API, and a `routes` property which is an object
 	 * containing route definitions for the API.
 	 */
-	constructor(scope: Stack, id: string, props: ApiProps) {
+	constructor(scope: Stack, id: string, props: ApiProps);
+	constructor(id: string, props: ApiProps);
+	constructor(
+		scopeOrId: Stack | string,
+		idOrProps: string | ApiProps,
+		maybeProps?: ApiProps,
+	) {
+		const scope = typeof scopeOrId === "string" ? resolveScope() : scopeOrId;
+		const id = typeof scopeOrId === "string" ? scopeOrId : idOrProps;
+		if (typeof id !== "string") {
+			throw new Error("Invalid ApiGateway constructor arguments");
+		}
+		const props =
+			typeof scopeOrId === "string" ? (idOrProps as ApiProps) : maybeProps;
+		if (!props) throw new Error("Invalid ApiGateway constructor arguments");
+
 		super(scope, id);
 
 		this.httpApi = new HttpApi(this, "ApiGateway", {
@@ -97,7 +113,7 @@ export class ApiGateway extends BasicConstruct {
 
 		// Little hack to add logs: https://github.com/aws/aws-cdk/issues/11100#issuecomment-782213423
 		const logs = new LogGroup(this, `${id}-logs`, {
-			logGroupName: `/aws/vendedlogs/${this.prefix}/${id}/logs`,
+			logGroupName: `/aws/pawl/${this.prefix}/${id}/logs`,
 		});
 		const stage = this.httpApi.defaultStage?.node.defaultChild as CfnStage;
 		stage.accessLogSettings = {

@@ -13,3 +13,7 @@ export function createTestApp() {
 // For backward compatibility
 const app = createTestApp();
 export default app;
+
+export function throwError(message: string): never {
+	throw new Error(message);
+}

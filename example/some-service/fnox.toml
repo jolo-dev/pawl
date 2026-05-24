@@ -1,0 +1,2 @@
+[secrets]
+"/localstack/token"= { provider = "ssm", value = "/localstack/token" }

@@ -1,3 +1,4 @@
+export * from "./src/agentcore";
 export * from "./src/api-destination";
 export * from "./src/apigateway";
 export * from "./src/apigateway-v1";
@@ -11,3 +12,5 @@ export { Local, LocalStack } from "./src/local-stack";
 export * from "./src/secret";
 export * from "./src/sqs";
 export * from "./src/stack";
+export type { StackFunction, StacksProps } from "./src/stack-function";
+export { stacks } from "./src/stack-function";

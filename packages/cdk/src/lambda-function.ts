@@ -16,6 +16,7 @@ import {
 	type PolicyStatement,
 } from "./basic-construct";
 import type { Construct, Stack } from "./stack";
+import { resolveScope } from "./stack-function";
 
 /**
  * @interface
@@ -52,7 +53,22 @@ export class LambdaFunction extends BasicConstruct {
 	 * `this.authorizer`. The `NodejsFunction` constructor is being used to create a new Lambda function
 	 * with specific configurations such as function name,
 	 */
-	constructor(scope: Stack, id: string, props: LambdaProps) {
+	constructor(scope: Stack, id: string, props: LambdaProps);
+	constructor(id: string, props: LambdaProps);
+	constructor(
+		scopeOrId: Stack | string,
+		idOrProps: string | LambdaProps,
+		maybeProps?: LambdaProps,
+	) {
+		const scope = typeof scopeOrId === "string" ? resolveScope() : scopeOrId;
+		const id = typeof scopeOrId === "string" ? scopeOrId : idOrProps;
+		if (typeof id !== "string") {
+			throw new Error("Invalid LambdaFunction constructor arguments");
+		}
+		const props =
+			typeof scopeOrId === "string" ? (idOrProps as LambdaProps) : maybeProps;
+		if (!props) throw new Error("Invalid LambdaFunction constructor arguments");
+
 		super(scope, id);
 		this.authorizer = props.authorizer;
 		this.lambda = new NodejsFunction(this, "LambdaFunction", {

@@ -15,8 +15,8 @@
 		"test": "echo \"Error: no test specified\" && exit 1"
 	},
 	"devDependencies": {
-		"@pawl/cdk": "../../packages/cdk",
-		"@pawl/lambda": "../../packages/lambda",
+		"@pawl/cdk": "workspace:*",
+		"@pawl/lambda": "workspace:*",
 		"aws-cdk-local": "^2.18.0",
 		"tsx": "^4.19.2"
 	},

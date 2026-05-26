@@ -46,3 +46,7 @@ can we add an AWS infrastructure diagram when finishing the "plan"
 ---
 
 I want to have diagram in the TUI. My plan is to have a slash command for architecture but later
+
+---
+
+I get an error that /architecture did not generate a mermaid diagram

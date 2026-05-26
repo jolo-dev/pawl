@@ -1,0 +1,98 @@
+{
+  "cli_version": "0.6.2",
+  "checkpoint_id": "f8327c2c1c96",
+  "session_id": "019e6478-3df9-78c9-8121-55ba54262933",
+  "strategy": "manual-commit",
+  "created_at": "2026-05-26T16:01:28.063224Z",
+  "branch": "feat/cli-harness-extraction",
+  "checkpoints_count": 7,
+  "files_touched": [],
+  "agent": "Pi",
+  "model": "",
+  "turn_id": "f80b4b2ce6c8",
+  "token_usage": {
+    "input_tokens": 1842439,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 0,
+    "output_tokens": 30989,
+    "api_call_count": 40
+  },
+  "session_metrics": {
+    "turn_count": 7
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 1016,
+      "user_lines_removed": 306,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".opencode/plugins/entire.ts": 216,
+        ".pi/extensions/entire/index.ts": 73,
+        "packages/cli/index.ts": 129,
+        "packages/cli/skills/pawl-codegen/SKILL.md": 144,
+        "packages/cli/skills/pawl-constructs/SKILL.md": 126,
+        "packages/cli/skills/pawl-plan/SKILL.md": 93,
+        "packages/cli/src/aws-guard.ts": 24,
+        "packages/cli/src/commands.ts": 170,
+        "packages/cli/src/infra-agent.ts": 41
+      },
+      "user_removed_per_file": {
+        ".agents/skills/pawl-constructs/SKILL.md": 144,
+        "packages/cli/index.ts": 129,
+        "packages/cli/src/commands.ts": 30,
+        "packages/cli/src/infra-agent.ts": 3
+      }
+    },
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 1016,
+      "agent_lines_removed": 306
+    },
+    {
+      "checkpoint_number": 3,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 1016,
+      "agent_lines_removed": 306
+    },
+    {
+      "checkpoint_number": 4,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 1016,
+      "agent_lines_removed": 306
+    },
+    {
+      "checkpoint_number": 5,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 1016,
+      "agent_lines_removed": 306
+    },
+    {
+      "checkpoint_number": 6,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 1016,
+      "agent_lines_removed": 306
+    },
+    {
+      "checkpoint_number": 7,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    },
+    {
+      "checkpoint_number": 8,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 1791,
+      "agent_lines_removed": 306
+    }
+  ]
+}

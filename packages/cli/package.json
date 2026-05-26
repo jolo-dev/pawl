@@ -17,5 +17,9 @@
 		"@clack/prompts": "^1.4.0",
 		"@earendil-works/pi-coding-agent": "^0.75.5",
 		"@pawl/cdk": "workspace:*"
+	},
+	"optionalDependencies": {
+		"@flue/runtime": "^0.7.0",
+		"valibot": "^1.0.0"
 	}
 }

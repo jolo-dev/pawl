@@ -153,8 +153,9 @@ ${userNotes ? `User notes: ${userNotes}\n\n` : ""}${scanResult}
 Create a structured plan at .pawl/plan.md that covers:
 1. Application summary (runtime, framework, type)
 2. Proposed architecture (services, network, security, observability)
-3. Deployment strategy
-4. File plan
+3. **Architecture diagram** — a Mermaid \`graph TD\` diagram showing all AWS services and their connections
+4. Deployment strategy
+5. File plan
 
 Wait for my review before generating any code.`;
 		},

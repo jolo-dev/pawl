@@ -54,6 +54,40 @@ Write the plan to `.pawl/plan.md` using this structure:
 - X-Ray Tracing: Enabled for all Lambdas
 - Structured Logging: JSON via Lambda Powertools
 
+### Architecture Diagram
+
+Include a Mermaid `graph TD` diagram showing all AWS services, data flow, and connections. Use AWS-style node labels and group by VPC/subnet when applicable.
+
+Example:
+```mermaid
+graph TD
+    Client["🌐 Client"] -->|HTTPS| ALB["🔶 ALB"]
+    ALB --> ApiGW["🔶 API Gateway"]
+    ApiGW --> Lambda1["⚡ API Handler\nLambda"]
+    Lambda1 --> DynamoDB[("🔷 DynamoDB\nUsers Table")]
+    Lambda1 --> SQS["📦 SQS\nAsync Queue"]
+    SQS --> Lambda2["⚡ Worker Handler\nLambda"]
+    Lambda2 --> S3[("🔶 S3\nAssets Bucket")]
+
+    subgraph Observability
+        CloudWatch["📊 CloudWatch"]
+        XRay["🔍 X-Ray"]
+    end
+    Lambda1 -.-> CloudWatch
+    Lambda1 -.-> XRay
+    Lambda2 -.-> CloudWatch
+    Lambda2 -.-> XRay
+```
+
+**Diagram rules:**
+- Use `graph TD` (top-down) layout
+- Include all services from the proposed architecture
+- Group related services with `subgraph` (e.g., Observability, VPC)
+- Show data flow direction with `-->` (sync) and `-.->` (async/monitoring)
+- Use emoji for AWS service visual identification
+- Label nodes with service name AND the actual resource (e.g., table name, queue name)
+- Keep it readable — max 15-20 nodes
+
 ## Deployment Strategy
 - **Environment**: dev → staging → prod
 - **CDK**: Stack per environment or single stack with context
@@ -85,3 +119,4 @@ Display the plan and ask the user to review. Suggest adjustments:
 5. Prefer serverless over provisioned resources unless justified
 6. Always propose least-privilege IAM
 7. Store the plan at `.pawl/plan.md` for reference during code generation
+8. Include a Mermaid architecture diagram in every plan

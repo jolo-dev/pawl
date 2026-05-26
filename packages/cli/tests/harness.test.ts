@@ -31,6 +31,8 @@ describe("PawlHarness", () => {
 		expect(prompt).toContain(
 			"The codebase scan is already provided below",
 		);
+		expect(prompt).toContain("Architecture diagram");
+		expect(prompt).toContain("Mermaid");
 	});
 
 	test("commands.generate returns generation prompt", async () => {

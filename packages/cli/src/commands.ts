@@ -1,4 +1,5 @@
 import type { ExtensionFactory } from "@earendil-works/pi-coding-agent";
+import { renderPlanDiagram } from "./diagram";
 import { type ExecFn, PawlHarness } from "./harness";
 
 export const pawlCommands: ExtensionFactory = (pi) => {
@@ -63,6 +64,18 @@ export const pawlCommands: ExtensionFactory = (pi) => {
 			});
 			const prompt = await harness.commands.cost();
 			pi.sendUserMessage(prompt);
+		},
+	});
+
+	pi.registerCommand("architecture", {
+		description: "Render the AWS architecture diagram from the current plan",
+		handler: async (_args, ctx) => {
+			const piExec: ExecFn = async (cmd, cmdArgs) => {
+				const result = await pi.exec(cmd, cmdArgs);
+				return { stdout: result.stdout };
+			};
+			const diagram = await renderPlanDiagram(ctx.cwd, piExec);
+			pi.sendUserMessage(diagram);
 		},
 	});
 

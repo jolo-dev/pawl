@@ -146,6 +146,8 @@ export class PawlHarness {
 			const scanResult = await this.scanCodebase();
 			return `Generate an AWS infrastructure plan for this project.
 
+IMPORTANT: The codebase scan is already provided below. Do NOT run additional shell commands (find, cat, ls, grep) to scan files — use the information already provided.
+
 ${userNotes ? `User notes: ${userNotes}\n\n` : ""}${scanResult}
 
 Create a structured plan at .pawl/plan.md that covers:

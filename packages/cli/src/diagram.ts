@@ -1,9 +1,10 @@
 import { renderMermaidASCII } from "beautiful-mermaid";
 
-const MERMAID_REGEX = /```mermaid\n([\s\S]*?)```/g;
+const MERMAID_REGEX = /```[ \t]*mermaid[ \t]*\r?\n([\s\S]*?)```/gi;
 
 /** Extract the first mermaid code block from a string. Returns null if none found. */
 export function extractMermaidCode(content: string): string | null {
+	MERMAID_REGEX.lastIndex = 0;
 	const match = MERMAID_REGEX.exec(content);
 	return match?.[1]?.trim() ?? null;
 }
@@ -11,7 +12,7 @@ export function extractMermaidCode(content: string): string | null {
 /** Extract all mermaid code blocks from a string. */
 export function extractAllMermaidCode(content: string): string[] {
 	const results: string[] = [];
-	const localRegex = /```mermaid\n([\s\S]*?)```/g;
+	const localRegex = /```[ \t]*mermaid[ \t]*\r?\n([\s\S]*?)```/gi;
 	let m: RegExpExecArray | null;
 	m = localRegex.exec(content);
 	while (m !== null) {
@@ -41,7 +42,11 @@ export async function renderPlanDiagram(
 		const { stdout } = await exec("cat", [`${cwd}/.pawl/plan.md`]);
 		const code = extractMermaidCode(stdout);
 		if (!code) {
-			return "No Mermaid diagram found in .pawl/plan.md.\n\nRun /plan first to generate an infrastructure plan with a diagram.";
+			return (
+				"No Mermaid diagram found in .pawl/plan.md.\n\n" +
+				"The agent may not have included a Mermaid diagram in the plan. " +
+				"Ask the agent to add one, then run /architecture again."
+			);
 		}
 		return renderMermaidToTerminal(code);
 	} catch {

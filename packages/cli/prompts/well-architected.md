@@ -11,4 +11,4 @@ Evaluate against all six pillars:
 5. **Cost Optimization** — cost-aware design, resource management
 6. **Sustainability** — environmental impact, resource efficiency
 
-For each pillar, provide: current state, risks identified, and specific recommendations with priority (high/medium/low). $@
+For each pillar, provide: current state, risks identified, and specific recommendations with priority (high/medium/low).

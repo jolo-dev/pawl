@@ -10,5 +10,3 @@ Focus on:
 - Data transfer cost reduction
 - Serverless vs provisioned trade-offs
 - Caching strategies to reduce API calls
-
-$@

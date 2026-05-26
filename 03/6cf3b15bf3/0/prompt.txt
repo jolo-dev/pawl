@@ -1,0 +1,25 @@
+[telegram] hey man
+
+---
+
+What repo are you seeing?
+
+---
+
+[telegram] What is the CLI of pawl supposed to do?
+
+---
+
+[telegram] Currently it creates a Pi TUI to interact with the codebase, but I was thinking if that is not over-engineered. Perhaps building a harness and let the user use their coding agent of choice instead of using Pi. I thought using a harness SDK such as Flue: https://flueframework.com/
+
+---
+
+[telegram] I like both
+
+---
+
+[telegram] Use the skill write-plans to show what you would change step by step
+
+---
+
+yes with sub agents

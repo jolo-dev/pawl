@@ -19,3 +19,7 @@ What repo are you seeing?
 ---
 
 [telegram] Use the skill write-plans to show what you would change step by step
+
+---
+
+yes with sub agents

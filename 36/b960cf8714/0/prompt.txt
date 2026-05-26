@@ -1,0 +1,40 @@
+[telegram] hey man
+
+---
+
+What repo are you seeing?
+
+---
+
+[telegram] What is the CLI of pawl supposed to do?
+
+---
+
+[telegram] Currently it creates a Pi TUI to interact with the codebase, but I was thinking if that is not over-engineered. Perhaps building a harness and let the user use their coding agent of choice instead of using Pi. I thought using a harness SDK such as Flue: https://flueframework.com/
+
+---
+
+[telegram] I like both
+
+---
+
+[telegram] Use the skill write-plans to show what you would change step by step
+
+---
+
+yes with sub agents
+
+---
+
+I am now in ~/Development/pawl/example/some-service and run pawl. The pi TUI is open and I want to use a slash command "plan" but I get following error
+Error: Premature close
+   Deserialization error: to see the raw response, inspect the hidden field
+ {error}.$response on this object.
+ Extension "command:plan" error: ctx.sendUserMessage is not a function. (In
+ 'ctx.sendUserMessage(prompt)', 'ctx.sendUserMessage' is undefined)
+ Extension "command:plan" error: ctx.sendUserMessage is not a function. (In
+ 'ctx.sendUserMessage(prompt)', 'ctx.sendUserMessage' is undefined)
+
+---
+
+Currently it stops after every read and it only continues when I write "continue"

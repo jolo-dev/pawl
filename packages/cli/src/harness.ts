@@ -4,9 +4,10 @@ import { fileURLToPath } from "node:url";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DEFAULT_PROMPTS_DIR = resolve(__dirname, "..", "prompts");
 
-export interface ExecFn {
-	(cmd: string, args: string[]): Promise<{ stdout: string }>;
-}
+export type ExecFn = (
+	cmd: string,
+	args: string[],
+) => Promise<{ stdout: string }>;
 
 export interface PawlHarnessOptions {
 	cwd?: string;
@@ -118,10 +119,7 @@ export class PawlHarness {
 			const srcFiles = stdout.split("\n").filter(Boolean).slice(0, 5);
 			for (const file of srcFiles) {
 				try {
-					const { stdout: content } = await this.exec("head", [
-						"-50",
-						file,
-					]);
+					const { stdout: content } = await this.exec("head", ["-50", file]);
 					results.push(`## ${file}\n\`\`\`\n${content.trim()}\n\`\`\``);
 				} catch {
 					// Skip if can't read

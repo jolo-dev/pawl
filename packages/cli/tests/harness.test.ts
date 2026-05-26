@@ -72,7 +72,7 @@ describe("PawlHarness", () => {
 	test("loadPrompt strips YAML frontmatter", async () => {
 		const harness = new PawlHarness({
 			promptsDir: new URL("../prompts", import.meta.url).pathname,
-			exec: async (cmd, args) => {
+			exec: async (cmd, _args) => {
 				if (cmd === "cat") {
 					return {
 						stdout: "---\nname: test\ndescription: a test\n---\nHello world",

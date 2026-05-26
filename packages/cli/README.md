@@ -1,14 +1,48 @@
 # pawl CLI
 
-An AI-powered infrastructure agent that connects to Amazon Bedrock for generating, reviewing, and optimizing AWS infrastructure.
+An AI-powered infrastructure agent that generates, reviews, and optimizes AWS infrastructure.
 
-## Features
+## Architecture
 
-- **Interactive model selection** — Choose from available Bedrock models (Anthropic, Amazon, Meta, etc.)
-- **AWS SSO integration** — Automatic credential management and SSO login flow
-- **Infrastructure generation** — Generate CDK code from your codebase using `@pawl/cdk` constructs
-- **Well-Architected reviews** — Evaluate infrastructure against all six AWS Well-Architected pillars
-- **Cost optimization** — Analyze and suggest cost improvements
+pawl CLI is built in two layers:
+
+1. **`PawlHarness`** — Runtime-agnostic core that handles codebase scanning and prompt construction. Use this to integrate pawl with any agent framework.
+2. **Pi TUI** — Interactive terminal interface powered by `pi-coding-agent`.
+3. **Flue Agents** — HTTP-accessible agents powered by `@flue/runtime`.
+
+## Usage
+
+### Pi TUI (interactive terminal)
+
+```bash
+bun run index.ts
+```
+
+The CLI will:
+
+1. Prompt you to select an AWS profile
+2. Validate credentials (auto-login via SSO if needed)
+3. Let you choose a Bedrock model (provider → model → scope → region)
+4. Start an interactive agent session
+
+### Flue Agents (HTTP API)
+
+```bash
+npx flue dev --target node --env .env
+curl http://localhost:3583/agents/plan/test-1 \
+  -H "Content-Type: application/json" \
+  -d '{"notes": "Use RDS, not DynamoDB"}'
+```
+
+### Harness (programmatic)
+
+```typescript
+import { PawlHarness } from "@pawl/cli/src/harness";
+
+const harness = new PawlHarness({ cwd: "/path/to/project" });
+const planPrompt = await harness.commands.plan("Use serverless architecture");
+// Send planPrompt to your LLM of choice...
+```
 
 ## Prerequisites
 
@@ -16,26 +50,30 @@ An AI-powered infrastructure agent that connects to Amazon Bedrock for generatin
 - AWS SSO configured (`aws configure sso`)
 - Bun runtime
 
-## Usage
+## Built-in Commands
 
-```bash
-bun run index.ts
-```
-
-The CLI will:
-1. Prompt you to select an AWS profile
-2. Validate credentials (auto-login via SSO if needed)
-3. Let you choose a Bedrock model (provider → model → scope → region)
-4. Start an interactive agent session
+| Command | Description |
+|---------|-------------|
+| `/plan` | Analyze codebase, generate infrastructure plan |
+| `/generate` | Generate CDK code from approved plan |
+| `/well-architected` | AWS Well-Architected Framework review |
+| `/cost` | Cost optimization analysis |
+| `/deploy` | Deploy with CDK (TODO) |
+| `/init` | Initialize new pawl project (TODO) |
+| `/simulate` | Simulate infrastructure changes (TODO) |
 
 ## Built-in Prompts
 
-The CLI includes pre-configured prompts (in `.pi/prompts/`):
+Located in `prompts/`:
 
-- **`@infra`** — Generate AWS CDK infrastructure from your codebase
-- **`@well-architected`** — Run a full Well-Architected Framework review
-- **`@cost`** — Analyze and optimize AWS costs
+- `infra.md` — Generate AWS CDK infrastructure
+- `well-architected.md` — Full Well-Architected review
+- `cost.md` — Cost optimization
 
-## Architecture
+## Skills
 
-Built on [`pi-coding-agent`](https://github.com/nicholasgriffintn/pi-coding-agent) for the interactive TUI and agent session management, with custom AWS credential handling for SSO profiles.
+Located in `skills/`:
+
+- `pawl-constructs` — Reference for `@pawl/cdk` and `@pawl/lambda` APIs
+- `pawl-plan` — Infrastructure plan generation workflow
+- `pawl-codegen` — Infrastructure code generation workflow

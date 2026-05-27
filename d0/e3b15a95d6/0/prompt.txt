@@ -670,3 +670,7 @@ Does it also accept parameter like `pawl init --name foo`?
 ---
 
 override prompts when provided
+
+---
+
+yes. implement it

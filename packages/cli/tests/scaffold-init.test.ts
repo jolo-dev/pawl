@@ -28,6 +28,10 @@ describe("runPawlInit", () => {
 					calls.push("testMode");
 					return "localstack";
 				},
+				promptInstallNow: async () => {
+					calls.push("installNow");
+					return false;
+				},
 			},
 		});
 
@@ -37,12 +41,14 @@ describe("runPawlInit", () => {
 			awsProfile: "dev",
 			testMode: "localstack",
 			projectDir: path.join(dir, "my-app"),
+			installNow: false,
 		});
 		expect(calls).toEqual([
 			"projectName",
 			"packageManager",
 			"awsProfile:dev,prod",
 			"testMode",
+			"installNow",
 		]);
 	});
 

@@ -9,7 +9,11 @@ import {
 	ssoLogin,
 } from "./src/aws-credentials";
 import { startAgent } from "./src/infra-agent";
-import { runPawlInit, writeScaffoldProject } from "./src/scaffold";
+import {
+	installScaffoldDependencies,
+	runPawlInit,
+	writeScaffoldProject,
+} from "./src/scaffold";
 import { parseInitArgs } from "./src/scaffold/cli";
 
 const argv = process.argv.slice(2);
@@ -20,6 +24,11 @@ if (argv[0] === "init") {
 		overrides,
 	});
 	const written = await writeScaffoldProject(config);
+	if (config.installNow) {
+		console.log("Installing dependencies...");
+		await installScaffoldDependencies(config);
+		console.log("Dependencies installed.");
+	}
 	console.log(
 		`Created pawl project "${config.projectName}" in ${config.projectDir} with ${written.length} files.`,
 	);

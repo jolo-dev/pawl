@@ -1,4 +1,4 @@
-import { select, text } from "@clack/prompts";
+import { confirm, select, text } from "@clack/prompts";
 import type { ScaffoldPackageManager, ScaffoldTestMode } from "./types";
 
 export async function promptProjectName(): Promise<string> {
@@ -39,4 +39,10 @@ export async function promptTestMode(): Promise<ScaffoldTestMode> {
 		],
 	});
 	return value;
+}
+
+export async function promptInstallNow(): Promise<boolean> {
+	return confirm({
+		message: "Do you want to install it now?",
+	});
 }

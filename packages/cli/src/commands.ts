@@ -1,7 +1,11 @@
 import type { ExtensionFactory } from "@earendil-works/pi-coding-agent";
 import { renderPlanDiagram } from "./diagram";
 import { type ExecFn, PawlHarness } from "./harness";
-import { runPawlInit, writeScaffoldProject } from "./scaffold";
+import {
+	installScaffoldDependencies,
+	runPawlInit,
+	writeScaffoldProject,
+} from "./scaffold";
 
 export const pawlCommands: ExtensionFactory = (pi) => {
 	pi.registerCommand("plan", {
@@ -92,9 +96,13 @@ export const pawlCommands: ExtensionFactory = (pi) => {
 		handler: async (_args, ctx) => {
 			try {
 				const config = await runPawlInit({ cwd: ctx.cwd });
-				const written = await writeScaffoldProject({ ...config, cwd: ctx.cwd });
+				const written = await writeScaffoldProject(config);
+				if (config.installNow) {
+					ctx.ui.notify("Installing dependencies...", "info");
+					await installScaffoldDependencies(config);
+				}
 				ctx.ui.notify(
-					`Created pawl project "${config.projectName}" with ${written.length} files.`,
+					`Created pawl project "${config.projectName}" in ${config.projectDir} with ${written.length} files.`,
 					"info",
 				);
 			} catch (error) {

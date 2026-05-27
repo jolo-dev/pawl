@@ -39,8 +39,10 @@ You will be prompted for anything you do not pass as a flag:
 - **Package manager** — Bun (recommended), pnpm, or npm (not recommended)
 - **AWS profile** — saved into `cdk.json` and package scripts
 - **Test mode** — LocalStack or none
+- **Install dependencies now** — installs with your chosen package manager if you say yes
 
 Flags override prompts when provided.
+If you choose Bun, the scaffold omits `tsx` from `package.json`.
 If you choose LocalStack, the scaffold includes local dev helpers and example integration test scaffolding. `pawl init` refuses to run in a non-empty directory.
 
 ### Flue Agents (HTTP API)
@@ -77,7 +79,7 @@ const planPrompt = await harness.commands.plan("Use serverless architecture");
 | `/well-architected` | AWS Well-Architected Framework review |
 | `/cost` | Cost optimization analysis |
 | `/deploy` | Deploy with CDK (TODO) |
-| `/init` | Initialize new pawl project (TODO) |
+| `/init` | Initialize new pawl project |
 | `/simulate` | Simulate infrastructure changes (TODO) |
 
 ## Built-in Prompts

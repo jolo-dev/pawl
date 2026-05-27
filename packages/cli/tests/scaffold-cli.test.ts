@@ -58,6 +58,10 @@ describe("runPawlInit overrides", () => {
 					calls.push("testMode");
 					return "localstack";
 				},
+				promptInstallNow: async () => {
+					calls.push("installNow");
+					return true;
+				},
 			},
 		});
 
@@ -66,7 +70,8 @@ describe("runPawlInit overrides", () => {
 			packageManager: "bun",
 			awsProfile: "dev",
 			testMode: "none",
+			installNow: true,
 		});
-		expect(calls).toEqual([]);
+		expect(calls).toEqual(["installNow"]);
 	});
 });

@@ -1,5 +1,5 @@
+import type { ErrnoException } from "node:fs";
 import { readdir } from "node:fs/promises";
-import { type ErrnoException } from "node:fs";
 
 /** Throw if the target directory already contains any files or folders. */
 export async function assertEmptyTargetDir(targetDir: string): Promise<void> {

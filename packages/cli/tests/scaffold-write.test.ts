@@ -17,9 +17,12 @@ describe("writeScaffoldProject", () => {
 		});
 
 		const projectDir = path.join(dir, "my-app");
-		expect(
-			readFileSync(path.join(projectDir, "package.json"), "utf8"),
-		).toContain('"name": "my-app"');
+		const packageJson = readFileSync(
+			path.join(projectDir, "package.json"),
+			"utf8",
+		);
+		expect(packageJson).toContain('"name": "my-app"');
+		expect(packageJson).not.toContain('"tsx": "^4.19.2"');
 		expect(readFileSync(path.join(projectDir, "cdk.json"), "utf8")).toContain(
 			'"awsProfile": "dev"',
 		);
@@ -32,6 +35,24 @@ describe("writeScaffoldProject", () => {
 				"utf8",
 			),
 		).toContain("createLocalstackSetup");
+	});
+
+	test("keeps tsx for pnpm package.json", async () => {
+		const dir = mkdtempSync(path.join(tmpdir(), "pawl-write-pnpm-"));
+		await writeScaffoldProject({
+			cwd: dir,
+			projectDir: path.join(dir, "my-app"),
+			projectName: "my-app",
+			packageManager: "pnpm",
+			awsProfile: "dev",
+			testMode: "none",
+		});
+
+		const packageJson = readFileSync(
+			path.join(dir, "my-app", "package.json"),
+			"utf8",
+		);
+		expect(packageJson).toContain('"tsx": "^4.19.2"');
 	});
 
 	test("omits LocalStack-only files in none mode", async () => {

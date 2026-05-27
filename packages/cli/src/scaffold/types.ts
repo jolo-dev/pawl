@@ -20,6 +20,9 @@ export type ScaffoldProjectConfig = ScaffoldConfig & {
 	cwd: string;
 	projectDir: string;
 };
+export type ScaffoldInitResult = ScaffoldProjectConfig & {
+	installNow: boolean;
+};
 export type ScaffoldInitOverrides = Partial<ScaffoldConfig>;
 
 export function validateScaffoldConfig(

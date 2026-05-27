@@ -10,8 +10,7 @@
 	},
 	"devDependencies": {
 		"@pawl/cdk": "^0.0.1",
-		"@pawl/lambda": "^0.0.1",
-		"tsx": "^4.19.2"{{localstackDevDeps}}
+		"@pawl/lambda": "^0.0.1"{{tsxDevDependency}}{{localstackDevDeps}}
 	},
 	"description": "A pawl scaffold project"
 }

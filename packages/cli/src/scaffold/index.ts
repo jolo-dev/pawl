@@ -1,9 +1,11 @@
+import { spawn } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { listProfiles } from "../aws-credentials";
 import { assertEmptyTargetDir } from "./filesystem";
 import {
 	promptAwsProfile,
+	promptInstallNow,
 	promptPackageManager,
 	promptProjectName,
 	promptTestMode,
@@ -11,6 +13,7 @@ import {
 import { buildTemplateFiles } from "./template";
 import {
 	type ScaffoldInitOverrides,
+	type ScaffoldInitResult,
 	type ScaffoldPackageManager,
 	type ScaffoldProjectConfig,
 	type ScaffoldTestMode,
@@ -23,7 +26,12 @@ export interface PawlInitDeps {
 	promptPackageManager: () => Promise<ScaffoldPackageManager>;
 	promptAwsProfile: (profiles: string[]) => Promise<string>;
 	promptTestMode: () => Promise<ScaffoldTestMode>;
+	promptInstallNow: () => Promise<boolean>;
 	assertEmptyTargetDir: (targetDir: string) => Promise<void>;
+}
+
+export interface ScaffoldInstallDeps {
+	exec: (command: string, args: string[], cwd: string) => Promise<void>;
 }
 
 const defaultDeps: PawlInitDeps = {
@@ -32,14 +40,19 @@ const defaultDeps: PawlInitDeps = {
 	promptPackageManager,
 	promptAwsProfile,
 	promptTestMode,
+	promptInstallNow,
 	assertEmptyTargetDir,
+};
+
+const defaultInstallDeps: ScaffoldInstallDeps = {
+	exec: runCommand,
 };
 
 export async function runPawlInit(options: {
 	cwd: string;
 	overrides?: ScaffoldInitOverrides;
 	deps?: Partial<PawlInitDeps>;
-}): Promise<ScaffoldProjectConfig> {
+}): Promise<ScaffoldInitResult> {
 	const deps = { ...defaultDeps, ...options.deps } satisfies PawlInitDeps;
 
 	const projectName =
@@ -53,6 +66,7 @@ export async function runPawlInit(options: {
 		options.overrides?.awsProfile ??
 		(await deps.promptAwsProfile(await deps.listProfiles()));
 	const testMode = options.overrides?.testMode ?? (await deps.promptTestMode());
+	const installNow = await deps.promptInstallNow();
 
 	const config = validateScaffoldConfig({
 		projectName,
@@ -65,7 +79,48 @@ export async function runPawlInit(options: {
 		...config,
 		cwd: options.cwd,
 		projectDir,
+		installNow,
 	};
+}
+
+export async function installScaffoldDependencies(
+	config: ScaffoldProjectConfig,
+	deps?: Partial<ScaffoldInstallDeps>,
+): Promise<void> {
+	const effectiveDeps = {
+		...defaultInstallDeps,
+		...deps,
+	} satisfies ScaffoldInstallDeps;
+
+	await effectiveDeps.exec(
+		config.packageManager,
+		["install"],
+		config.projectDir,
+	);
+}
+
+async function runCommand(
+	command: string,
+	args: string[],
+	cwd: string,
+): Promise<void> {
+	await new Promise<void>((resolve, reject) => {
+		const child = spawn(command, args, {
+			cwd,
+			shell: false,
+			stdio: "inherit",
+		});
+		child.once("error", reject);
+		child.once("close", (code) => {
+			if (code === 0) {
+				resolve();
+				return;
+			}
+			reject(
+				new Error(`${command} ${args.join(" ")} exited with code ${code}`),
+			);
+		});
+	});
 }
 
 export async function writeScaffoldProject(
@@ -84,6 +139,7 @@ export async function writeScaffoldProject(
 
 export {
 	promptAwsProfile,
+	promptInstallNow,
 	promptPackageManager,
 	promptProjectName,
 	promptTestMode,
@@ -91,6 +147,7 @@ export {
 export {
 	type ScaffoldConfig,
 	type ScaffoldInitOverrides,
+	type ScaffoldInitResult,
 	type ScaffoldPackageManager,
 	type ScaffoldTestMode,
 	validateScaffoldConfig,

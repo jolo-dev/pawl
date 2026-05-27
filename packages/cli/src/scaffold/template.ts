@@ -67,6 +67,8 @@ export async function buildTemplateFiles(
 		testMode: config.testMode,
 		localstackScripts:
 			config.testMode === "localstack" ? getLocalstackScripts(config) : "",
+		tsxDevDependency:
+			config.packageManager === "bun" ? "" : ',\n\t\t"tsx": "^4.19.2"',
 		localstackDevDeps:
 			config.testMode === "localstack" ? getLocalstackDependencies() : "",
 		localstackSection:

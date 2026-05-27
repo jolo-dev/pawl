@@ -2,23 +2,39 @@ import { intro, log, outro, select, spinner, text } from "@clack/prompts";
 import { getModels } from "@earendil-works/pi-ai";
 import { parseKnownFiles } from "@smithy/shared-ini-file-loader";
 import {
-  checkBedrockAccess,
-  checkCredentials,
-  isSSOTokenValid,
-  listProfiles,
-  ssoLogin,
+	checkBedrockAccess,
+	checkCredentials,
+	isSSOTokenValid,
+	listProfiles,
+	ssoLogin,
 } from "./src/aws-credentials";
 import { startAgent } from "./src/infra-agent";
+import { runPawlInit, writeScaffoldProject } from "./src/scaffold";
+import { parseInitArgs } from "./src/scaffold/cli";
+
+const argv = process.argv.slice(2);
+if (argv[0] === "init") {
+	const overrides = parseInitArgs(argv);
+	const config = await runPawlInit({
+		cwd: process.cwd(),
+		overrides,
+	});
+	const written = await writeScaffoldProject({ ...config, cwd: process.cwd() });
+	console.log(
+		`Created pawl project "${config.projectName}" with ${written.length} files.`,
+	);
+	process.exit(0);
+}
 
 intro(
-  "🐾 pawl — your AI agent for deploying, reviewing & optimizing cloud infrastructure",
+	"🐾 pawl — your AI agent for deploying, reviewing & optimizing cloud infrastructure",
 );
 
 // 1. Select AWS profile
 const profiles = await listProfiles();
 const profile = await select({
-  message: "Select an AWS profile",
-  options: profiles.map((p) => ({ value: p, label: p })),
+	message: "Select an AWS profile",
+	options: profiles.map((p) => ({ value: p, label: p })),
 });
 if (typeof profile !== "string") process.exit(0);
 
@@ -31,25 +47,25 @@ const isSSO = !!allProfiles[profile]?.sso_session;
 let valid = false;
 
 if (isSSO) {
-  valid = await isSSOTokenValid(profile);
+	valid = await isSSOTokenValid(profile);
 } else {
-  try {
-    await checkCredentials(profile);
-    valid = true;
-  } catch {
-    valid = false;
-  }
+	try {
+		await checkCredentials(profile);
+		valid = true;
+	} catch {
+		valid = false;
+	}
 }
 
 if (valid) {
-  spin.stop("Credentials valid ✓");
+	spin.stop("Credentials valid ✓");
 } else if (isSSO) {
-  spin.stop("SSO token expired, logging in...");
-  await ssoLogin(profile);
-  log.success("SSO login complete");
+	spin.stop("SSO token expired, logging in...");
+	await ssoLogin(profile);
+	log.success("SSO login complete");
 } else {
-  spin.stop("Credentials invalid for non-SSO profile");
-  process.exit(1);
+	spin.stop("Credentials invalid for non-SSO profile");
+	process.exit(1);
 }
 
 process.env.AWS_PROFILE = profile;
@@ -62,44 +78,44 @@ type Scope = "us" | "eu" | "global" | "amazon" | "base";
 
 type ModelEntry = (typeof allModels)[number];
 interface ModelGroup {
-  baseName: string;
-  provider: string;
-  variants: Map<Scope, ModelEntry>;
+	baseName: string;
+	provider: string;
+	variants: Map<Scope, ModelEntry>;
 }
 
 const groups = new Map<string, ModelGroup>();
 for (const m of allModels) {
-  let scope: Scope | null = null;
-  let baseId = m.id;
-  for (const p of ["us.", "eu.", "global."]) {
-    if (m.id.startsWith(p)) {
-      scope = p.slice(0, -1) as Scope;
-      baseId = m.id.slice(p.length);
-      break;
-    }
-  }
-  if (!scope && m.id.startsWith("amazon.")) {
-    scope = "amazon";
-    baseId = m.id;
-  }
-  if (!scope) scope = "base";
+	let scope: Scope | null = null;
+	let baseId = m.id;
+	for (const p of ["us.", "eu.", "global."]) {
+		if (m.id.startsWith(p)) {
+			scope = p.slice(0, -1) as Scope;
+			baseId = m.id.slice(p.length);
+			break;
+		}
+	}
+	if (!scope && m.id.startsWith("amazon.")) {
+		scope = "amazon";
+		baseId = m.id;
+	}
+	if (!scope) scope = "base";
 
-  const prov = baseId.split(".")[0];
-  if (!groups.has(baseId) && prov) {
-    groups.set(baseId, {
-      baseName: m.name.replace(/ \((US|EU|Global)\)$/, ""),
-      provider: prov,
-      variants: new Map(),
-    });
-  }
-  const group = groups.get(baseId);
-  if (group) group.variants.set(scope, m);
+	const prov = baseId.split(".")[0];
+	if (!groups.has(baseId) && prov) {
+		groups.set(baseId, {
+			baseName: m.name.replace(/ \((US|EU|Global)\)$/, ""),
+			provider: prov,
+			variants: new Map(),
+		});
+	}
+	const group = groups.get(baseId);
+	if (group) group.variants.set(scope, m);
 }
 
 // Build provider list
 const BACK = Symbol("back");
 const providers = [
-  ...new Set([...groups.values()].map((g) => g.provider)),
+	...new Set([...groups.values()].map((g) => g.provider)),
 ].sort();
 
 let provider = "";
@@ -108,95 +124,95 @@ let scope: Scope = "base";
 
 let step: "provider" | "model" | "scope" = "provider";
 while (true) {
-  if (step === "provider") {
-    const p = await select({
-      message: "Select provider",
-      options: providers.map((p) => ({
-        value: p,
-        label: p.charAt(0).toUpperCase() + p.slice(1),
-      })),
-    });
-    if (typeof p !== "string") process.exit(0);
-    provider = p;
-    step = "model";
-  } else if (step === "model") {
-    const providerModels = [...groups.entries()].filter(
-      ([, g]) => g.provider === provider,
-    );
-    const mc = await select<string | symbol>({
-      message: "Select model",
-      options: [
-        { value: BACK, label: "← Back" },
-        ...providerModels.map(([baseId, g]) => ({
-          value: baseId,
-          label: `${g.baseName} — ${[...g.variants.keys()].join(", ")}`,
-        })),
-      ],
-    });
-    if (typeof mc === "symbol" && mc === BACK) {
-      step = "provider";
-      continue;
-    }
-    if (typeof mc !== "string") process.exit(0);
-    modelChoice = mc;
-    step = "scope";
-  } else {
-    const group = groups.get(modelChoice);
-    if (!group) {
-      step = "model";
-      continue;
-    }
-    const scopes = [...group.variants.keys()];
-    if (scopes.length === 1 && scopes[0]) {
-      scope = scopes[0];
-      break;
-    }
-    const sc = await select<string | symbol>({
-      message: "Select scope",
-      options: [
-        { value: BACK, label: "← Back" },
-        ...scopes.map((s) => ({ value: s as string, label: s.toUpperCase() })),
-      ],
-    });
-    if (typeof sc === "symbol" && sc === BACK) {
-      step = "model";
-      continue;
-    }
-    if (typeof sc !== "string") process.exit(0);
-    scope = sc as Scope;
-    break;
-  }
+	if (step === "provider") {
+		const p = await select({
+			message: "Select provider",
+			options: providers.map((p) => ({
+				value: p,
+				label: p.charAt(0).toUpperCase() + p.slice(1),
+			})),
+		});
+		if (typeof p !== "string") process.exit(0);
+		provider = p;
+		step = "model";
+	} else if (step === "model") {
+		const providerModels = [...groups.entries()].filter(
+			([, g]) => g.provider === provider,
+		);
+		const mc = await select<string | symbol>({
+			message: "Select model",
+			options: [
+				{ value: BACK, label: "← Back" },
+				...providerModels.map(([baseId, g]) => ({
+					value: baseId,
+					label: `${g.baseName} — ${[...g.variants.keys()].join(", ")}`,
+				})),
+			],
+		});
+		if (typeof mc === "symbol" && mc === BACK) {
+			step = "provider";
+			continue;
+		}
+		if (typeof mc !== "string") process.exit(0);
+		modelChoice = mc;
+		step = "scope";
+	} else {
+		const group = groups.get(modelChoice);
+		if (!group) {
+			step = "model";
+			continue;
+		}
+		const scopes = [...group.variants.keys()];
+		if (scopes.length === 1 && scopes[0]) {
+			scope = scopes[0];
+			break;
+		}
+		const sc = await select<string | symbol>({
+			message: "Select scope",
+			options: [
+				{ value: BACK, label: "← Back" },
+				...scopes.map((s) => ({ value: s as string, label: s.toUpperCase() })),
+			],
+		});
+		if (typeof sc === "symbol" && sc === BACK) {
+			step = "model";
+			continue;
+		}
+		if (typeof sc !== "string") process.exit(0);
+		scope = sc as Scope;
+		break;
+	}
 }
 
 // Pick region
 const region = await text({
-  message: "AWS region",
-  initialValue: allProfiles[profile]?.region || "us-east-1",
-  validate: (v) => (!v ? "Region is required" : undefined),
+	message: "AWS region",
+	initialValue: allProfiles[profile]?.region || "us-east-1",
+	validate: (v) => (!v ? "Region is required" : undefined),
 });
 if (typeof region !== "string") process.exit(0);
 process.env.AWS_REGION = region;
 
 // Patch all base model IDs with region-appropriate inference profile prefix
 const regionPrefix = region.startsWith("eu-")
-  ? "eu."
-  : region.startsWith("ap-")
-    ? "ap."
-    : "us.";
+	? "eu."
+	: region.startsWith("ap-")
+		? "ap."
+		: "us.";
 for (const m of allModels) {
-  if (
-    !m.id.startsWith("us.") &&
-    !m.id.startsWith("eu.") &&
-    !m.id.startsWith("global.")
-  ) {
-    m.id = `${regionPrefix}${m.id}`;
-  }
+	if (
+		!m.id.startsWith("us.") &&
+		!m.id.startsWith("eu.") &&
+		!m.id.startsWith("global.")
+	) {
+		m.id = `${regionPrefix}${m.id}`;
+	}
 }
 
 const model = groups.get(modelChoice)?.variants.get(scope);
 if (!model) {
-  log.error("Could not resolve model");
-  process.exit(1);
+	log.error("Could not resolve model");
+	process.exit(1);
 }
 
 // Verify Bedrock access
@@ -204,18 +220,18 @@ const b = spinner();
 b.start("Checking Bedrock access...");
 const hasBedrock = await checkBedrockAccess(profile);
 if (hasBedrock) {
-  b.stop("Bedrock access confirmed ✓");
+	b.stop("Bedrock access confirmed ✓");
 } else {
-  b.stop("No Bedrock access for this profile/region");
-  process.exit(1);
+	b.stop("No Bedrock access for this profile/region");
+	process.exit(1);
 }
 
 outro(
-  `Starting — profile: ${profile} | region: ${region} | model: ${model.name} (${model.id})`,
+	`Starting — profile: ${profile} | region: ${region} | model: ${model.name} (${model.id})`,
 );
 
 // 6. Start pi-coding-agent interactive TUI
 await startAgent(
-  model,
-  `[pawl-cli] Connected — profile: ${profile} | region: ${region} | model: ${model.name}`,
+	model,
+	`[pawl-cli] Connected — profile: ${profile} | region: ${region} | model: ${model.name}`,
 );

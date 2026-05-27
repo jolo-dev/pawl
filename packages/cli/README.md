@@ -31,14 +31,16 @@ Create a new pawl project from a clean directory:
 
 ```bash
 pawl init
+pawl init --name my-app --package-manager bun --aws-profile dev --test-mode localstack
 ```
 
-You will be prompted for:
+You will be prompted for anything you do not pass as a flag:
 - **Project name** (required, no default)
 - **Package manager** — Bun (recommended), pnpm, or npm (not recommended)
 - **AWS profile** — saved into `cdk.json` and package scripts
 - **Test mode** — LocalStack or none
 
+Flags override prompts when provided.
 If you choose LocalStack, the scaffold includes local dev helpers and example integration test scaffolding. `pawl init` refuses to run in a non-empty directory.
 
 ### Flue Agents (HTTP API)

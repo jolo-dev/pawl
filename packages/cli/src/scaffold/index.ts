@@ -11,6 +11,7 @@ import {
 import { buildTemplateFiles } from "./template";
 import {
 	type ScaffoldConfig,
+	type ScaffoldInitOverrides,
 	type ScaffoldPackageManager,
 	type ScaffoldProjectConfig,
 	type ScaffoldTestMode,
@@ -37,15 +38,20 @@ const defaultDeps: PawlInitDeps = {
 
 export async function runPawlInit(options: {
 	cwd: string;
+	overrides?: ScaffoldInitOverrides;
 	deps?: Partial<PawlInitDeps>;
 }): Promise<ScaffoldConfig> {
 	const deps = { ...defaultDeps, ...options.deps } satisfies PawlInitDeps;
 	await deps.assertEmptyTargetDir(options.cwd);
-	const profiles = await deps.listProfiles();
-	const projectName = await deps.promptProjectName();
-	const packageManager = await deps.promptPackageManager();
-	const awsProfile = await deps.promptAwsProfile(profiles);
-	const testMode = await deps.promptTestMode();
+
+	const projectName =
+		options.overrides?.projectName ?? (await deps.promptProjectName());
+	const packageManager =
+		options.overrides?.packageManager ?? (await deps.promptPackageManager());
+	const awsProfile =
+		options.overrides?.awsProfile ??
+		(await deps.promptAwsProfile(await deps.listProfiles()));
+	const testMode = options.overrides?.testMode ?? (await deps.promptTestMode());
 
 	return validateScaffoldConfig({
 		projectName,
@@ -77,6 +83,7 @@ export {
 } from "./prompts";
 export {
 	type ScaffoldConfig,
+	type ScaffoldInitOverrides,
 	type ScaffoldPackageManager,
 	type ScaffoldTestMode,
 	validateScaffoldConfig,

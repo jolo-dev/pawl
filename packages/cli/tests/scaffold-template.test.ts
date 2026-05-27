@@ -1,8 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import {
-	getTemplateManifest,
-	renderTemplate,
-} from "../src/scaffold/template";
+import { getTemplateManifest, renderTemplate } from "../src/scaffold/template";
 
 describe("getTemplateManifest", () => {
 	test("includes local.dev.ts for LocalStack", () => {

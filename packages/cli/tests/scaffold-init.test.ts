@@ -1,7 +1,7 @@
+import { describe, expect, test } from "bun:test";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { describe, expect, test } from "bun:test";
 import { runPawlInit } from "../src/scaffold";
 
 describe("runPawlInit", () => {

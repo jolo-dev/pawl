@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
-	validateScaffoldConfig,
 	type ScaffoldConfigInput,
+	validateScaffoldConfig,
 } from "../src/scaffold/types";
 
 describe("validateScaffoldConfig", () => {

@@ -10,7 +10,6 @@ import {
 } from "./prompts";
 import { buildTemplateFiles } from "./template";
 import {
-	type ScaffoldConfig,
 	type ScaffoldInitOverrides,
 	type ScaffoldPackageManager,
 	type ScaffoldProjectConfig,
@@ -40,12 +39,14 @@ export async function runPawlInit(options: {
 	cwd: string;
 	overrides?: ScaffoldInitOverrides;
 	deps?: Partial<PawlInitDeps>;
-}): Promise<ScaffoldConfig> {
+}): Promise<ScaffoldProjectConfig> {
 	const deps = { ...defaultDeps, ...options.deps } satisfies PawlInitDeps;
-	await deps.assertEmptyTargetDir(options.cwd);
 
 	const projectName =
 		options.overrides?.projectName ?? (await deps.promptProjectName());
+	const projectDir = join(options.cwd, projectName);
+	await deps.assertEmptyTargetDir(projectDir);
+
 	const packageManager =
 		options.overrides?.packageManager ?? (await deps.promptPackageManager());
 	const awsProfile =
@@ -53,12 +54,18 @@ export async function runPawlInit(options: {
 		(await deps.promptAwsProfile(await deps.listProfiles()));
 	const testMode = options.overrides?.testMode ?? (await deps.promptTestMode());
 
-	return validateScaffoldConfig({
+	const config = validateScaffoldConfig({
 		projectName,
 		packageManager,
 		awsProfile,
 		testMode,
 	});
+
+	return {
+		...config,
+		cwd: options.cwd,
+		projectDir,
+	};
 }
 
 export async function writeScaffoldProject(
@@ -67,7 +74,7 @@ export async function writeScaffoldProject(
 	const files = await buildTemplateFiles(config);
 	const written: string[] = [];
 	for (const file of files) {
-		const outputPath = join(config.cwd, file.path);
+		const outputPath = join(config.projectDir, file.path);
 		await mkdir(dirname(outputPath), { recursive: true });
 		await writeFile(outputPath, file.content, "utf8");
 		written.push(outputPath);

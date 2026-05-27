@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { runPawlInit } from "../src/scaffold";
@@ -36,6 +36,7 @@ describe("runPawlInit", () => {
 			packageManager: "bun",
 			awsProfile: "dev",
 			testMode: "localstack",
+			projectDir: path.join(dir, "my-app"),
 		});
 		expect(calls).toEqual([
 			"projectName",
@@ -45,19 +46,24 @@ describe("runPawlInit", () => {
 		]);
 	});
 
-	test("refuses to run when target directory is not empty", async () => {
+	test("refuses to run when target project directory is not empty", async () => {
 		const dir = mkdtempSync(path.join(tmpdir(), "pawl-init-blocked-"));
-		writeFileSync(path.join(dir, "README.md"), "existing file");
+		const projectDir = path.join(dir, "my-app");
+		mkdirSync(projectDir, { recursive: true });
+		writeFileSync(path.join(projectDir, "README.md"), "existing file");
 
 		const promptCalls: string[] = [];
 		await expect(
 			runPawlInit({
 				cwd: dir,
+				overrides: {
+					projectName: "my-app",
+				},
 				deps: {
 					listProfiles: async () => ["dev"],
 					promptProjectName: async () => {
 						promptCalls.push("projectName");
-						return "my-app";
+						return "should-not-run";
 					},
 					promptPackageManager: async () => {
 						promptCalls.push("packageManager");

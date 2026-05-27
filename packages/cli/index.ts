@@ -19,9 +19,9 @@ if (argv[0] === "init") {
 		cwd: process.cwd(),
 		overrides,
 	});
-	const written = await writeScaffoldProject({ ...config, cwd: process.cwd() });
+	const written = await writeScaffoldProject(config);
 	console.log(
-		`Created pawl project "${config.projectName}" with ${written.length} files.`,
+		`Created pawl project "${config.projectName}" in ${config.projectDir} with ${written.length} files.`,
 	);
 	process.exit(0);
 }

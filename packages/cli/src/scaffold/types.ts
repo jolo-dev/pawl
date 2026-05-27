@@ -16,7 +16,10 @@ export type ScaffoldPackageManager = z.infer<
 export type ScaffoldTestMode = z.infer<typeof scaffoldTestModeSchema>;
 export type ScaffoldConfigInput = z.input<typeof scaffoldConfigInputSchema>;
 export type ScaffoldConfig = z.infer<typeof scaffoldConfigInputSchema>;
-export type ScaffoldProjectConfig = ScaffoldConfig & { cwd: string };
+export type ScaffoldProjectConfig = ScaffoldConfig & {
+	cwd: string;
+	projectDir: string;
+};
 export type ScaffoldInitOverrides = Partial<ScaffoldConfig>;
 
 export function validateScaffoldConfig(

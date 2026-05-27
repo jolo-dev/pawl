@@ -1,0 +1,51 @@
+{
+  "cli_version": "0.6.2",
+  "checkpoint_id": "55726d59f89d",
+  "session_id": "019e6478-3df9-78c9-8121-55ba54262933",
+  "strategy": "manual-commit",
+  "created_at": "2026-05-27T10:00:43.345667Z",
+  "branch": "feat/cli-harness-extraction",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "packages/cli/README.md",
+    "packages/cli/src/commands.ts",
+    "packages/cli/src/scaffold/index.ts",
+    "packages/cli/src/scaffold/prompts.ts",
+    "packages/cli/src/scaffold/template.ts",
+    "packages/cli/src/scaffold/types.ts"
+  ],
+  "agent": "Pi",
+  "model": "",
+  "turn_id": "191edc143d22",
+  "token_usage": {
+    "input_tokens": 22151398,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 13133312,
+    "output_tokens": 113060,
+    "api_call_count": 260
+  },
+  "session_metrics": {
+    "turn_count": 17
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-05-27T10:00:43.291215Z",
+    "agent_lines": 105,
+    "agent_removed": 30,
+    "human_added": 0,
+    "human_modified": 2,
+    "human_removed": 0,
+    "total_committed": 107,
+    "total_lines_changed": 137,
+    "agent_percentage": 98.54014598540147,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    }
+  ]
+}

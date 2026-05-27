@@ -674,3 +674,7 @@ override prompts when provided
 ---
 
 yes. implement it
+
+---
+
+Change that when passing a name it creates a folder with that name and put the files into that. Also the package.json should be named as such

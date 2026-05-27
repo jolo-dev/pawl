@@ -690,3 +690,7 @@ Ask the question and skip installation unless the user says yes
 ---
 
 yes looks good
+
+---
+
+yes looks good

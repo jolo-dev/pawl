@@ -1,0 +1,23 @@
+{
+  "cli_version": "0.6.2",
+  "checkpoint_id": "4e24a001f1ed",
+  "strategy": "manual-commit",
+  "branch": "feat/cli-harness-extraction",
+  "checkpoints_count": 2,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/4e/24a001f1ed/0/metadata.json",
+      "transcript": "/4e/24a001f1ed/0/full.jsonl",
+      "content_hash": "/4e/24a001f1ed/0/content_hash.txt",
+      "prompt": "/4e/24a001f1ed/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 22661686,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 21601280,
+    "output_tokens": 136516,
+    "api_call_count": 296
+  }
+}

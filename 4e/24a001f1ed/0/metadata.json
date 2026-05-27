@@ -1,0 +1,43 @@
+{
+  "cli_version": "0.6.2",
+  "checkpoint_id": "4e24a001f1ed",
+  "session_id": "019e6478-3df9-78c9-8121-55ba54262933",
+  "strategy": "manual-commit",
+  "created_at": "2026-05-27T12:11:29.526875Z",
+  "branch": "feat/cli-harness-extraction",
+  "checkpoints_count": 2,
+  "files_touched": [],
+  "agent": "Pi",
+  "model": "",
+  "turn_id": "9b90a85879b3",
+  "token_usage": {
+    "input_tokens": 22661686,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 21601280,
+    "output_tokens": 136516,
+    "api_call_count": 296
+  },
+  "session_metrics": {
+    "turn_count": 21
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    },
+    {
+      "checkpoint_number": 3,
+      "user_lines_added": 289,
+      "user_lines_removed": 0,
+      "agent_lines_added": 1945,
+      "agent_lines_removed": 2,
+      "user_added_per_file": {
+        ".opencode/plugins/entire.ts": 216,
+        ".pi/extensions/entire/index.ts": 73
+      }
+    }
+  ]
+}

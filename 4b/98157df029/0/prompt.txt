@@ -658,3 +658,7 @@ When running "pawl init" the pawl CLI should create a new pawl project. Basicall
 ---
 
 Remove Ministack for now and just have the two options "LocalStack" and "none"
+
+---
+
+1

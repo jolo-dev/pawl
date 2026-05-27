@@ -1,8 +1,5 @@
 import { select, text } from "@clack/prompts";
-import type {
-	ScaffoldPackageManager,
-	ScaffoldTestMode,
-} from "./types";
+import type { ScaffoldPackageManager, ScaffoldTestMode } from "./types";
 
 export async function promptProjectName(): Promise<string> {
 	const name = await text({

@@ -1,4 +1,4 @@
-import { z, ZodError } from "zod";
+import { ZodError, z } from "zod";
 
 export const scaffoldPackageManagerSchema = z.enum(["bun", "pnpm", "npm"]);
 export const scaffoldTestModeSchema = z.enum(["localstack", "none"]);
@@ -10,12 +10,17 @@ export const scaffoldConfigInputSchema = z.object({
 	testMode: scaffoldTestModeSchema,
 });
 
-export type ScaffoldPackageManager = z.infer<typeof scaffoldPackageManagerSchema>;
+export type ScaffoldPackageManager = z.infer<
+	typeof scaffoldPackageManagerSchema
+>;
 export type ScaffoldTestMode = z.infer<typeof scaffoldTestModeSchema>;
 export type ScaffoldConfigInput = z.input<typeof scaffoldConfigInputSchema>;
 export type ScaffoldConfig = z.infer<typeof scaffoldConfigInputSchema>;
+export type ScaffoldProjectConfig = ScaffoldConfig & { cwd: string };
 
-export function validateScaffoldConfig(input: ScaffoldConfigInput): ScaffoldConfig {
+export function validateScaffoldConfig(
+	input: ScaffoldConfigInput,
+): ScaffoldConfig {
 	try {
 		return scaffoldConfigInputSchema.parse(input);
 	} catch (error: unknown) {

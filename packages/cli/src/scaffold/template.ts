@@ -7,9 +7,17 @@ export interface TemplateManifest {
 	files: string[];
 }
 
-const TEMPLATE_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "templates", "pawl-init");
+const TEMPLATE_ROOT = join(
+	dirname(fileURLToPath(import.meta.url)),
+	"..",
+	"..",
+	"templates",
+	"pawl-init",
+);
 
-export function getTemplateManifest(options: { testMode: ScaffoldTestMode }): TemplateManifest {
+export function getTemplateManifest(options: {
+	testMode: ScaffoldTestMode;
+}): TemplateManifest {
 	const files = [
 		"package.json",
 		"cdk.json",
@@ -45,7 +53,9 @@ export async function loadTemplateFile(relativePath: string): Promise<string> {
 	return readFile(join(TEMPLATE_ROOT, relativePath), "utf8");
 }
 
-export async function buildTemplateFiles(config: ScaffoldConfig): Promise<Array<{ path: string; content: string }>> {
+export async function buildTemplateFiles(
+	config: ScaffoldConfig,
+): Promise<Array<{ path: string; content: string }>> {
 	const manifest = getTemplateManifest({ testMode: config.testMode });
 	const variables = {
 		projectName: config.projectName,
@@ -55,9 +65,12 @@ export async function buildTemplateFiles(config: ScaffoldConfig): Promise<Array<
 		packageManagerExec: getPackageManagerExec(config.packageManager),
 		awsProfile: config.awsProfile,
 		testMode: config.testMode,
-		localstackScripts: config.testMode === "localstack" ? getLocalstackScripts(config) : "",
-		localstackDevDeps: config.testMode === "localstack" ? getLocalstackDependencies() : "",
-		localstackSection: config.testMode === "localstack" ? getLocalstackReadmeSection() : "",
+		localstackScripts:
+			config.testMode === "localstack" ? getLocalstackScripts(config) : "",
+		localstackDevDeps:
+			config.testMode === "localstack" ? getLocalstackDependencies() : "",
+		localstackSection:
+			config.testMode === "localstack" ? getLocalstackReadmeSection() : "",
 	};
 
 	const files = [];
@@ -79,7 +92,9 @@ function toPascalCase(input: string): string {
 		.join("");
 }
 
-function getPackageManagerRun(packageManager: ScaffoldConfig["packageManager"]): string {
+function getPackageManagerRun(
+	packageManager: ScaffoldConfig["packageManager"],
+): string {
 	switch (packageManager) {
 		case "bun":
 			return "bun run";
@@ -90,7 +105,9 @@ function getPackageManagerRun(packageManager: ScaffoldConfig["packageManager"]):
 	}
 }
 
-function getPackageManagerExec(packageManager: ScaffoldConfig["packageManager"]): string {
+function getPackageManagerExec(
+	packageManager: ScaffoldConfig["packageManager"],
+): string {
 	switch (packageManager) {
 		case "bun":
 			return "bunx";
@@ -104,10 +121,10 @@ function getPackageManagerExec(packageManager: ScaffoldConfig["packageManager"])
 function getLocalstackScripts(config: ScaffoldConfig): string {
 	const run = getPackageManagerRun(config.packageManager);
 	return [
-		`,\n\t\t\"localstack\": \"docker compose -f ./node_modules/@pawl/cdk/docker-compose.yml up -d\",`,
-		`\"bootstrap:local\": \"${run} localstack && AWS_ACCESS_KEY_ID=test AWS_SECRET_ACCESS_KEY=test AWS_DEFAULT_REGION=us-east-1 AWS_PROFILE=${config.awsProfile} ${getPackageManagerExec(config.packageManager)} cdk bootstrap --all\",`,
-		`\"deploy:local\": \"${run} localstack && ${run} bootstrap:local && AWS_ACCESS_KEY_ID=test AWS_SECRET_ACCESS_KEY=test AWS_DEFAULT_REGION=us-east-1 AWS_PROFILE=${config.awsProfile} ${getPackageManagerExec(config.packageManager)} cdk deploy --all\",`,
-		`\"dev\": \"${run} localstack && AWS_ACCESS_KEY_ID=test AWS_SECRET_ACCESS_KEY=test AWS_DEFAULT_REGION=us-east-1 AWS_PROFILE=${config.awsProfile} ${getPackageManagerExec(config.packageManager)} cdk watch\",`,
+		`,\n\t\t"localstack": "docker compose -f ./node_modules/@pawl/cdk/docker-compose.yml up -d",`,
+		`"bootstrap:local": "${run} localstack && AWS_ACCESS_KEY_ID=test AWS_SECRET_ACCESS_KEY=test AWS_DEFAULT_REGION=us-east-1 AWS_PROFILE=${config.awsProfile} ${getPackageManagerExec(config.packageManager)} cdk bootstrap --all",`,
+		`"deploy:local": "${run} localstack && ${run} bootstrap:local && AWS_ACCESS_KEY_ID=test AWS_SECRET_ACCESS_KEY=test AWS_DEFAULT_REGION=us-east-1 AWS_PROFILE=${config.awsProfile} ${getPackageManagerExec(config.packageManager)} cdk deploy --all",`,
+		`"dev:local": "${run} localstack && AWS_ACCESS_KEY_ID=test AWS_SECRET_ACCESS_KEY=test AWS_DEFAULT_REGION=us-east-1 AWS_PROFILE=${config.awsProfile} ${getPackageManagerExec(config.packageManager)} cdk watch"`,
 	].join("\n\t\t");
 }
 
@@ -122,6 +139,6 @@ function getLocalstackReadmeSection(): string {
 		"",
 		"This scaffold includes a local development entrypoint and LocalStack helper scripts.",
 		"",
-		"Use `bun run dev` / `pnpm run dev` / `npm run dev` after starting Docker.",
+		"Use `bun run dev:local` / `pnpm run dev:local` / `npm run dev:local` after starting Docker.",
 	].join("\n");
 }

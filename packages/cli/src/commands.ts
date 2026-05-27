@@ -1,6 +1,7 @@
 import type { ExtensionFactory } from "@earendil-works/pi-coding-agent";
 import { renderPlanDiagram } from "./diagram";
 import { type ExecFn, PawlHarness } from "./harness";
+import { runPawlInit, writeScaffoldProject } from "./scaffold";
 
 export const pawlCommands: ExtensionFactory = (pi) => {
 	pi.registerCommand("plan", {
@@ -79,13 +80,36 @@ export const pawlCommands: ExtensionFactory = (pi) => {
 		},
 	});
 
-	// Placeholder commands (not yet implemented)
-	for (const cmd of ["deploy", "init", "simulate"]) {
-		pi.registerCommand(cmd, {
-			description: `${cmd} (not yet implemented)`,
-			handler: async () => {
-				// TODO: implement
-			},
-		});
-	}
+	pi.registerCommand("deploy", {
+		description: "Deploy infrastructure with CDK",
+		handler: async () => {
+			// TODO: implement
+		},
+	});
+
+	pi.registerCommand("init", {
+		description: "Initialize a new pawl project",
+		handler: async (_args, ctx) => {
+			try {
+				const config = await runPawlInit({ cwd: ctx.cwd });
+				const written = await writeScaffoldProject({ ...config, cwd: ctx.cwd });
+				ctx.ui.notify(
+					`Created pawl project "${config.projectName}" with ${written.length} files.`,
+					"info",
+				);
+			} catch (error) {
+				ctx.ui.notify(
+					error instanceof Error ? error.message : String(error),
+					"error",
+				);
+			}
+		},
+	});
+
+	pi.registerCommand("simulate", {
+		description: "Simulate infrastructure changes",
+		handler: async () => {
+			// TODO: implement
+		},
+	});
 };

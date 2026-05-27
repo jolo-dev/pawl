@@ -25,6 +25,22 @@ The CLI will:
 3. Let you choose a Bedrock model (provider → model → scope → region)
 4. Start an interactive agent session
 
+### `pawl init`
+
+Create a new pawl project from a clean directory:
+
+```bash
+pawl init
+```
+
+You will be prompted for:
+- **Project name** (required, no default)
+- **Package manager** — Bun (recommended), pnpm, or npm (not recommended)
+- **AWS profile** — saved into `cdk.json` and package scripts
+- **Test mode** — LocalStack or none
+
+If you choose LocalStack, the scaffold includes local dev helpers and example integration test scaffolding. `pawl init` refuses to run in a non-empty directory.
+
 ### Flue Agents (HTTP API)
 
 ```bash

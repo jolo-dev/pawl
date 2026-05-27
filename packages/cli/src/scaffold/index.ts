@@ -1,14 +1,18 @@
+import { mkdir, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import { listProfiles } from "../aws-credentials";
+import { assertEmptyTargetDir } from "./filesystem";
 import {
 	promptAwsProfile,
 	promptPackageManager,
 	promptProjectName,
 	promptTestMode,
 } from "./prompts";
-import { assertEmptyTargetDir } from "./filesystem";
+import { buildTemplateFiles } from "./template";
 import {
 	type ScaffoldConfig,
 	type ScaffoldPackageManager,
+	type ScaffoldProjectConfig,
 	type ScaffoldTestMode,
 	validateScaffoldConfig,
 } from "./types";
@@ -51,6 +55,20 @@ export async function runPawlInit(options: {
 	});
 }
 
+export async function writeScaffoldProject(
+	config: ScaffoldProjectConfig,
+): Promise<string[]> {
+	const files = await buildTemplateFiles(config);
+	const written: string[] = [];
+	for (const file of files) {
+		const outputPath = join(config.cwd, file.path);
+		await mkdir(dirname(outputPath), { recursive: true });
+		await writeFile(outputPath, file.content, "utf8");
+		written.push(outputPath);
+	}
+	return written;
+}
+
 export {
 	promptAwsProfile,
 	promptPackageManager,
@@ -58,8 +76,8 @@ export {
 	promptTestMode,
 } from "./prompts";
 export {
-	validateScaffoldConfig,
 	type ScaffoldConfig,
 	type ScaffoldPackageManager,
 	type ScaffoldTestMode,
+	validateScaffoldConfig,
 } from "./types";

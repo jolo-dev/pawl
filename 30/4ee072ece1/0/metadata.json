@@ -1,0 +1,120 @@
+{
+  "cli_version": "0.6.2",
+  "checkpoint_id": "304ee072ece1",
+  "session_id": "019e6478-3df9-78c9-8121-55ba54262933",
+  "strategy": "manual-commit",
+  "created_at": "2026-05-27T20:31:39.325647Z",
+  "branch": "feat/cli-harness-extraction",
+  "checkpoints_count": 5,
+  "files_touched": [],
+  "agent": "Pi",
+  "model": "",
+  "turn_id": "5b6858e041c3",
+  "token_usage": {
+    "input_tokens": 22755287,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 23579136,
+    "output_tokens": 159866,
+    "api_call_count": 334
+  },
+  "session_metrics": {
+    "turn_count": 25
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    },
+    {
+      "checkpoint_number": 3,
+      "user_lines_added": 501,
+      "user_lines_removed": 0,
+      "agent_lines_added": 1945,
+      "agent_lines_removed": 2,
+      "user_added_per_file": {
+        ".opencode/plugins/entire.ts": 216,
+        ".pi/extensions/entire/index.ts": 73,
+        "example/super-app/README.md": 27,
+        "example/super-app/cdk.json": 21,
+        "example/super-app/index.ts": 25,
+        "example/super-app/local.dev.ts": 4,
+        "example/super-app/package.json": 22,
+        "example/super-app/src/messageProcessorHandler.ts": 8,
+        "example/super-app/src/sendWelcomeMessageHandler.ts": 8,
+        "example/super-app/stacks/stack.ts": 71,
+        "example/super-app/tests/integration.test.ts": 7,
+        "example/super-app/tests/localstack.setup.ts": 5,
+        "example/super-app/tsconfig.json": 14
+      }
+    },
+    {
+      "checkpoint_number": 4,
+      "user_lines_added": 501,
+      "user_lines_removed": 0,
+      "agent_lines_added": 1945,
+      "agent_lines_removed": 2,
+      "user_added_per_file": {
+        ".opencode/plugins/entire.ts": 216,
+        ".pi/extensions/entire/index.ts": 73,
+        "example/super-app/README.md": 27,
+        "example/super-app/cdk.json": 21,
+        "example/super-app/index.ts": 25,
+        "example/super-app/local.dev.ts": 4,
+        "example/super-app/package.json": 22,
+        "example/super-app/src/messageProcessorHandler.ts": 8,
+        "example/super-app/src/sendWelcomeMessageHandler.ts": 8,
+        "example/super-app/stacks/stack.ts": 71,
+        "example/super-app/tests/integration.test.ts": 7,
+        "example/super-app/tests/localstack.setup.ts": 5,
+        "example/super-app/tsconfig.json": 14
+      }
+    },
+    {
+      "checkpoint_number": 5,
+      "user_lines_added": 501,
+      "user_lines_removed": 0,
+      "agent_lines_added": 1945,
+      "agent_lines_removed": 2,
+      "user_added_per_file": {
+        ".opencode/plugins/entire.ts": 216,
+        ".pi/extensions/entire/index.ts": 73,
+        "example/super-app/README.md": 27,
+        "example/super-app/cdk.json": 21,
+        "example/super-app/index.ts": 25,
+        "example/super-app/local.dev.ts": 4,
+        "example/super-app/package.json": 22,
+        "example/super-app/src/messageProcessorHandler.ts": 8,
+        "example/super-app/src/sendWelcomeMessageHandler.ts": 8,
+        "example/super-app/stacks/stack.ts": 71,
+        "example/super-app/tests/integration.test.ts": 7,
+        "example/super-app/tests/localstack.setup.ts": 5,
+        "example/super-app/tsconfig.json": 14
+      }
+    },
+    {
+      "checkpoint_number": 6,
+      "user_lines_added": 501,
+      "user_lines_removed": 0,
+      "agent_lines_added": 1945,
+      "agent_lines_removed": 2,
+      "user_added_per_file": {
+        ".opencode/plugins/entire.ts": 216,
+        ".pi/extensions/entire/index.ts": 73,
+        "example/super-app/README.md": 27,
+        "example/super-app/cdk.json": 21,
+        "example/super-app/index.ts": 25,
+        "example/super-app/local.dev.ts": 4,
+        "example/super-app/package.json": 22,
+        "example/super-app/src/messageProcessorHandler.ts": 8,
+        "example/super-app/src/sendWelcomeMessageHandler.ts": 8,
+        "example/super-app/stacks/stack.ts": 71,
+        "example/super-app/tests/integration.test.ts": 7,
+        "example/super-app/tests/localstack.setup.ts": 5,
+        "example/super-app/tsconfig.json": 14
+      }
+    }
+  ]
+}

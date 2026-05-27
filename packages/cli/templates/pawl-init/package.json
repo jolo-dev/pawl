@@ -1,0 +1,17 @@
+{
+	"name": "{{projectName}}",
+	"version": "1.0.0",
+	"type": "module",
+	"scripts": {
+		"deploy": "AWS_PROFILE={{awsProfile}} {{packageManagerExec}} cdk deploy --all",
+		"remove": "AWS_PROFILE={{awsProfile}} {{packageManagerExec}} cdk destroy --all",
+		"dev": "AWS_PROFILE={{awsProfile}} {{packageManagerExec}} cdk watch",
+		"test": "{{packageManagerRun}} test"{{localstackScripts}}
+	},
+	"devDependencies": {
+		"@pawl/cdk": "^0.0.1",
+		"@pawl/lambda": "^0.0.1",
+		"tsx": "^4.19.2"{{localstackDevDeps}}
+	},
+	"description": "A pawl scaffold project"
+}

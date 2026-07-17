@@ -7,6 +7,7 @@ export * from "./src/cognito";
 export * from "./src/define-stack";
 export * from "./src/durable-lambda-function";
 export * from "./src/dynamodb-streams";
+export * from "./src/dynamodb-table";
 export * from "./src/eventbridge";
 export * from "./src/lambda-function";
 export { Local, LocalStack } from "./src/local-stack";

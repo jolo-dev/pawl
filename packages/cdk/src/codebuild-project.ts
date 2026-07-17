@@ -1,4 +1,4 @@
-import { Duration, RemovalPolicy } from "aws-cdk-lib";
+import { Arn, ArnFormat, Duration, RemovalPolicy } from "aws-cdk-lib";
 import {
 	type BuildEnvironmentVariable,
 	BuildEnvironmentVariableType,
@@ -22,6 +22,7 @@ import {
 import {
 	Effect,
 	PolicyStatement as IamPolicyStatement,
+	Policy,
 } from "aws-cdk-lib/aws-iam";
 import { Key } from "aws-cdk-lib/aws-kms";
 import { LogGroup, RetentionDays } from "aws-cdk-lib/aws-logs";
@@ -69,14 +70,33 @@ export type CodeBuildLogRetentionDays = z.infer<
 	typeof CodeBuildLogRetentionDaysSchema
 >;
 
+const vpcIdSchema = z.string().regex(/^vpc-[0-9a-f]{8,17}$/);
+const subnetIdSchema = z.string().regex(/^subnet-[0-9a-f]{8,17}$/);
+const securityGroupIdSchema = z.string().regex(/^sg-[0-9a-f]{8,17}$/);
+const prefixListIdSchema = z.string().regex(/^pl-[0-9a-f]{8,17}$/);
+
+export const CodeBuildProjectNameSchema = z
+	.string()
+	.min(2)
+	.max(255)
+	.regex(/^[A-Za-z0-9][A-Za-z0-9_-]*$/);
+
 export const CodeArtifactPackageAccessSchema = z
 	.object({
 		mode: z.literal("codeartifact"),
-		domain: nonEmptyString,
-		domainOwner: nonEmptyString,
-		repository: nonEmptyString,
-		endpointSecurityGroupIds: z.array(nonEmptyString),
-		prefixListIds: z.array(nonEmptyString),
+		domain: z
+			.string()
+			.min(2)
+			.max(50)
+			.regex(/^[a-z][a-z0-9-]*[a-z0-9]$/),
+		domainOwner: z.string().regex(/^\d{12}$/),
+		repository: z
+			.string()
+			.min(2)
+			.max(100)
+			.regex(/^[A-Za-z0-9][A-Za-z0-9._-]+$/),
+		endpointSecurityGroupIds: z.array(securityGroupIdSchema),
+		prefixListIds: z.array(prefixListIdSchema),
 	})
 	.refine(
 		(value) =>
@@ -93,9 +113,9 @@ export type CodeArtifactPackageAccess = z.infer<
 
 export const PrivateCodeBuildNetworkPolicySchema = z.object({
 	mode: z.literal("private"),
-	vpcId: nonEmptyString,
+	vpcId: vpcIdSchema,
 	availabilityZones: z.array(nonEmptyString).min(1),
-	privateSubnetIds: z.array(nonEmptyString).min(1),
+	privateSubnetIds: z.array(subnetIdSchema).min(1),
 	packageAccess: CodeArtifactPackageAccessSchema,
 });
 export type PrivateCodeBuildNetworkPolicy = z.infer<
@@ -192,6 +212,9 @@ export class CodeBuildProject extends BasicConstruct {
 		super(scope, id);
 
 		const config = CodeBuildProjectConfigSchema.parse(props);
+		const projectName = CodeBuildProjectNameSchema.parse(
+			`${this.prefix}${id}-codebuild`,
+		);
 		if (
 			config.networkPolicy.mode === "public-test" &&
 			scope.node.tryGetContext("stage") === "prod"
@@ -283,7 +306,7 @@ export class CodeBuildProject extends BasicConstruct {
 					};
 
 		this.project = new Project(this, "Project", {
-			projectName: `${this.prefix}${id}-codebuild`,
+			projectName,
 			source: Source.codeCommit({ repository: this.repository }),
 			buildSpec: BuildSpec.fromObject({
 				version: "0.2",
@@ -332,6 +355,77 @@ export class CodeBuildProject extends BasicConstruct {
 			}),
 		);
 
+		if (packageAccess.mode === "codeartifact") {
+			const projectRole = this.project.role;
+			if (!projectRole) {
+				throw new Error(
+					"Cannot grant CodeArtifact access: the CodeBuild project has no service role",
+				);
+			}
+			const domainArn = Arn.format(
+				{
+					account: packageAccess.domainOwner,
+					arnFormat: ArnFormat.SLASH_RESOURCE_NAME,
+					partition: this.stack.partition,
+					region: this.stack.region,
+					resource: "domain",
+					resourceName: packageAccess.domain,
+					service: "codeartifact",
+				},
+				this.stack,
+			);
+			const repositoryArn = Arn.format(
+				{
+					account: packageAccess.domainOwner,
+					arnFormat: ArnFormat.SLASH_RESOURCE_NAME,
+					partition: this.stack.partition,
+					region: this.stack.region,
+					resource: "repository",
+					resourceName: `${packageAccess.domain}/${packageAccess.repository}`,
+					service: "codeartifact",
+				},
+				this.stack,
+			);
+			// The domain owner must separately deploy cross-account CodeArtifact
+			// domain/repository resource policies that trust this project role.
+			const codeArtifactPolicy = new Policy(this, "CodeArtifactPolicy", {
+				statements: [
+					new IamPolicyStatement({
+						effect: Effect.ALLOW,
+						actions: ["codeartifact:GetAuthorizationToken"],
+						resources: [domainArn],
+					}),
+					new IamPolicyStatement({
+						effect: Effect.ALLOW,
+						actions: [
+							"codeartifact:GetRepositoryEndpoint",
+							"codeartifact:ReadFromRepository",
+						],
+						resources: [repositoryArn],
+					}),
+					new IamPolicyStatement({
+						effect: Effect.ALLOW,
+						actions: ["sts:GetServiceBearerToken"],
+						resources: ["*"],
+						conditions: {
+							StringEquals: {
+								"sts:AWSServiceName": "codeartifact.amazonaws.com",
+							},
+						},
+					}),
+				],
+			});
+			codeArtifactPolicy.attachToRole(projectRole);
+			NagSuppressions.addResourceSuppressions(codeArtifactPolicy, [
+				{
+					id: "AwsSolutions-IAM5",
+					reason:
+						"STS GetServiceBearerToken does not support resource-level permissions; the CodeArtifact service condition limits token issuance.",
+					appliesTo: ["Resource::*"],
+				},
+			]);
+		}
+
 		this.projectName = this.project.projectName;
 		this.projectArn = this.project.projectArn;
 		this.logGroupName = this.logGroup.logGroupName;
@@ -350,31 +444,58 @@ export class CodeBuildProject extends BasicConstruct {
 		stack.monitoring.monitorCodeBuildProject({ project: this.project });
 	}
 
-	/** Grant one Lambda reviewer the ability to run this project and read its logs. */
+	/**
+	 * Grant one Lambda reviewer the ability to run this project and read its logs.
+	 *
+	 * StartBuild accepts buildspec, environment, image, and service-role overrides.
+	 * The reviewer runtime must never derive those overrides or package-registry
+	 * settings from pull-request content, and it must not receive iam:PassRole.
+	 * This project's fixed values are safe defaults, not an IAM condition boundary.
+	 */
 	grantRunAndRead(reviewer: LambdaFunction): this {
-		this.addToLambdaRole(
-			reviewer,
-			new IamPolicyStatement({
-				effect: Effect.ALLOW,
-				actions: ["codebuild:StartBuild", "codebuild:BatchGetBuilds"],
-				resources: [this.projectArn],
-			}),
+		const reviewerRole = reviewer.lambda.role;
+		if (!reviewerRole) {
+			throw new Error(
+				"Cannot grant CodeBuildProject permissions: the LambdaFunction has no execution role",
+			);
+		}
+		const policyId = `ReviewerRunAndReadPolicy${reviewerRole.node.addr}`;
+		if (this.node.tryFindChild(policyId)) return this;
+
+		const buildArn = Arn.format(
+			{
+				arnFormat: ArnFormat.SLASH_RESOURCE_NAME,
+				resource: "build",
+				resourceName: `${this.projectName}:*`,
+				service: "codebuild",
+			},
+			this.stack,
 		);
-		this.addToLambdaRole(
-			reviewer,
-			new IamPolicyStatement({
-				effect: Effect.ALLOW,
-				actions: [
-					"logs:DescribeLogStreams",
-					"logs:GetLogEvents",
-					"logs:FilterLogEvents",
-				],
-				resources: [this.logGroupArn, `${this.logGroupArn}:*`],
-			}),
-		);
-		this.suppressLogStreamWildcard(
-			reviewer.lambda.role?.node.tryFindChild("DefaultPolicy"),
-		);
+		const reviewerPolicy = new Policy(this, policyId, {
+			statements: [
+				new IamPolicyStatement({
+					effect: Effect.ALLOW,
+					actions: ["codebuild:StartBuild"],
+					resources: [this.projectArn],
+				}),
+				new IamPolicyStatement({
+					effect: Effect.ALLOW,
+					actions: ["codebuild:BatchGetBuilds"],
+					resources: [buildArn],
+				}),
+				new IamPolicyStatement({
+					effect: Effect.ALLOW,
+					actions: [
+						"logs:DescribeLogStreams",
+						"logs:GetLogEvents",
+						"logs:FilterLogEvents",
+					],
+					resources: [this.logGroupArn, `${this.logGroupArn}:*`],
+				}),
+			],
+		});
+		reviewerPolicy.attachToRole(reviewerRole);
+		this.suppressReviewerWildcards(reviewerPolicy);
 		return this;
 	}
 
@@ -408,6 +529,23 @@ export class CodeBuildProject extends BasicConstruct {
 			);
 		}
 		role.addToPrincipalPolicy(statement);
+	}
+
+	private suppressReviewerWildcards(policy: Policy): void {
+		this.suppressLogStreamWildcard(policy);
+		NagSuppressions.addResourceSuppressions(policy, [
+			{
+				id: "AwsSolutions-IAM5",
+				reason:
+					"CodeBuild build ARNs append a service-generated build ID; the wildcard remains bounded to this exact project name.",
+				appliesTo: [
+					{
+						regex:
+							"/^Resource::arn:<AWS::Partition>:codebuild:<AWS::Region>:<AWS::AccountId>:build/<.+>:\\*$/",
+					},
+				],
+			},
+		]);
 	}
 
 	private suppressLogStreamWildcard(policy: Construct | undefined): void {

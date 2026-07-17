@@ -23,6 +23,9 @@
 			"example/*"
 		],
 		"catalog": {
+			"@aws/durable-execution-sdk-js": "2.1.0",
+			"@aws/durable-execution-sdk-js-testing": "1.1.3",
+			"@aws-sdk/client-lambda": "3.1089.0",
 			"@biomejs/biome": "2.4.15",
 			"@tsconfig/node22": "^22.0.5",
 			"@types/bun": "1.3.14",

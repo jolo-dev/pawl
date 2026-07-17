@@ -46,8 +46,8 @@ test("the pinned durable SDK completes a callback workflow locally", async () =>
 		const load = runner.getOperation("load");
 		const debounce = runner.getOperation("debounce");
 
-		expect(load.getStepDetails().result).toBe("review");
-		expect(debounce.getWaitDetails().waitSeconds).toBe(1);
+		expect(load.getStepDetails()?.result).toBe("review");
+		expect(debounce.getWaitDetails()?.waitSeconds).toBe(1);
 		expect(execution.getStatus()).toBe("SUCCEEDED");
 		expect(execution.getResult()).toBe("review:commit");
 	} finally {

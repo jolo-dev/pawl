@@ -29,8 +29,8 @@ export function useDynamoDbStreamsHandler(
 	DynamoDBStreamEvent,
 	void | DynamoDBBatchResponse
 > {
-	return handlerFactory<
-		DynamoDBStreamEvent,
-		void | DynamoDBBatchResponse
-	>(serviceName, handleRequest);
+	return handlerFactory<DynamoDBStreamEvent, void | DynamoDBBatchResponse>(
+		serviceName,
+		handleRequest,
+	);
 }

@@ -25,13 +25,11 @@ describe("dynamodb-streams", () => {
 
 	it("accepts an async callback that returns void or a batch response", async () => {
 		let returnBatchResponse = false;
-		const spy = mock(
-			async (): Promise<void | DynamoDBBatchResponse> => {
-				if (returnBatchResponse) {
-					return { batchItemFailures: [] };
-				}
-			},
-		);
+		const spy = mock(async (): Promise<void | DynamoDBBatchResponse> => {
+			if (returnBatchResponse) {
+				return { batchItemFailures: [] };
+			}
+		});
 		const handler = useDynamoDbStreamsHandler("dynamodbstreamsTest", spy);
 
 		expect(await handler(event, context, () => {})).toBeUndefined();

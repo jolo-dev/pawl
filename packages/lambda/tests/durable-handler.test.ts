@@ -113,7 +113,9 @@ describe.serial("durable-handler", () => {
 			jobId: "job-telemetry-success",
 			result: "original-typed-result",
 		} satisfies WorkflowResult;
+		const mutableErrorNameSecret = "NEVER_LOG_MUTABLE_ERROR_NAME_421f";
 		const loggerFailure = new Error(`logger failure containing ${secret}`);
+		loggerFailure.name = mutableErrorNameSecret;
 		const metricsFailure = new Error(`metrics failure containing ${secret}`);
 		const cleanupFailure = new Error(`cleanup failure containing ${secret}`);
 		const firstLoggerCall = loggerCalls.length;
@@ -188,6 +190,9 @@ describe.serial("durable-handler", () => {
 				"Error",
 			]);
 			expect(JSON.stringify(fallbackCalls)).not.toContain(secret);
+			expect(JSON.stringify(fallbackCalls)).not.toContain(
+				mutableErrorNameSecret,
+			);
 		} finally {
 			fallbackSpy.mockRestore();
 			publishSpy.mockRestore();

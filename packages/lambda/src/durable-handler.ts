@@ -37,7 +37,7 @@ const reportObservabilityFailure = (
 	error: unknown,
 ): void => {
 	try {
-		const errorType = error instanceof Error ? error.name : typeof error;
+		const errorType = error instanceof Error ? "Error" : typeof error;
 		console.error("Durable handler observability failure", stage, errorType);
 	} catch {
 		// The fallback must never alter the durable execution outcome.

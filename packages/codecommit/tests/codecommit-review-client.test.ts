@@ -15,6 +15,7 @@ import commentsPage2 from "./fixtures/comments-page-2.json";
 import differencesPage1 from "./fixtures/differences-page-1.json";
 import differencesPage2 from "./fixtures/differences-page-2.json";
 import fileFixture from "./fixtures/file.json";
+import mergedPullRequestFixture from "./fixtures/merged-pull-request.json";
 import pullRequestFixture from "./fixtures/pull-request.json";
 
 const snapshot: PullRequestSnapshot = {
@@ -61,6 +62,46 @@ describe("CodeCommitReviewClient", () => {
 		expect(result).toEqual(snapshot);
 	});
 
+	test("normalizes a closed pull request with merge metadata to MERGED", async () => {
+		const sender = new FakeSender([mergedPullRequestFixture]);
+		const client = new CodeCommitReviewClient(sender);
+
+		const result = await client.getPullRequest("widgets", "42");
+
+		expect(result.status).toBe("MERGED");
+	});
+
+	test("rejects malformed optional merge metadata", async () => {
+		const [target] = mergedPullRequestFixture.pullRequest.pullRequestTargets;
+		const sender = new FakeSender([
+			{
+				pullRequest: {
+					...mergedPullRequestFixture.pullRequest,
+					pullRequestTargets: [
+						{ ...target, mergeMetadata: { isMerged: "yes" } },
+					],
+				},
+			},
+		]);
+		const client = new CodeCommitReviewClient(sender);
+
+		await expect(client.getPullRequest("widgets", "42")).rejects.toThrow();
+	});
+
+	test("rejects malformed required pull request response fields", async () => {
+		const sender = new FakeSender([
+			{
+				pullRequest: {
+					...pullRequestFixture.pullRequest,
+					revisionId: undefined,
+				},
+			},
+		]);
+		const client = new CodeCommitReviewClient(sender);
+
+		await expect(client.getPullRequest("widgets", "42")).rejects.toThrow();
+	});
+
 	test("paginates differences with NextToken and MaxResults", async () => {
 		const sender = new FakeSender([differencesPage1, differencesPage2]);
 		const client = new CodeCommitReviewClient(sender);
@@ -88,6 +129,46 @@ describe("CodeCommitReviewClient", () => {
 		]);
 	});
 
+	test("rejects cyclic differences pagination tokens", async () => {
+		const sender = new FakeSender([
+			{ differences: [], NextToken: "token-a" },
+			{ differences: [], NextToken: "token-b" },
+			{ differences: [], NextToken: "token-a" },
+		]);
+		const client = new CodeCommitReviewClient(sender);
+
+		await expect(client.getDifferences(snapshot)).rejects.toThrow(
+			"pagination repeated a token",
+		);
+		expect(sender.commands).toHaveLength(3);
+	});
+
+	test("stops differences pagination at the hard page bound", async () => {
+		const sender = new FakeSender(
+			Array.from({ length: 1_000 }, (_, page) => ({
+				differences: [],
+				NextToken: `token-${page}`,
+			})),
+		);
+		const client = new CodeCommitReviewClient(sender);
+
+		await expect(client.getDifferences(snapshot)).rejects.toThrow(
+			"exceeded 1000 pages",
+		);
+		expect(sender.commands).toHaveLength(1_000);
+	});
+
+	test("retains the differences page-size limit", async () => {
+		const sender = new FakeSender([{ differences: [] }]);
+		const client = new CodeCommitReviewClient(sender);
+
+		await expect(client.getDifferences(snapshot, 100)).resolves.toEqual([]);
+		expect((sender.commands[0] as GetDifferencesCommand).input.MaxResults).toBe(
+			100,
+		);
+		await expect(client.getDifferences(snapshot, 101)).rejects.toThrow();
+	});
+
 	test("always sends an explicit commit ID when reading a file", async () => {
 		const sender = new FakeSender([fileFixture]);
 		const client = new CodeCommitReviewClient(sender);
@@ -108,6 +189,17 @@ describe("CodeCommitReviewClient", () => {
 		expect(file.isBinary).toBe(false);
 	});
 
+	test("rejects a file returned from an unexpected commit", async () => {
+		const sender = new FakeSender([
+			{ ...fileFixture, commitId: "different-commit" },
+		]);
+		const client = new CodeCommitReviewClient(sender);
+
+		await expect(
+			client.getFile("widgets", "source-immutable-abc", "src/a.ts"),
+		).rejects.toThrow("unexpected commit");
+	});
+
 	test("classifies binary files without returning decoded content", async () => {
 		const sender = new FakeSender([binaryFileFixture]);
 		const client = new CodeCommitReviewClient(sender);
@@ -116,6 +208,22 @@ describe("CodeCommitReviewClient", () => {
 			"widgets",
 			"source-immutable-abc",
 			"assets/image.bin",
+		);
+
+		expect(file.isBinary).toBe(true);
+		expect(file.content).toBeUndefined();
+	});
+
+	test("classifies invalid UTF-8 without NUL bytes as binary", async () => {
+		const sender = new FakeSender([
+			{ ...fileFixture, fileSize: 2, fileContent: [195, 40] },
+		]);
+		const client = new CodeCommitReviewClient(sender);
+
+		const file = await client.getFile(
+			"widgets",
+			"source-immutable-abc",
+			"src/a.ts",
 		);
 
 		expect(file.isBinary).toBe(true);
@@ -159,6 +267,66 @@ describe("CodeCommitReviewClient", () => {
 				relativeFileVersion: "AFTER",
 			},
 		});
+	});
+
+	test("accepts the comments page-size limit and rejects values above it", async () => {
+		const sender = new FakeSender([{ commentsForPullRequestData: [] }]);
+		const client = new CodeCommitReviewClient(sender);
+
+		await expect(client.getComments(snapshot, 500)).resolves.toEqual([]);
+		expect(
+			(sender.commands[0] as GetCommentsForPullRequestCommand).input.maxResults,
+		).toBe(500);
+		await expect(client.getComments(snapshot, 501)).rejects.toThrow();
+	});
+
+	test("rejects cyclic comments pagination tokens", async () => {
+		const sender = new FakeSender([
+			{ commentsForPullRequestData: [], nextToken: "token-a" },
+			{ commentsForPullRequestData: [], nextToken: "token-b" },
+			{ commentsForPullRequestData: [], nextToken: "token-a" },
+		]);
+		const client = new CodeCommitReviewClient(sender);
+
+		await expect(client.getComments(snapshot)).rejects.toThrow(
+			"pagination repeated a token",
+		);
+		expect(sender.commands).toHaveLength(3);
+	});
+
+	test("stops comments pagination at the hard page bound", async () => {
+		const sender = new FakeSender(
+			Array.from({ length: 1_000 }, (_, page) => ({
+				commentsForPullRequestData: [],
+				nextToken: `token-${page}`,
+			})),
+		);
+		const client = new CodeCommitReviewClient(sender);
+
+		await expect(client.getComments(snapshot)).rejects.toThrow(
+			"exceeded 1000 pages",
+		);
+		expect(sender.commands).toHaveLength(1_000);
+	});
+
+	test("rejects malformed required comment response fields", async () => {
+		const sender = new FakeSender([
+			{
+				commentsForPullRequestData: [
+					{
+						comments: [
+							{
+								commentId: "comment-1",
+								content: "Missing author",
+							},
+						],
+					},
+				],
+			},
+		]);
+		const client = new CodeCommitReviewClient(sender);
+
+		await expect(client.getComments(snapshot)).rejects.toThrow();
 	});
 
 	test("posts against exact cycle commits with a stable request token", async () => {

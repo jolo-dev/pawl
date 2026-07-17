@@ -21,13 +21,14 @@ import type {
 } from "./types";
 
 const MAX_PAGES = 1_000;
-const pageSizeSchema = z.number().int().min(1).max(100);
+const differencesPageSizeSchema = z.number().int().min(1).max(100);
+const commentsPageSizeSchema = z.number().int().min(1).max(500);
 const requiredString = z.string().min(1);
 
 const pullRequestResponseSchema = z.object({
 	pullRequest: z.object({
 		pullRequestId: requiredString,
-		pullRequestStatus: z.enum(["OPEN", "CLOSED", "MERGED"]),
+		pullRequestStatus: z.enum(["OPEN", "CLOSED"]),
 		revisionId: requiredString,
 		pullRequestTargets: z
 			.array(
@@ -37,6 +38,9 @@ const pullRequestResponseSchema = z.object({
 					destinationReference: requiredString,
 					sourceCommit: requiredString,
 					destinationCommit: requiredString,
+					mergeMetadata: z
+						.object({ isMerged: z.boolean().optional() })
+						.optional(),
 				}),
 			)
 			.min(1),
@@ -219,7 +223,10 @@ export class CodeCommitReviewClient {
 			provider: "codecommit",
 			repositoryName: target.repositoryName,
 			pullRequestId: response.pullRequest.pullRequestId,
-			status: response.pullRequest.pullRequestStatus,
+			status:
+				target.mergeMetadata?.isMerged === true
+					? "MERGED"
+					: response.pullRequest.pullRequestStatus,
 			sourceReference: target.sourceReference,
 			destinationReference: target.destinationReference,
 			sourceCommit: target.sourceCommit,
@@ -232,7 +239,7 @@ export class CodeCommitReviewClient {
 		snapshot: PullRequestSnapshot,
 		maxResults = 100,
 	): Promise<ChangedFile[]> {
-		const pageSize = pageSizeSchema.parse(maxResults);
+		const pageSize = differencesPageSizeSchema.parse(maxResults);
 		const results: ChangedFile[] = [];
 		let nextToken: string | undefined;
 		const seenTokens = new Set<string>();
@@ -303,7 +310,7 @@ export class CodeCommitReviewClient {
 		snapshot: PullRequestSnapshot,
 		maxResults = 100,
 	): Promise<ReviewComment[]> {
-		const pageSize = pageSizeSchema.parse(maxResults);
+		const pageSize = commentsPageSizeSchema.parse(maxResults);
 		const results: ReviewComment[] = [];
 		let nextToken: string | undefined;
 		const seenTokens = new Set<string>();

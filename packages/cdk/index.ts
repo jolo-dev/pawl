@@ -3,6 +3,8 @@ export * from "./src/api-destination";
 export * from "./src/apigateway";
 export * from "./src/apigateway-v1";
 export * from "./src/basic-tags";
+export * from "./src/codebuild-project";
+export * from "./src/codecommit-review-events";
 export * from "./src/cognito";
 export * from "./src/define-stack";
 export * from "./src/durable-lambda-function";

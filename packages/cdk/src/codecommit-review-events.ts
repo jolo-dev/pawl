@@ -1,0 +1,192 @@
+import { Duration, RemovalPolicy } from "aws-cdk-lib";
+import { type IRepository, Repository } from "aws-cdk-lib/aws-codecommit";
+import { Rule } from "aws-cdk-lib/aws-events";
+import { LambdaFunction as LambdaEventTarget } from "aws-cdk-lib/aws-events-targets";
+import {
+	Effect,
+	PolicyStatement as IamPolicyStatement,
+} from "aws-cdk-lib/aws-iam";
+import { Queue, QueueEncryption } from "aws-cdk-lib/aws-sqs";
+import { NagSuppressions } from "cdk-nag";
+import type { Construct } from "constructs";
+import { z } from "zod";
+import {
+	BasicConstruct,
+	type BasicConstructProps,
+	type PolicyStatement,
+} from "./basic-construct";
+import { LambdaFunction } from "./lambda-function";
+import type { Stack } from "./stack";
+
+const nonEmptyString = z.string().trim().min(1);
+
+/** Validated event-routing configuration that does not carry CDK constructs. */
+export const CodeCommitReviewEventsConfigSchema = z.object({
+	repositoryName: nonEmptyString,
+	commentEventFallback: z.literal("cloudtrail").optional(),
+	retryAttempts: z.number().int().min(0).max(10).default(3),
+	maxEventAgeMinutes: z.number().int().min(1).max(1440).default(60),
+});
+
+export type CodeCommitReviewEventsConfig = z.infer<
+	typeof CodeCommitReviewEventsConfigSchema
+>;
+
+/** Properties for CodeCommit review-event routing. */
+export type CodeCommitReviewEventsProps = z.input<
+	typeof CodeCommitReviewEventsConfigSchema
+> &
+	BasicConstructProps & {
+		/** Pawl Lambda that receives the complete EventBridge event. */
+		router: LambdaFunction;
+	};
+
+const readActions = [
+	"codecommit:GetPullRequest",
+	"codecommit:GetDifferences",
+	"codecommit:GetCommentsForPullRequest",
+	"codecommit:GetCommit",
+	"codecommit:BatchGetCommits",
+];
+
+const commentActions = [
+	"codecommit:PostCommentForPullRequest",
+	"codecommit:UpdateComment",
+];
+
+/**
+ * Routes native CodeCommit pull-request and comment events to one Pawl Lambda.
+ *
+ * The optional CloudTrail fallback requires a trail that records CodeCommit
+ * management events. Because that fallback cannot filter by repository in its
+ * EventBridge pattern, the router must discard events for other repositories.
+ */
+export class CodeCommitReviewEvents extends BasicConstruct {
+	readonly repository: IRepository;
+	readonly pullRequestRule: Rule;
+	readonly commentRule: Rule;
+	readonly fallbackRule?: Rule;
+	readonly deadLetterQueue: Queue;
+
+	constructor(scope: Stack, id: string, props: CodeCommitReviewEventsProps) {
+		super(scope, id);
+		const { router, permissions, ...configInput } = props;
+		if (!(router instanceof LambdaFunction)) {
+			throw new Error("CodeCommitReviewEvents router must be a LambdaFunction");
+		}
+		const config = CodeCommitReviewEventsConfigSchema.parse(configInput);
+
+		this.repository = Repository.fromRepositoryName(
+			this,
+			"Repository",
+			config.repositoryName,
+		);
+		this.deadLetterQueue = new Queue(this, "DeadLetterQueue", {
+			encryption: QueueEncryption.KMS_MANAGED,
+			enforceSSL: true,
+			retentionPeriod: Duration.days(14),
+			removalPolicy: RemovalPolicy.RETAIN,
+		});
+		NagSuppressions.addResourceSuppressions(this.deadLetterQueue, [
+			{
+				id: "AwsSolutions-SQS3",
+				reason:
+					"This retained queue is itself the terminal EventBridge dead-letter queue and must not forward failures to another queue.",
+			},
+		]);
+
+		const target = () =>
+			new LambdaEventTarget(router.lambda, {
+				deadLetterQueue: this.deadLetterQueue,
+				retryAttempts: config.retryAttempts,
+				maxEventAge: Duration.minutes(config.maxEventAgeMinutes),
+			});
+
+		this.pullRequestRule = this.repository.onPullRequestStateChange(
+			"PullRequestRule",
+			{ target: target() },
+		);
+		this.commentRule = this.repository.onCommentOnPullRequest("CommentRule", {
+			target: target(),
+		});
+
+		if (config.commentEventFallback === "cloudtrail") {
+			this.fallbackRule = new Rule(this, "CloudTrailCommentFallbackRule", {
+				eventPattern: {
+					source: ["aws.codecommit"],
+					detailType: ["AWS API Call via CloudTrail"],
+					detail: {
+						eventSource: ["codecommit.amazonaws.com"],
+						eventName: ["PostCommentForPullRequest"],
+					},
+				},
+				targets: [target()],
+			});
+		}
+
+		this.createAlarm(this.stack);
+		if (permissions) {
+			this.grantPermissions(permissions);
+		}
+	}
+
+	createAlarm(stack: Stack): void {
+		stack.monitoring.monitorSqsQueue({ queue: this.deadLetterQueue });
+	}
+
+	/** Grant repository data needed to inspect a pull request. */
+	grantRead(grantee: LambdaFunction): this {
+		this.addToLambdaRole(grantee, readActions);
+		return this;
+	}
+
+	/** Grant permission to post and update pull-request comments. */
+	grantComment(grantee: LambdaFunction): this {
+		this.addToLambdaRole(grantee, commentActions);
+		return this;
+	}
+
+	/** Grant permission to read repository configuration files. */
+	grantConfigRead(grantee: LambdaFunction): this {
+		this.addToLambdaRole(grantee, ["codecommit:GetFile"]);
+		return this;
+	}
+
+	protected applyPermissionPolicy(
+		construct: Construct,
+		policyStatement: PolicyStatement,
+	): void {
+		if (!(construct instanceof LambdaFunction)) {
+			throw new Error(
+				"CodeCommitReviewEvents permissions can only be granted to a LambdaFunction",
+			);
+		}
+		this.addToLambdaRole(
+			construct,
+			policyStatement.actions,
+			policyStatement.effect === "allow" ? Effect.ALLOW : Effect.DENY,
+			policyStatement.resource,
+		);
+	}
+
+	private addToLambdaRole(
+		grantee: LambdaFunction,
+		actions: string[],
+		effect = Effect.ALLOW,
+		resource = this.repository.repositoryArn,
+	): void {
+		const role = grantee.lambda.role;
+		if (!role) {
+			throw new Error(
+				"Cannot grant CodeCommitReviewEvents permissions: the LambdaFunction has no execution role",
+			);
+		}
+		role.addToPrincipalPolicy(
+			new IamPolicyStatement({
+				effect,
+				actions,
+				resources: [resource],
+			}),
+		);
+	}
+}

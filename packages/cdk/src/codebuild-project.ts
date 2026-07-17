@@ -1,0 +1,432 @@
+import { Duration, RemovalPolicy } from "aws-cdk-lib";
+import {
+	type BuildEnvironmentVariable,
+	BuildEnvironmentVariableType,
+	BuildSpec,
+	type CfnProject,
+	ComputeType,
+	LinuxBuildImage,
+	Project,
+	Source,
+} from "aws-cdk-lib/aws-codebuild";
+import { Repository } from "aws-cdk-lib/aws-codecommit";
+import {
+	type ISecurityGroup,
+	type IVpc,
+	Peer,
+	Port,
+	SecurityGroup,
+	type SubnetSelection,
+	Vpc,
+} from "aws-cdk-lib/aws-ec2";
+import {
+	Effect,
+	PolicyStatement as IamPolicyStatement,
+} from "aws-cdk-lib/aws-iam";
+import { Key } from "aws-cdk-lib/aws-kms";
+import { LogGroup, RetentionDays } from "aws-cdk-lib/aws-logs";
+import { NagSuppressions } from "cdk-nag";
+import type { Construct } from "constructs";
+import { z } from "zod";
+import {
+	BasicConstruct,
+	type BasicConstructProps,
+	type PolicyStatement,
+} from "./basic-construct";
+import { LambdaFunction } from "./lambda-function";
+import type { Stack } from "./stack";
+
+const nonEmptyString = z.string().trim().min(1);
+
+export const CodeBuildComputeSizeSchema = z.enum(["SMALL", "MEDIUM", "LARGE"]);
+export type CodeBuildComputeSize = z.infer<typeof CodeBuildComputeSizeSchema>;
+
+export const CodeBuildLogRetentionDaysSchema = z.union([
+	z.literal(1),
+	z.literal(3),
+	z.literal(5),
+	z.literal(7),
+	z.literal(14),
+	z.literal(30),
+	z.literal(60),
+	z.literal(90),
+	z.literal(120),
+	z.literal(150),
+	z.literal(180),
+	z.literal(365),
+	z.literal(400),
+	z.literal(545),
+	z.literal(731),
+	z.literal(1096),
+	z.literal(1827),
+	z.literal(2192),
+	z.literal(2557),
+	z.literal(2922),
+	z.literal(3288),
+	z.literal(3653),
+]);
+export type CodeBuildLogRetentionDays = z.infer<
+	typeof CodeBuildLogRetentionDaysSchema
+>;
+
+export const CodeArtifactPackageAccessSchema = z
+	.object({
+		mode: z.literal("codeartifact"),
+		domain: nonEmptyString,
+		domainOwner: nonEmptyString,
+		repository: nonEmptyString,
+		endpointSecurityGroupIds: z.array(nonEmptyString),
+		prefixListIds: z.array(nonEmptyString),
+	})
+	.refine(
+		(value) =>
+			value.endpointSecurityGroupIds.length > 0 ||
+			value.prefixListIds.length > 0,
+		{
+			message:
+				"Private package access requires at least one endpoint security group or prefix list",
+		},
+	);
+export type CodeArtifactPackageAccess = z.infer<
+	typeof CodeArtifactPackageAccessSchema
+>;
+
+export const PrivateCodeBuildNetworkPolicySchema = z.object({
+	mode: z.literal("private"),
+	vpcId: nonEmptyString,
+	availabilityZones: z.array(nonEmptyString).min(1),
+	privateSubnetIds: z.array(nonEmptyString).min(1),
+	packageAccess: CodeArtifactPackageAccessSchema,
+});
+export type PrivateCodeBuildNetworkPolicy = z.infer<
+	typeof PrivateCodeBuildNetworkPolicySchema
+>;
+
+export const ApprovedRegistryPackageAccessSchema = z.object({
+	mode: z.literal("approved-registry"),
+	endpoint: nonEmptyString
+		.url()
+		.refine(
+			(value) => value.startsWith("https://"),
+			"Approved registry endpoint must use HTTPS",
+		),
+});
+export type ApprovedRegistryPackageAccess = z.infer<
+	typeof ApprovedRegistryPackageAccessSchema
+>;
+
+export const PublicTestCodeBuildNetworkPolicySchema = z.object({
+	mode: z.literal("public-test"),
+	packageAccess: ApprovedRegistryPackageAccessSchema,
+});
+export type PublicTestCodeBuildNetworkPolicy = z.infer<
+	typeof PublicTestCodeBuildNetworkPolicySchema
+>;
+
+export const CodeBuildNetworkPolicySchema = z.discriminatedUnion("mode", [
+	PrivateCodeBuildNetworkPolicySchema,
+	PublicTestCodeBuildNetworkPolicySchema,
+]);
+export type CodeBuildNetworkPolicy = z.infer<
+	typeof CodeBuildNetworkPolicySchema
+>;
+
+export const CodeBuildProjectConfigSchema = z.object({
+	repositoryName: nonEmptyString,
+	timeoutMinutes: z.number().int().min(5).max(60).default(30),
+	computeSize: CodeBuildComputeSizeSchema.default("SMALL"),
+	logRetentionDays: CodeBuildLogRetentionDaysSchema.default(30),
+	networkPolicy: CodeBuildNetworkPolicySchema,
+});
+export type CodeBuildProjectConfig = z.infer<
+	typeof CodeBuildProjectConfigSchema
+>;
+export type CodeBuildProjectProps = z.input<
+	typeof CodeBuildProjectConfigSchema
+> &
+	BasicConstructProps;
+
+const computeTypes: Record<CodeBuildComputeSize, ComputeType> = {
+	SMALL: ComputeType.SMALL,
+	MEDIUM: ComputeType.MEDIUM,
+	LARGE: ComputeType.LARGE,
+};
+
+const retentionDays: Record<CodeBuildLogRetentionDays, RetentionDays> = {
+	1: RetentionDays.ONE_DAY,
+	3: RetentionDays.THREE_DAYS,
+	5: RetentionDays.FIVE_DAYS,
+	7: RetentionDays.ONE_WEEK,
+	14: RetentionDays.TWO_WEEKS,
+	30: RetentionDays.ONE_MONTH,
+	60: RetentionDays.TWO_MONTHS,
+	90: RetentionDays.THREE_MONTHS,
+	120: RetentionDays.FOUR_MONTHS,
+	150: RetentionDays.FIVE_MONTHS,
+	180: RetentionDays.SIX_MONTHS,
+	365: RetentionDays.ONE_YEAR,
+	400: RetentionDays.THIRTEEN_MONTHS,
+	545: RetentionDays.EIGHTEEN_MONTHS,
+	731: RetentionDays.TWO_YEARS,
+	1096: RetentionDays.THREE_YEARS,
+	1827: RetentionDays.FIVE_YEARS,
+	2192: RetentionDays.SIX_YEARS,
+	2557: RetentionDays.SEVEN_YEARS,
+	2922: RetentionDays.EIGHT_YEARS,
+	3288: RetentionDays.NINE_YEARS,
+	3653: RetentionDays.TEN_YEARS,
+};
+
+/** A secure, bounded CodeBuild project for Pawl review jobs. */
+export class CodeBuildProject extends BasicConstruct {
+	readonly project: Project;
+	readonly repository: Repository;
+	readonly logGroup: LogGroup;
+	readonly projectName: string;
+	readonly projectArn: string;
+	readonly logGroupName: string;
+	readonly logGroupArn: string;
+	readonly projectSecurityGroup?: ISecurityGroup;
+
+	constructor(scope: Stack, id: string, props: CodeBuildProjectProps) {
+		super(scope, id);
+
+		const config = CodeBuildProjectConfigSchema.parse(props);
+		if (
+			config.networkPolicy.mode === "public-test" &&
+			scope.node.tryGetContext("stage") === "prod"
+		) {
+			throw new Error(
+				"The public-test CodeBuild network policy is not allowed in prod",
+			);
+		}
+
+		this.repository = Repository.fromRepositoryName(
+			this,
+			"Repository",
+			config.repositoryName,
+		) as Repository;
+
+		const encryptionKey = new Key(this, "EncryptionKey", {
+			enableKeyRotation: true,
+			removalPolicy: RemovalPolicy.RETAIN,
+		});
+		this.logGroup = new LogGroup(this, "LogGroup", {
+			encryptionKey,
+			retention: retentionDays[config.logRetentionDays],
+			removalPolicy: RemovalPolicy.RETAIN,
+		});
+
+		let vpc: IVpc | undefined;
+		let subnetSelection: SubnetSelection | undefined;
+		if (config.networkPolicy.mode === "private") {
+			vpc = Vpc.fromVpcAttributes(this, "Vpc", {
+				vpcId: config.networkPolicy.vpcId,
+				availabilityZones: config.networkPolicy.availabilityZones,
+				privateSubnetIds: config.networkPolicy.privateSubnetIds,
+			});
+			const securityGroup = new SecurityGroup(this, "ProjectSecurityGroup", {
+				vpc,
+				allowAllOutbound: false,
+				description: "HTTPS-only egress for the Pawl CodeBuild project",
+			});
+			for (const securityGroupId of config.networkPolicy.packageAccess
+				.endpointSecurityGroupIds) {
+				securityGroup.addEgressRule(
+					Peer.securityGroupId(securityGroupId),
+					Port.tcp(443),
+					"HTTPS to approved package endpoint",
+				);
+			}
+			for (const prefixListId of config.networkPolicy.packageAccess
+				.prefixListIds) {
+				securityGroup.addEgressRule(
+					Peer.prefixList(prefixListId),
+					Port.tcp(443),
+					"HTTPS to approved package prefix list",
+				);
+			}
+			this.projectSecurityGroup = securityGroup;
+			subnetSelection = { subnets: vpc.privateSubnets };
+		}
+
+		const packageAccess = config.networkPolicy.packageAccess;
+		const environmentVariables: Record<string, BuildEnvironmentVariable> =
+			packageAccess.mode === "codeartifact"
+				? {
+						PAWL_PACKAGE_ACCESS_MODE: {
+							type: BuildEnvironmentVariableType.PLAINTEXT,
+							value: packageAccess.mode,
+						},
+						CODEARTIFACT_DOMAIN: {
+							type: BuildEnvironmentVariableType.PLAINTEXT,
+							value: packageAccess.domain,
+						},
+						CODEARTIFACT_DOMAIN_OWNER: {
+							type: BuildEnvironmentVariableType.PLAINTEXT,
+							value: packageAccess.domainOwner,
+						},
+						CODEARTIFACT_REPOSITORY: {
+							type: BuildEnvironmentVariableType.PLAINTEXT,
+							value: packageAccess.repository,
+						},
+					}
+				: {
+						PAWL_PACKAGE_ACCESS_MODE: {
+							type: BuildEnvironmentVariableType.PLAINTEXT,
+							value: packageAccess.mode,
+						},
+						PAWL_APPROVED_REGISTRY_ENDPOINT: {
+							type: BuildEnvironmentVariableType.PLAINTEXT,
+							value: packageAccess.endpoint,
+						},
+					};
+
+		this.project = new Project(this, "Project", {
+			projectName: `${this.prefix}${id}-codebuild`,
+			source: Source.codeCommit({ repository: this.repository }),
+			buildSpec: BuildSpec.fromObject({
+				version: "0.2",
+				phases: {
+					build: {
+						commands: [
+							'echo "No approved buildspec was supplied; exiting safely."',
+						],
+					},
+				},
+			}),
+			environment: {
+				buildImage: LinuxBuildImage.STANDARD_7_0,
+				computeType: computeTypes[config.computeSize],
+				privileged: false,
+			},
+			environmentVariables,
+			timeout: Duration.minutes(config.timeoutMinutes),
+			logging: {
+				cloudWatch: { enabled: true, logGroup: this.logGroup },
+			},
+			vpc,
+			subnetSelection,
+			securityGroups: this.projectSecurityGroup
+				? [this.projectSecurityGroup]
+				: undefined,
+			ssmSessionPermissions: false,
+			grantReportGroupPermissions: false,
+		});
+
+		const cfnProject = this.project.node.defaultChild as CfnProject;
+		cfnProject.encryptionKey = encryptionKey.keyArn;
+		this.project.role?.addToPrincipalPolicy(
+			new IamPolicyStatement({
+				effect: Effect.ALLOW,
+				actions: [
+					"kms:Decrypt",
+					"kms:Encrypt",
+					"kms:ReEncryptFrom",
+					"kms:ReEncryptTo",
+					"kms:GenerateDataKey",
+					"kms:GenerateDataKeyWithoutPlaintext",
+					"kms:DescribeKey",
+				],
+				resources: [encryptionKey.keyArn],
+			}),
+		);
+
+		this.projectName = this.project.projectName;
+		this.projectArn = this.project.projectArn;
+		this.logGroupName = this.logGroup.logGroupName;
+		this.logGroupArn = this.logGroup.logGroupArn;
+
+		this.suppressLogStreamWildcard(
+			this.project.role?.node.tryFindChild("DefaultPolicy"),
+		);
+		if (props.permissions) {
+			this.grantPermissions(props.permissions);
+		}
+		this.createAlarm(this.stack);
+	}
+
+	createAlarm(stack: Stack): void {
+		stack.monitoring.monitorCodeBuildProject({ project: this.project });
+	}
+
+	/** Grant one Lambda reviewer the ability to run this project and read its logs. */
+	grantRunAndRead(reviewer: LambdaFunction): this {
+		this.addToLambdaRole(
+			reviewer,
+			new IamPolicyStatement({
+				effect: Effect.ALLOW,
+				actions: ["codebuild:StartBuild", "codebuild:BatchGetBuilds"],
+				resources: [this.projectArn],
+			}),
+		);
+		this.addToLambdaRole(
+			reviewer,
+			new IamPolicyStatement({
+				effect: Effect.ALLOW,
+				actions: [
+					"logs:DescribeLogStreams",
+					"logs:GetLogEvents",
+					"logs:FilterLogEvents",
+				],
+				resources: [this.logGroupArn, `${this.logGroupArn}:*`],
+			}),
+		);
+		this.suppressLogStreamWildcard(
+			reviewer.lambda.role?.node.tryFindChild("DefaultPolicy"),
+		);
+		return this;
+	}
+
+	protected applyPermissionPolicy(
+		construct: Construct,
+		policyStatement: PolicyStatement,
+	): void {
+		if (!(construct instanceof LambdaFunction)) {
+			throw new Error(
+				"CodeBuildProject permissions can only be granted to a LambdaFunction",
+			);
+		}
+		this.addToLambdaRole(
+			construct,
+			new IamPolicyStatement({
+				effect: policyStatement.effect === "allow" ? Effect.ALLOW : Effect.DENY,
+				actions: policyStatement.actions,
+				resources: [policyStatement.resource ?? this.projectArn],
+			}),
+		);
+	}
+
+	private addToLambdaRole(
+		reviewer: LambdaFunction,
+		statement: IamPolicyStatement,
+	): void {
+		const role = reviewer.lambda.role;
+		if (!role) {
+			throw new Error(
+				"Cannot grant CodeBuildProject permissions: the LambdaFunction has no execution role",
+			);
+		}
+		role.addToPrincipalPolicy(statement);
+	}
+
+	private suppressLogStreamWildcard(policy: Construct | undefined): void {
+		if (!policy) return;
+		NagSuppressions.addResourceSuppressions(policy, [
+			{
+				id: "AwsSolutions-IAM5",
+				reason:
+					"CodeBuild log stream names contain build IDs that are unavailable at synthesis; access remains bounded to this dedicated log group.",
+				appliesTo: [
+					{
+						regex: "/^Resource::<.+LogGroup.+Arn>:\\*$/",
+					},
+					{
+						regex:
+							"/^Resource::arn:<AWS::Partition>:logs:<AWS::Region>:<AWS::AccountId>:log-group:/aws/codebuild/<.+>:\\*$/",
+					},
+				],
+			},
+		]);
+	}
+}

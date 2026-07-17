@@ -5,6 +5,7 @@ export * from "./src/apigateway-v1";
 export * from "./src/basic-tags";
 export * from "./src/cognito";
 export * from "./src/define-stack";
+export * from "./src/durable-lambda-function";
 export * from "./src/dynamodb-streams";
 export * from "./src/eventbridge";
 export * from "./src/lambda-function";

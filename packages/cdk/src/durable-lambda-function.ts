@@ -1,5 +1,5 @@
 import { Duration } from "aws-cdk-lib";
-import { Effect, PolicyStatement } from "aws-cdk-lib/aws-iam";
+import { Effect, Policy, PolicyStatement } from "aws-cdk-lib/aws-iam";
 import { Alias } from "aws-cdk-lib/aws-lambda";
 import { NagSuppressions } from "cdk-nag";
 import { z } from "zod";
@@ -10,7 +10,12 @@ import { resolveScope } from "./stack-function";
 export const DurableLambdaConfigSchema = z.object({
 	executionTimeoutSeconds: z.number().int().min(1).max(31_622_400),
 	retentionDays: z.number().int().min(1).max(90).default(14),
-	aliasName: z.string().trim().min(1).default("live"),
+	aliasName: z
+		.string()
+		.min(1)
+		.max(128)
+		.regex(/^(?![0-9]+$)[A-Za-z0-9_-]+$/)
+		.default("live"),
 });
 
 export type DurableLambdaConfig = z.infer<typeof DurableLambdaConfigSchema>;
@@ -114,31 +119,39 @@ export class DurableLambdaFunction extends LambdaFunction {
 
 	/** Grant permission to complete or heartbeat a durable callback. */
 	grantSendDurableExecutionCallbacks(grantee: LambdaFunction): this {
-		this.addToGranteeRole(
-			grantee,
-			new PolicyStatement({
-				effect: Effect.ALLOW,
-				actions: [
-					"lambda:SendDurableExecutionCallbackSuccess",
-					"lambda:SendDurableExecutionCallbackFailure",
-					"lambda:SendDurableExecutionCallbackHeartbeat",
-				],
-				resources: ["*"],
-			}),
-		);
-
-		const callbackPolicy =
-			grantee.lambda.role?.node.tryFindChild("DefaultPolicy");
-		if (callbackPolicy) {
-			NagSuppressions.addResourceSuppressions(callbackPolicy, [
-				{
-					id: "AwsSolutions-IAM5",
-					reason:
-						"Lambda callback APIs accept only an opaque CallbackId and do not support resource-level IAM permissions.",
-					appliesTo: ["Resource::*"],
-				},
-			]);
+		const granteeRole = grantee.lambda.role;
+		if (!granteeRole) {
+			throw new Error(
+				"Cannot grant durable execution callback permissions: the grantee Lambda has no execution role",
+			);
 		}
+
+		const callbackPolicy = new Policy(
+			this,
+			`CallbackPolicy${grantee.node.addr}`,
+			{
+				statements: [
+					new PolicyStatement({
+						effect: Effect.ALLOW,
+						actions: [
+							"lambda:SendDurableExecutionCallbackSuccess",
+							"lambda:SendDurableExecutionCallbackFailure",
+							"lambda:SendDurableExecutionCallbackHeartbeat",
+						],
+						resources: ["*"],
+					}),
+				],
+			},
+		);
+		callbackPolicy.attachToRole(granteeRole);
+		NagSuppressions.addResourceSuppressions(callbackPolicy, [
+			{
+				id: "AwsSolutions-IAM5",
+				reason:
+					"Lambda callback APIs accept only an opaque CallbackId and do not support resource-level IAM permissions.",
+				appliesTo: ["Resource::*"],
+			},
+		]);
 		return this;
 	}
 

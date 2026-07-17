@@ -108,6 +108,24 @@ describe("DurableLambdaFunction", () => {
 		});
 	});
 
+	test("defaults retention to 14 days", () => {
+		const defaultStack = new Stack(createTestApp(), "DefaultRetentionStack");
+		new DurableLambdaFunction(defaultStack, "Durable", {
+			entry,
+			executionTimeoutSeconds: 60,
+		});
+
+		Template.fromStack(defaultStack).hasResourceProperties(
+			"AWS::Lambda::Function",
+			{
+				DurableConfig: {
+					ExecutionTimeout: 60,
+					RetentionPeriodInDays: 14,
+				},
+			},
+		);
+	});
+
 	test("exposes the alias and its ARN", () => {
 		expect(stack.durable.alias).toBeDefined();
 		expect(stack.durable.alias.functionArn).toBeDefined();
@@ -123,39 +141,98 @@ describe("DurableLambdaFunction", () => {
 		["retention above the maximum", { retentionDays: 91 }],
 		["blank alias", { aliasName: "" }],
 		["whitespace-only alias", { aliasName: "   " }],
+		["alias containing a slash", { aliasName: "bad/name" }],
+		["numeric-only alias", { aliasName: "123" }],
+		["alias longer than 128 characters", { aliasName: "a".repeat(129) }],
 	])("rejects %s during construction", (_name, props) => {
 		expect(() => createDurable(props)).toThrow();
 	});
 
-	test("adds durable permissions only to the grantee role", () => {
+	test("adds exact durable permissions only to dedicated grantee policies", () => {
 		const granteeRoleId = stack.getLogicalId(
 			stack.grantee.lambda.role?.node.defaultChild as CfnResource,
 		);
 		const durableRoleId = stack.getLogicalId(
 			stack.durable.lambda.role?.node.defaultChild as CfnResource,
 		);
-		const policies = template.findResources("AWS::IAM::Policy");
-		const granteePolicies = Object.values(policies).filter((policy) =>
-			JSON.stringify(policy).includes(`"Ref":"${granteeRoleId}"`),
+		const aliasId = stack.getLogicalId(
+			stack.durable.alias.node.defaultChild as CfnResource,
 		);
-		const durablePolicies = Object.values(policies).filter((policy) =>
+		const [versionId] = Object.keys(
+			template.findResources("AWS::Lambda::Version"),
+		);
+		const executionResource = {
+			"Fn::Join": ["", [{ Ref: versionId }, "/durable-execution/*/*"]],
+		};
+
+		template.resourceCountIs("AWS::IAM::Policy", 2);
+		template.hasResourceProperties("AWS::IAM::Policy", {
+			PolicyDocument: {
+				Statement: [
+					{
+						Action: "lambda:InvokeFunction",
+						Effect: "Allow",
+						Resource: { Ref: aliasId },
+					},
+					{
+						Action: "lambda:ListDurableExecutionsByFunction",
+						Effect: "Allow",
+						Resource: { Ref: aliasId },
+					},
+					{
+						Action: [
+							"lambda:GetDurableExecution",
+							"lambda:GetDurableExecutionHistory",
+						],
+						Effect: "Allow",
+						Resource: executionResource,
+					},
+					{
+						Action: "lambda:StopDurableExecution",
+						Effect: "Allow",
+						Resource: executionResource,
+					},
+				],
+				Version: "2012-10-17",
+			},
+			Roles: [{ Ref: granteeRoleId }],
+		});
+		template.hasResourceProperties("AWS::IAM::Policy", {
+			PolicyDocument: {
+				Statement: [
+					{
+						Action: [
+							"lambda:SendDurableExecutionCallbackSuccess",
+							"lambda:SendDurableExecutionCallbackFailure",
+							"lambda:SendDurableExecutionCallbackHeartbeat",
+						],
+						Effect: "Allow",
+						Resource: "*",
+					},
+				],
+				Version: "2012-10-17",
+			},
+			Roles: [{ Ref: granteeRoleId }],
+		});
+
+		const policies = Object.values(template.findResources("AWS::IAM::Policy"));
+		const callbackPolicies = policies.filter((policy) =>
+			JSON.stringify(policy).includes(
+				"lambda:SendDurableExecutionCallbackSuccess",
+			),
+		);
+		const defaultPolicies = policies.filter(
+			(policy) => !callbackPolicies.includes(policy),
+		);
+		const durablePolicies = policies.filter((policy) =>
 			JSON.stringify(policy).includes(`"Ref":"${durableRoleId}"`),
 		);
-		const expectedActions = [
-			"lambda:InvokeFunction",
-			"lambda:ListDurableExecutionsByFunction",
-			"lambda:GetDurableExecution",
-			"lambda:GetDurableExecutionHistory",
-			"lambda:SendDurableExecutionCallbackSuccess",
-			"lambda:SendDurableExecutionCallbackFailure",
-			"lambda:SendDurableExecutionCallbackHeartbeat",
-			"lambda:StopDurableExecution",
-		];
 
-		for (const action of expectedActions) {
-			expect(JSON.stringify(granteePolicies)).toContain(action);
-			expect(JSON.stringify(durablePolicies)).not.toContain(action);
-		}
+		expect(callbackPolicies).toHaveLength(1);
+		expect(defaultPolicies).toHaveLength(1);
+		expect(JSON.stringify(callbackPolicies[0])).toContain("Resource::*");
+		expect(JSON.stringify(defaultPolicies[0])).not.toContain("Resource::*");
+		expect(durablePolicies).toEqual([]);
 	});
 
 	test("passes AwsSolutions checks with documented narrow suppressions", () => {

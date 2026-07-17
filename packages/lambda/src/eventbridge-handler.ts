@@ -1,6 +1,13 @@
 import type { Logger } from "@aws-lambda-powertools/logger";
 import type { EventBridgeEvent } from "aws-lambda";
-import { handlerFactory } from "./base/handler-factory";
+import {
+	type HandlerLoggingMode,
+	handlerFactory,
+} from "./base/handler-factory";
+
+export interface EventbridgeHandlerOptions {
+	logging?: HandlerLoggingMode;
+}
 
 /**
  * The function `useEventbridgeHandler` is a TypeScript function that creates a handler for processing
@@ -23,9 +30,18 @@ export function useEventbridgeHandler<
 		event: EventBridgeEvent<TDetailType, TDetail>,
 		logger: Logger,
 	) => Promise<TResult>,
+	options?: EventbridgeHandlerOptions,
 ) {
 	return handlerFactory<EventBridgeEvent<TDetailType, TDetail>, TResult>(
 		serviceName,
 		handleRequest,
+		{
+			logging: options?.logging,
+			metadataProjector: (event) => ({
+				id: event.id,
+				source: event.source,
+				"detail-type": event["detail-type"],
+			}),
+		},
 	);
 }

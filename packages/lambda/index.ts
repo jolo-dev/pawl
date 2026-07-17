@@ -1,5 +1,9 @@
 export { useApiHandler } from "./src/api-handler";
 export { authorizer, useAuthorizerHandler } from "./src/authorizer-handler";
+export {
+	type DurableRequestHandler,
+	useDurableHandler,
+} from "./src/durable-handler";
 export { useDynamoDbStreamsHandler } from "./src/dynamodb-streams-handler";
 export { useEventbridgeHandler } from "./src/eventbridge-handler";
 export { useSnsHandler } from "./src/sns-handler";

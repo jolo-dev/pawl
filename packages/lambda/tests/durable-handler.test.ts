@@ -1,5 +1,6 @@
 import {
 	afterAll,
+	afterEach,
 	beforeAll,
 	describe,
 	expect,
@@ -38,30 +39,65 @@ const loggerCalls: unknown[][] = [];
 const appendKeyCalls: unknown[][] = [];
 const removeKeyCalls: unknown[][] = [];
 const loggerSpies: Array<{ mockRestore: () => void }> = [];
+let lifecycleInfoFailure: Error | undefined;
+let lifecycleErrorFailure: Error | undefined;
+let appendKeysFailure: Error | undefined;
+let removeKeysFailure: Error | undefined;
 
 const recordLoggerCall = (...parameters: unknown[]) => {
 	loggerCalls.push(parameters);
+};
+
+const recordInfoCall = (...parameters: unknown[]) => {
+	recordLoggerCall(...parameters);
+	if (
+		lifecycleInfoFailure &&
+		(parameters[0] === "Durable execution started" ||
+			parameters[0] === "Durable execution succeeded")
+	) {
+		throw lifecycleInfoFailure;
+	}
+};
+
+const recordErrorCall = (...parameters: unknown[]) => {
+	recordLoggerCall(...parameters);
+	if (lifecycleErrorFailure && parameters[0] === "Durable execution failed") {
+		throw lifecycleErrorFailure;
+	}
 };
 
 describe.serial("durable-handler", () => {
 	beforeAll(async () => {
 		loggerSpies.push(
 			spyOn(Logger.prototype, "debug").mockImplementation(recordLoggerCall),
-			spyOn(Logger.prototype, "error").mockImplementation(recordLoggerCall),
-			spyOn(Logger.prototype, "info").mockImplementation(recordLoggerCall),
+			spyOn(Logger.prototype, "error").mockImplementation(recordErrorCall),
+			spyOn(Logger.prototype, "info").mockImplementation(recordInfoCall),
 			spyOn(Logger.prototype, "warn").mockImplementation(recordLoggerCall),
 			spyOn(Logger.prototype, "appendKeys").mockImplementation(
 				(...parameters: unknown[]) => {
 					appendKeyCalls.push(parameters);
+					if (appendKeysFailure) {
+						throw appendKeysFailure;
+					}
 				},
 			),
 			spyOn(Logger.prototype, "removeKeys").mockImplementation(
 				(...parameters: unknown[]) => {
 					removeKeyCalls.push(parameters);
+					if (removeKeysFailure) {
+						throw removeKeysFailure;
+					}
 				},
 			),
 		);
 		await LocalDurableTestRunner.setupTestEnvironment({ skipTime: true });
+	});
+
+	afterEach(() => {
+		lifecycleInfoFailure = undefined;
+		lifecycleErrorFailure = undefined;
+		appendKeysFailure = undefined;
+		removeKeysFailure = undefined;
 	});
 
 	afterAll(async () => {
@@ -71,7 +107,177 @@ describe.serial("durable-handler", () => {
 		}
 	});
 
+	test("preserves a successful typed result when observability operations throw", async () => {
+		const secret = "NEVER_LOG_SUCCESS_CLEANUP_INPUT_60d4";
+		const expectedResult = {
+			jobId: "job-telemetry-success",
+			result: "original-typed-result",
+		} satisfies WorkflowResult;
+		const loggerFailure = new Error(`logger failure containing ${secret}`);
+		const metricsFailure = new Error(`metrics failure containing ${secret}`);
+		const cleanupFailure = new Error(`cleanup failure containing ${secret}`);
+		const firstLoggerCall = loggerCalls.length;
+		const firstRemoveCall = removeKeyCalls.length;
+		let publishAttempts = 0;
+		lifecycleInfoFailure = loggerFailure;
+		removeKeysFailure = cleanupFailure;
+		const publishSpy = spyOn(
+			Metrics.prototype,
+			"publishStoredMetrics",
+		).mockImplementation(function (this: Metrics) {
+			publishAttempts += 1;
+			throw metricsFailure;
+		});
+		const fallbackCalls: unknown[][] = [];
+		let fallbackAttempts = 0;
+		const fallbackSpy = spyOn(console, "error").mockImplementation(
+			(...parameters: unknown[]) => {
+				fallbackAttempts += 1;
+				if (fallbackAttempts === 1) {
+					throw new Error("fallback logging failed");
+				}
+				fallbackCalls.push(parameters);
+			},
+		);
+
+		try {
+			const handler = useDurableHandler<WorkflowEvent, WorkflowResult>(
+				"durable-telemetry-success",
+				async () => expectedResult,
+			);
+			const runner = new LocalDurableTestRunner<WorkflowResult>({
+				handlerFunction: handler,
+			});
+			const execution = await runner.run({
+				payload: {
+					jobId: "job-telemetry-success",
+					payload: { secret, value: "not-for-logs" },
+				} satisfies WorkflowEvent,
+			});
+
+			expect(execution.getStatus()).toBe("SUCCEEDED");
+			expect(execution.getResult()).toEqual(expectedResult);
+			expect(
+				loggerCalls
+					.slice(firstLoggerCall)
+					.filter(([message]) => message === "Durable execution started"),
+			).toHaveLength(1);
+			expect(
+				loggerCalls
+					.slice(firstLoggerCall)
+					.filter(([message]) => message === "Durable execution succeeded"),
+			).toHaveLength(1);
+			expect(publishAttempts).toBe(execution.getInvocations().length);
+			expect(removeKeyCalls.length - firstRemoveCall).toBe(
+				execution.getInvocations().length,
+			);
+			expect(fallbackAttempts).toBe(4);
+			expect(fallbackCalls).toContainEqual([
+				"Durable handler observability failure",
+				"logSucceeded",
+				"Error",
+			]);
+			expect(fallbackCalls).toContainEqual([
+				"Durable handler observability failure",
+				"publishStoredMetrics",
+				"Error",
+			]);
+			expect(fallbackCalls).toContainEqual([
+				"Durable handler observability failure",
+				"removeCorrelation",
+				"Error",
+			]);
+			expect(JSON.stringify(fallbackCalls)).not.toContain(secret);
+		} finally {
+			fallbackSpy.mockRestore();
+			publishSpy.mockRestore();
+		}
+	});
+
+	test("preserves the original failure when error logging and cleanup throw", async () => {
+		class OriginalDurableFailure extends Error {
+			constructor(message: string) {
+				super(message);
+				this.name = "OriginalDurableFailure";
+			}
+		}
+
+		const failureMessage = "original-business-failure-sentinel";
+		const secret = "NEVER_LOG_FAILURE_CLEANUP_INPUT_a738";
+		const loggingFailure = new Error(`failure logger broke: ${secret}`);
+		const metricsFailure = new Error(`failure metrics broke: ${secret}`);
+		const cleanupFailure = new Error(`failure cleanup broke: ${secret}`);
+		const firstLoggerCall = loggerCalls.length;
+		const firstRemoveCall = removeKeyCalls.length;
+		let publishAttempts = 0;
+		lifecycleErrorFailure = loggingFailure;
+		removeKeysFailure = cleanupFailure;
+		const publishSpy = spyOn(
+			Metrics.prototype,
+			"publishStoredMetrics",
+		).mockImplementation(function (this: Metrics) {
+			publishAttempts += 1;
+			throw metricsFailure;
+		});
+		const fallbackCalls: unknown[][] = [];
+		const fallbackSpy = spyOn(console, "error").mockImplementation(
+			(...parameters: unknown[]) => {
+				fallbackCalls.push(parameters);
+			},
+		);
+
+		try {
+			const handler = useDurableHandler<{ nested: { secret: string } }, never>(
+				"durable-telemetry-failure",
+				async () => {
+					throw new OriginalDurableFailure(failureMessage);
+				},
+			);
+			const runner = new LocalDurableTestRunner<never>({
+				handlerFunction: handler,
+			});
+			const execution = await runner.run({
+				payload: { nested: { secret } },
+			});
+
+			expect(execution.getStatus()).toBe("FAILED");
+			expect(execution.getError().errorType).toBe("OriginalDurableFailure");
+			expect(execution.getError().errorMessage).toBe(failureMessage);
+			expect(
+				loggerCalls
+					.slice(firstLoggerCall)
+					.filter(([message]) => message === "Durable execution failed"),
+			).toHaveLength(1);
+			expect(publishAttempts).toBe(execution.getInvocations().length);
+			expect(removeKeyCalls.length - firstRemoveCall).toBe(
+				execution.getInvocations().length,
+			);
+			expect(fallbackCalls).toContainEqual([
+				"Durable handler observability failure",
+				"logFailed",
+				"Error",
+			]);
+			expect(fallbackCalls).toContainEqual([
+				"Durable handler observability failure",
+				"publishStoredMetrics",
+				"Error",
+			]);
+			expect(fallbackCalls).toContainEqual([
+				"Durable handler observability failure",
+				"removeCorrelation",
+				"Error",
+			]);
+			expect(JSON.stringify(fallbackCalls)).not.toContain(secret);
+		} finally {
+			fallbackSpy.mockRestore();
+			publishSpy.mockRestore();
+		}
+	});
+
 	test("runs a typed step and callback workflow with shared Powertools utilities", async () => {
+		const firstLoggerCall = loggerCalls.length;
+		const firstAppendCall = appendKeyCalls.length;
+		const firstRemoveCall = removeKeyCalls.length;
 		const utilitySnapshots: Array<{
 			logger: Logger;
 			metrics: Metrics;
@@ -182,14 +388,17 @@ describe.serial("durable-handler", () => {
 			expect(durableExecutionArn).not.toBeEmpty();
 			expect(appendKeyCalls).toContainEqual([{ durableExecutionArn }]);
 		}
-		expect(appendKeyCalls).toHaveLength(invocationCount);
-		expect(removeKeyCalls).toHaveLength(invocationCount);
-		expect(removeKeyCalls).toContainEqual([["durableExecutionArn"]]);
+		expect(appendKeyCalls.length - firstAppendCall).toBe(invocationCount);
+		expect(removeKeyCalls.length - firstRemoveCall).toBe(invocationCount);
+		expect(removeKeyCalls.slice(firstRemoveCall)).toContainEqual([
+			["durableExecutionArn"],
+		]);
 
-		const startLogs = loggerCalls.filter(
+		const testLoggerCalls = loggerCalls.slice(firstLoggerCall);
+		const startLogs = testLoggerCalls.filter(
 			([message]) => message === "Durable execution started",
 		);
-		const successLogs = loggerCalls.filter(
+		const successLogs = testLoggerCalls.filter(
 			([message]) => message === "Durable execution succeeded",
 		);
 		// The SDK uses multiple invocations for each execution, but mode-aware context
@@ -197,7 +406,7 @@ describe.serial("durable-handler", () => {
 		expect(startLogs).toHaveLength(2);
 		expect(successLogs).toHaveLength(2);
 		expect(startLogs.length).toBeLessThan(invocationCount);
-		expect(JSON.stringify(loggerCalls)).not.toContain(nestedSecret);
+		expect(JSON.stringify(testLoggerCalls)).not.toContain(nestedSecret);
 	});
 
 	test("publishes metrics and preserves the original durable failure", async () => {

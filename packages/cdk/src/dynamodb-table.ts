@@ -28,6 +28,17 @@ export const KeySchema = z.object({
 
 export type Key = z.infer<typeof KeySchema>;
 
+const DynamoDbTableNameSchema = z
+	.string()
+	.refine(
+		(name) =>
+			name.length >= 3 && name.length <= 255 && /^[A-Za-z0-9_.-]+$/.test(name),
+		{
+			message:
+				"DynamoDB table name must be 3-255 characters and contain only letters, numbers, underscores, periods, and hyphens",
+		},
+	);
+
 /** Durable state-table settings accepted by Pawl. */
 export const DynamoDbTablePropsSchema = z
 	.object({
@@ -60,6 +71,9 @@ export class DynamoDbTable extends BasicConstruct {
 		const { permissions, ...durableProps } = props;
 		const config = DynamoDbTablePropsSchema.parse(durableProps);
 		super(scope, id);
+		const tableName = DynamoDbTableNameSchema.parse(
+			`${this.prefix}${id}-table`,
+		);
 
 		this.table = new TableV2(this, "DynamoDbTable", {
 			partitionKey: {
@@ -72,7 +86,7 @@ export class DynamoDbTable extends BasicConstruct {
 						type: AttributeType[config.sortKey.type],
 					}
 				: undefined,
-			tableName: `${this.prefix}${id}-table`,
+			tableName,
 			timeToLiveAttribute: config.timeToLiveAttribute,
 			billing: Billing.onDemand(),
 			encryption: TableEncryptionV2.dynamoOwnedKey(),

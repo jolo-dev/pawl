@@ -47,6 +47,15 @@ function createTable(
 	return new DynamoDbTable(stack, id, props);
 }
 
+function createTableWithTeam(team: string): DynamoDbTable {
+	const app = createTestApp();
+	app.node.setContext("team", team);
+	const stack = new Stack(app, "TableNameValidationStack");
+	return new DynamoDbTable(stack, "State", {
+		partitionKey: { name: "id", type: "STRING" },
+	});
+}
+
 describe("DynamoDbTable", () => {
 	const stack = new DynamoDbTableTestStack(
 		createTestApp(),
@@ -90,6 +99,18 @@ describe("DynamoDbTable", () => {
 				},
 			},
 		});
+	});
+
+	test("rejects a final table name containing a slash from the prefix", () => {
+		expect(() => createTableWithTeam("foo/bar")).toThrow(
+			"DynamoDB table name must be 3-255 characters and contain only letters, numbers, underscores, periods, and hyphens",
+		);
+	});
+
+	test("rejects an overlength final table name including the prefix", () => {
+		expect(() => createTableWithTeam("x".repeat(242))).toThrow(
+			"DynamoDB table name must be 3-255 characters and contain only letters, numbers, underscores, periods, and hyphens",
+		);
 	});
 
 	test("retain false disables deletion protection and uses destroy behavior", () => {
@@ -165,79 +186,258 @@ describe("DynamoDbTable", () => {
 		const tableResourceId = stack.getLogicalId(
 			stack.stateTable.table.node.defaultChild as CfnResource,
 		);
-		const roleId = (lambda: LambdaFunction) =>
-			stack.getLogicalId(lambda.lambda.role?.node.defaultChild as CfnResource);
 		const policies = Object.values(template.findResources("AWS::IAM::Policy"));
-		const policyFor = (lambda: LambdaFunction) => {
-			const id = roleId(lambda);
-			return policies.find((policy) =>
-				JSON.stringify(policy).includes(`"Ref":"${id}"`),
+		const policiesFor = (lambda: LambdaFunction) => {
+			const roleId = stack.getLogicalId(
+				lambda.lambda.role?.node.defaultChild as CfnResource,
 			);
+			return policies.filter((policy) => {
+				const roles = policy.Properties.Roles as unknown;
+				return (
+					Array.isArray(roles) &&
+					roles.length === 1 &&
+					typeof roles[0] === "object" &&
+					roles[0] !== null &&
+					"Ref" in roles[0] &&
+					roles[0].Ref === roleId
+				);
+			});
 		};
-		const actionSet = (lambda: LambdaFunction) => {
-			const policy = policyFor(lambda);
-			expect(policy).toBeDefined();
-			const statements = policy?.Properties.PolicyDocument.Statement as Array<{
-				Action: string | string[];
-				Resource: unknown;
-			}>;
-			for (const statement of statements) {
-				expect(statement.Resource).toEqual({
-					"Fn::GetAtt": [tableResourceId, "Arn"],
-				});
-			}
-			return new Set(
-				statements.flatMap(({ Action }) =>
-					Array.isArray(Action) ? Action : [Action],
-				),
+		const expectPolicy = (lambda: LambdaFunction, actionGroups: string[][]) => {
+			const roleId = stack.getLogicalId(
+				lambda.lambda.role?.node.defaultChild as CfnResource,
+			);
+			const matchingPolicies = policiesFor(lambda);
+			expect(matchingPolicies).toHaveLength(1);
+			expect(matchingPolicies[0]?.Properties.Roles).toEqual([{ Ref: roleId }]);
+			expect(matchingPolicies[0]?.Properties.PolicyDocument.Statement).toEqual(
+				actionGroups.map((actions) => ({
+					Action: actions,
+					Effect: "Allow",
+					Resource: { "Fn::GetAtt": [tableResourceId, "Arn"] },
+				})),
 			);
 		};
 
-		expect(actionSet(stack.readGrantee)).toEqual(
-			new Set([
+		expectPolicy(stack.readGrantee, [
+			[
 				"dynamodb:BatchGetItem",
+				"dynamodb:Query",
+				"dynamodb:GetItem",
+				"dynamodb:Scan",
 				"dynamodb:ConditionCheckItem",
 				"dynamodb:DescribeTable",
-				"dynamodb:GetItem",
-				"dynamodb:GetRecords",
-				"dynamodb:GetShardIterator",
-				"dynamodb:Query",
-				"dynamodb:Scan",
-			]),
-		);
-		expect(actionSet(stack.writeGrantee)).toEqual(
-			new Set([
+			],
+			["dynamodb:GetRecords", "dynamodb:GetShardIterator"],
+		]);
+		expectPolicy(stack.writeGrantee, [
+			[
 				"dynamodb:BatchWriteItem",
-				"dynamodb:DeleteItem",
-				"dynamodb:DescribeTable",
 				"dynamodb:PutItem",
 				"dynamodb:UpdateItem",
-			]),
-		);
-		expect(actionSet(stack.readWriteGrantee)).toEqual(
-			new Set([
+				"dynamodb:DeleteItem",
+				"dynamodb:DescribeTable",
+			],
+		]);
+		expectPolicy(stack.readWriteGrantee, [
+			[
 				"dynamodb:BatchGetItem",
-				"dynamodb:BatchWriteItem",
+				"dynamodb:Query",
+				"dynamodb:GetItem",
+				"dynamodb:Scan",
 				"dynamodb:ConditionCheckItem",
+				"dynamodb:BatchWriteItem",
+				"dynamodb:PutItem",
+				"dynamodb:UpdateItem",
 				"dynamodb:DeleteItem",
 				"dynamodb:DescribeTable",
-				"dynamodb:GetItem",
-				"dynamodb:GetRecords",
-				"dynamodb:GetShardIterator",
-				"dynamodb:PutItem",
-				"dynamodb:Query",
-				"dynamodb:Scan",
-				"dynamodb:UpdateItem",
-			]),
-		);
-		expect(policyFor(stack.unrelated)).toBeUndefined();
+			],
+			["dynamodb:GetRecords", "dynamodb:GetShardIterator"],
+		]);
+		expect(policiesFor(stack.unrelated)).toEqual([]);
 	});
 
-	test("adds DynamoDB metrics to the monitoring dashboard", () => {
-		const dashboards = template.findResources("AWS::CloudWatch::Dashboard");
-		expect(JSON.stringify(dashboards)).toContain("AWS/DynamoDB");
-		expect(JSON.stringify(dashboards)).toContain("ConsumedReadCapacityUnits");
-		expect(JSON.stringify(dashboards)).toContain("foo-bar-State-table");
+	test("constructor permissions support allow, deny, and an explicit resource", () => {
+		const permissionStack = new Stack(
+			createTestApp(),
+			"DynamoDbTablePermissionsStack",
+		);
+		const allowed = new LambdaFunction(permissionStack, "Allowed", { entry });
+		const denied = new LambdaFunction(permissionStack, "Denied", { entry });
+		const explicitResource =
+			"arn:aws:dynamodb:us-east-1:123456789012:table/Explicit";
+		const permissionTable = new DynamoDbTable(permissionStack, "State", {
+			partitionKey: { name: "id", type: "STRING" },
+			permissions: [
+				[allowed, { effect: "allow", actions: ["dynamodb:GetItem"] }],
+				[
+					denied,
+					{
+						effect: "deny",
+						actions: ["dynamodb:DeleteItem"],
+						resource: explicitResource,
+					},
+				],
+			],
+		});
+		const permissionTemplate = Template.fromStack(permissionStack);
+		const tableResourceId = permissionStack.getLogicalId(
+			permissionTable.table.node.defaultChild as CfnResource,
+		);
+		const policies = Object.values(
+			permissionTemplate.findResources("AWS::IAM::Policy"),
+		);
+		const statementFor = (lambda: LambdaFunction) => {
+			const roleId = permissionStack.getLogicalId(
+				lambda.lambda.role?.node.defaultChild as CfnResource,
+			);
+			const policy = policies.find((candidate) => {
+				const roles = candidate.Properties.Roles as unknown;
+				return (
+					Array.isArray(roles) &&
+					roles.length === 1 &&
+					typeof roles[0] === "object" &&
+					roles[0] !== null &&
+					"Ref" in roles[0] &&
+					roles[0].Ref === roleId
+				);
+			});
+			expect(policy?.Properties.Roles).toEqual([{ Ref: roleId }]);
+			return policy?.Properties.PolicyDocument.Statement;
+		};
+
+		expect(statementFor(allowed)).toEqual([
+			{
+				Action: "dynamodb:GetItem",
+				Effect: "Allow",
+				Resource: { "Fn::GetAtt": [tableResourceId, "Arn"] },
+			},
+		]);
+		expect(statementFor(denied)).toEqual([
+			{
+				Action: "dynamodb:DeleteItem",
+				Effect: "Deny",
+				Resource: explicitResource,
+			},
+		]);
+	});
+
+	test("constructor permissions reject unsupported grantees after table creation", () => {
+		const unsupportedStack = new Stack(
+			createTestApp(),
+			"DynamoDbTableUnsupportedPermissionsStack",
+		);
+		expect(
+			() =>
+				new DynamoDbTable(unsupportedStack, "State", {
+					partitionKey: { name: "id", type: "STRING" },
+					permissions: [
+						[
+							unsupportedStack,
+							{ effect: "allow", actions: ["dynamodb:GetItem"] },
+						],
+					],
+				}),
+		).toThrow(
+			"DynamoDbTable permissions support only Pawl LambdaFunction grantees",
+		);
+		expect(
+			unsupportedStack.node
+				.findAll()
+				.some((construct) =>
+					construct.node.path.endsWith("State/DynamoDbTable/Resource"),
+				),
+		).toBe(true);
+	});
+
+	test("deduplicates repeated convenience grants", () => {
+		const repeatStack = new Stack(
+			createTestApp(),
+			"DynamoDbTableRepeatGrantStack",
+		);
+		const repeatGrantee = new LambdaFunction(repeatStack, "Reader", { entry });
+		const repeatTable = new DynamoDbTable(repeatStack, "State", {
+			partitionKey: { name: "id", type: "STRING" },
+		});
+		repeatTable.grantRead(repeatGrantee).grantRead(repeatGrantee);
+		const repeatTemplate = Template.fromStack(repeatStack);
+		const roleId = repeatStack.getLogicalId(
+			repeatGrantee.lambda.role?.node.defaultChild as CfnResource,
+		);
+		const matchingPolicies = Object.values(
+			repeatTemplate.findResources("AWS::IAM::Policy"),
+		).filter((policy) => {
+			const roles = policy.Properties.Roles as unknown;
+			return (
+				Array.isArray(roles) &&
+				roles.length === 1 &&
+				typeof roles[0] === "object" &&
+				roles[0] !== null &&
+				"Ref" in roles[0] &&
+				roles[0].Ref === roleId
+			);
+		});
+		expect(matchingPolicies).toHaveLength(1);
+		expect(matchingPolicies[0]?.Properties.Roles).toEqual([{ Ref: roleId }]);
+		const tableResourceId = repeatStack.getLogicalId(
+			repeatTable.table.node.defaultChild as CfnResource,
+		);
+		expect(matchingPolicies[0]?.Properties.PolicyDocument.Statement).toEqual([
+			{
+				Action: [
+					"dynamodb:BatchGetItem",
+					"dynamodb:Query",
+					"dynamodb:GetItem",
+					"dynamodb:Scan",
+					"dynamodb:ConditionCheckItem",
+					"dynamodb:DescribeTable",
+				],
+				Effect: "Allow",
+				Resource: { "Fn::GetAtt": [tableResourceId, "Arn"] },
+			},
+			{
+				Action: ["dynamodb:GetRecords", "dynamodb:GetShardIterator"],
+				Effect: "Allow",
+				Resource: { "Fn::GetAtt": [tableResourceId, "Arn"] },
+			},
+		]);
+	});
+
+	test("adds a DynamoDB read-capacity metric with the expected table dimension", () => {
+		const tableResourceId = stack.getLogicalId(
+			stack.stateTable.table.node.defaultChild as CfnResource,
+		);
+		const dashboards = Object.values(
+			template.findResources("AWS::CloudWatch::Dashboard"),
+		);
+		const hasExpectedMetric = dashboards.some((dashboard) => {
+			const dashboardBody = dashboard.Properties.DashboardBody as unknown;
+			if (
+				typeof dashboardBody !== "object" ||
+				dashboardBody === null ||
+				!("Fn::Join" in dashboardBody) ||
+				!Array.isArray(dashboardBody["Fn::Join"])
+			) {
+				return false;
+			}
+			const parts = dashboardBody["Fn::Join"][1];
+			if (!Array.isArray(parts)) {
+				return false;
+			}
+			const metricPrefixIndex = parts.findIndex(
+				(part) =>
+					typeof part === "string" &&
+					part.includes(
+						'["AWS/DynamoDB","ConsumedReadCapacityUnits","TableName","',
+					),
+			);
+			return (
+				metricPrefixIndex >= 0 &&
+				JSON.stringify(parts[metricPrefixIndex + 1]) ===
+					JSON.stringify({ Ref: tableResourceId })
+			);
+		});
+		expect(hasExpectedMetric).toBe(true);
 	});
 
 	test("passes AwsSolutions checks without table suppressions", () => {

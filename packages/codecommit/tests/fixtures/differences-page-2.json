@@ -1,0 +1,12 @@
+{
+	"differences": [
+		{
+			"afterBlob": {
+				"blobId": "blob-added-b",
+				"path": "src/b.ts",
+				"mode": "100644"
+			},
+			"changeType": "A"
+		}
+	]
+}

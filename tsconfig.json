@@ -7,11 +7,10 @@
 		"resolveJsonModule": true,
 		"esModuleInterop": true,
 		"paths": {
-			"@pawl/agentcore": ["packages/agentcore/index.ts"],
-			"@pawl/cdk": ["cdk/index.ts"],
-			"@pawl/lambda": ["lambda/index.ts"]
-		},
-		"baseUrl": "./"
+			"@pawl/agentcore": ["./packages/agentcore/index.ts"],
+			"@pawl/cdk": ["./packages/cdk/index.ts"],
+			"@pawl/lambda": ["./packages/lambda/index.ts"]
+		}
 	},
 	"exclude": ["**/cdk.out/**", "**/dist/**", "node_modules/**"]
 }

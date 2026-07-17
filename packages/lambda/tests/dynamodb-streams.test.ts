@@ -21,4 +21,14 @@ describe("dynamodb-streams", () => {
 		// expect(spy).toBeCalledWith({ ...event, ...logger });
 		expect(spy).toHaveBeenCalledTimes(1);
 	});
+
+	it("accepts an async callback that returns undefined", async () => {
+		const spy = mock(async () => undefined);
+		const handler = useDynamoDbStreamsHandler("dynamodbstreamsTest", spy);
+
+		const result = await handler(event, context, () => {});
+
+		expect(spy).toHaveBeenCalledTimes(1);
+		expect(result).toBeUndefined();
+	});
 });

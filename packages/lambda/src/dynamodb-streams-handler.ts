@@ -23,15 +23,14 @@ export function useDynamoDbStreamsHandler(
 	handleRequest: (
 		event: DynamoDBStreamEvent,
 		logger: Logger,
-	) => Promise<void> | Promise<DynamoDBBatchResponse>,
+	) => Promise<void | DynamoDBBatchResponse>,
 ): HandlerWithHooks<
 	DynamoDBStreamHandler,
 	DynamoDBStreamEvent,
-	DynamoDBBatchResponse
+	void | DynamoDBBatchResponse
 > {
-	//@ts-expect-error
-	return handlerFactory<DynamoDBStreamEvent, DynamoDBBatchResponse>(
-		serviceName,
-		handleRequest,
-	);
+	return handlerFactory<
+		DynamoDBStreamEvent,
+		void | DynamoDBBatchResponse
+	>(serviceName, handleRequest);
 }

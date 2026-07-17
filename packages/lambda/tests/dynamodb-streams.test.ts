@@ -1,5 +1,6 @@
 import { describe, expect, it, mock } from "bun:test";
 import { Logger } from "@aws-lambda-powertools/logger";
+import type { DynamoDBBatchResponse } from "aws-lambda";
 import { useDynamoDbStreamsHandler } from "../src/dynamodb-streams-handler";
 
 mock.module("@aws-lambda-powertools/logger", () => ({
@@ -13,7 +14,7 @@ describe("dynamodb-streams", () => {
 	const context = require("./context.json");
 
 	it("should check the validity of handler", async () => {
-		const spy = mock(() => {});
+		const spy = mock(async () => undefined);
 
 		const handler = useDynamoDbStreamsHandler("dynamodbstreamsTest", spy);
 		const _logger = new Logger();
@@ -22,13 +23,23 @@ describe("dynamodb-streams", () => {
 		expect(spy).toHaveBeenCalledTimes(1);
 	});
 
-	it("accepts an async callback that returns undefined", async () => {
-		const spy = mock(async () => undefined);
+	it("accepts an async callback that returns void or a batch response", async () => {
+		let returnBatchResponse = false;
+		const spy = mock(
+			async (): Promise<void | DynamoDBBatchResponse> => {
+				if (returnBatchResponse) {
+					return { batchItemFailures: [] };
+				}
+			},
+		);
 		const handler = useDynamoDbStreamsHandler("dynamodbstreamsTest", spy);
 
-		const result = await handler(event, context, () => {});
+		expect(await handler(event, context, () => {})).toBeUndefined();
 
-		expect(spy).toHaveBeenCalledTimes(1);
-		expect(result).toBeUndefined();
+		returnBatchResponse = true;
+		expect(await handler(event, context, () => {})).toEqual({
+			batchItemFailures: [],
+		});
+		expect(spy).toHaveBeenCalledTimes(2);
 	});
 });

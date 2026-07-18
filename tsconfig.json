@@ -9,7 +9,6 @@
 		"paths": {
 			"@pawl/agentcore": ["./packages/agentcore/index.ts"],
 			"@pawl/cdk": ["./packages/cdk/index.ts"],
-			"@pawl/codecommit": ["./packages/codecommit/index.ts"],
 			"@pawl/lambda": ["./packages/lambda/index.ts"]
 		}
 	},

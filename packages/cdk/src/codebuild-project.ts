@@ -23,6 +23,7 @@ import {
 	Effect,
 	PolicyStatement as IamPolicyStatement,
 	Policy,
+	ServicePrincipal,
 } from "aws-cdk-lib/aws-iam";
 import { Key } from "aws-cdk-lib/aws-kms";
 import { LogGroup, RetentionDays } from "aws-cdk-lib/aws-logs";
@@ -234,6 +235,28 @@ export class CodeBuildProject extends BasicConstruct {
 			enableKeyRotation: true,
 			removalPolicy: RemovalPolicy.RETAIN,
 		});
+		// CloudWatch Logs must be permitted to use the key to encrypt/decrypt the
+		// project's log group. Without this statement, CreateLogGroup fails with
+		// "the specified KMS key is not allowed to be used" at deploy time.
+		encryptionKey.addToResourcePolicy(
+			new IamPolicyStatement({
+				effect: Effect.ALLOW,
+				principals: [new ServicePrincipal(`logs.${this.stack.region}.amazonaws.com`)],
+				actions: [
+					"kms:Encrypt",
+					"kms:Decrypt",
+					"kms:ReEncrypt*",
+					"kms:DescribeKey",
+					"kms:GenerateDataKey*",
+				],
+				resources: ["*"],
+				conditions: {
+					ArnLike: {
+						"kms:EncryptionContext:aws:logs:arn": `arn:${this.stack.partition}:logs:${this.stack.region}:${this.stack.account}:log-group:*`,
+					},
+				},
+			}),
+		);
 		this.logGroup = new LogGroup(this, "LogGroup", {
 			encryptionKey,
 			retention: retentionDays[config.logRetentionDays],

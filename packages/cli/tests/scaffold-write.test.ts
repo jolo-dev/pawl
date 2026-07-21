@@ -14,6 +14,10 @@ describe("writeScaffoldProject", () => {
 			packageManager: "bun",
 			awsProfile: "dev",
 			testMode: "localstack",
+			team: "my-team",
+			stage: "dev",
+			tags: {},
+			localstackSecretPath: "/localstack/token",
 		});
 
 		const projectDir = path.join(dir, "my-app");
@@ -46,6 +50,9 @@ describe("writeScaffoldProject", () => {
 			packageManager: "pnpm",
 			awsProfile: "dev",
 			testMode: "none",
+			team: "my-team",
+			stage: "dev",
+			tags: {},
 		});
 
 		const packageJson = readFileSync(
@@ -64,6 +71,9 @@ describe("writeScaffoldProject", () => {
 			packageManager: "pnpm",
 			awsProfile: "dev",
 			testMode: "none",
+			team: "my-team",
+			stage: "dev",
+			tags: {},
 		});
 
 		const projectDir = path.join(dir, "my-app");

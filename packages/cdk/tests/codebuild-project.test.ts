@@ -414,17 +414,7 @@ describe("CodeBuildProject", () => {
 			{
 				Action: "codebuild:BatchGetBuilds",
 				Effect: "Allow",
-				Resource: stack.resolve(
-					Arn.format(
-						{
-							arnFormat: ArnFormat.SLASH_RESOURCE_NAME,
-							resource: "build",
-							resourceName: `${construct.projectName}:*`,
-							service: "codebuild",
-						},
-						stack,
-					),
-				),
+				Resource: stack.resolve(construct.projectArn),
 			},
 			{
 				Action: [

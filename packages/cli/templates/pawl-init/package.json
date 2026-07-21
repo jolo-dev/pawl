@@ -5,7 +5,7 @@
 	"scripts": {
 		"deploy": "AWS_PROFILE={{awsProfile}} {{packageManagerExec}} cdk deploy --all",
 		"remove": "AWS_PROFILE={{awsProfile}} {{packageManagerExec}} cdk destroy --all",
-		"dev": "AWS_PROFILE={{awsProfile}} {{packageManagerExec}} cdk watch",
+		{{devScript}},
 		"test": "{{packageManagerRun}} test"{{localstackScripts}}
 	},
 	"devDependencies": {

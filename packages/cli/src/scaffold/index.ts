@@ -5,9 +5,13 @@ import { listProfiles } from "../aws-credentials";
 import { assertEmptyTargetDir } from "./filesystem";
 import {
 	promptAwsProfile,
+	promptExtraTags,
 	promptInstallNow,
+	promptLocalstackSecretPath,
 	promptPackageManager,
 	promptProjectName,
+	promptStage,
+	promptTeam,
 	promptTestMode,
 } from "./prompts";
 import { buildTemplateFiles } from "./template";
@@ -16,6 +20,7 @@ import {
 	type ScaffoldInitResult,
 	type ScaffoldPackageManager,
 	type ScaffoldProjectConfig,
+	type ScaffoldStage,
 	type ScaffoldTestMode,
 	validateScaffoldConfig,
 } from "./types";
@@ -26,6 +31,10 @@ export interface PawlInitDeps {
 	promptPackageManager: () => Promise<ScaffoldPackageManager>;
 	promptAwsProfile: (profiles: string[]) => Promise<string>;
 	promptTestMode: () => Promise<ScaffoldTestMode>;
+	promptTeam: () => Promise<string>;
+	promptStage: () => Promise<ScaffoldStage>;
+	promptExtraTags: () => Promise<Record<string, string>>;
+	promptLocalstackSecretPath: () => Promise<string>;
 	promptInstallNow: () => Promise<boolean>;
 	assertEmptyTargetDir: (targetDir: string) => Promise<void>;
 }
@@ -40,6 +49,10 @@ const defaultDeps: PawlInitDeps = {
 	promptPackageManager,
 	promptAwsProfile,
 	promptTestMode,
+	promptTeam,
+	promptStage,
+	promptExtraTags,
+	promptLocalstackSecretPath,
 	promptInstallNow,
 	assertEmptyTargetDir,
 };
@@ -66,6 +79,12 @@ export async function runPawlInit(options: {
 		options.overrides?.awsProfile ??
 		(await deps.promptAwsProfile(await deps.listProfiles()));
 	const testMode = options.overrides?.testMode ?? (await deps.promptTestMode());
+	const team = options.overrides?.team ?? (await deps.promptTeam());
+	const stage = options.overrides?.stage ?? (await deps.promptStage());
+	const tags = options.overrides?.tags ?? (await deps.promptExtraTags());
+	const localstackSecretPath =
+		options.overrides?.localstackSecretPath ??
+		(testMode === "localstack" ? await deps.promptLocalstackSecretPath() : undefined);
 	const installNow = await deps.promptInstallNow();
 
 	const config = validateScaffoldConfig({
@@ -73,6 +92,10 @@ export async function runPawlInit(options: {
 		packageManager,
 		awsProfile,
 		testMode,
+		team,
+		stage,
+		tags,
+		localstackSecretPath,
 	});
 
 	return {
@@ -139,9 +162,13 @@ export async function writeScaffoldProject(
 
 export {
 	promptAwsProfile,
+	promptExtraTags,
 	promptInstallNow,
+	promptLocalstackSecretPath,
 	promptPackageManager,
 	promptProjectName,
+	promptStage,
+	promptTeam,
 	promptTestMode,
 } from "./prompts";
 export {
@@ -149,6 +176,7 @@ export {
 	type ScaffoldInitOverrides,
 	type ScaffoldInitResult,
 	type ScaffoldPackageManager,
+	type ScaffoldStage,
 	type ScaffoldTestMode,
 	validateScaffoldConfig,
 } from "./types";

@@ -28,6 +28,22 @@ describe("runPawlInit", () => {
 					calls.push("testMode");
 					return "localstack";
 				},
+				promptTeam: async () => {
+					calls.push("team");
+					return "my-team";
+				},
+				promptStage: async () => {
+					calls.push("stage");
+					return "dev";
+				},
+				promptExtraTags: async () => {
+					calls.push("extraTags");
+					return { env: "test", owner: "platform" };
+				},
+				promptLocalstackSecretPath: async () => {
+					calls.push("localstackSecretPath");
+					return "/localstack/token";
+				},
 				promptInstallNow: async () => {
 					calls.push("installNow");
 					return false;
@@ -40,6 +56,10 @@ describe("runPawlInit", () => {
 			packageManager: "bun",
 			awsProfile: "dev",
 			testMode: "localstack",
+			team: "my-team",
+			stage: "dev",
+			tags: { env: "test", owner: "platform" },
+			localstackSecretPath: "/localstack/token",
 			projectDir: path.join(dir, "my-app"),
 			installNow: false,
 		});
@@ -48,6 +68,10 @@ describe("runPawlInit", () => {
 			"packageManager",
 			"awsProfile:dev,prod",
 			"testMode",
+			"team",
+			"stage",
+			"extraTags",
+			"localstackSecretPath",
 			"installNow",
 		]);
 	});
@@ -82,6 +106,22 @@ describe("runPawlInit", () => {
 					promptTestMode: async () => {
 						promptCalls.push("testMode");
 						return "none";
+					},
+					promptTeam: async () => {
+						promptCalls.push("team");
+						return "should-not-run";
+					},
+					promptStage: async () => {
+						promptCalls.push("stage");
+						return "dev";
+					},
+					promptExtraTags: async () => {
+						promptCalls.push("extraTags");
+						return {};
+					},
+					promptLocalstackSecretPath: async () => {
+						promptCalls.push("localstackSecretPath");
+						return "/localstack/token";
 					},
 				},
 			}),

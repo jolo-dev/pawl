@@ -1,3 +1,4 @@
+export { Duration } from "aws-cdk-lib";
 export * from "./src/agentcore";
 export * from "./src/api-destination";
 export * from "./src/apigateway";

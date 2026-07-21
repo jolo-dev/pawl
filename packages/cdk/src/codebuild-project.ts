@@ -485,15 +485,6 @@ export class CodeBuildProject extends BasicConstruct {
 		const policyId = `ReviewerRunAndReadPolicy${reviewerRole.node.addr}`;
 		if (this.node.tryFindChild(policyId)) return this;
 
-		const buildArn = Arn.format(
-			{
-				arnFormat: ArnFormat.SLASH_RESOURCE_NAME,
-				resource: "build",
-				resourceName: `${this.projectName}:*`,
-				service: "codebuild",
-			},
-			this.stack,
-		);
 		const reviewerPolicy = new Policy(this, policyId, {
 			statements: [
 				new IamPolicyStatement({
@@ -503,8 +494,11 @@ export class CodeBuildProject extends BasicConstruct {
 				}),
 				new IamPolicyStatement({
 					effect: Effect.ALLOW,
+					// BatchGetBuilds is authorized against the project resource (the build
+					// ARN format is arn:...:build/<uuid>, which cannot be scoped by
+					// project name — AWS evaluates the action against the owning project).
 					actions: ["codebuild:BatchGetBuilds"],
-					resources: [buildArn],
+					resources: [this.projectArn],
 				}),
 				new IamPolicyStatement({
 					effect: Effect.ALLOW,

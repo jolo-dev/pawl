@@ -13,6 +13,10 @@ describe("installScaffoldDependencies", () => {
 				projectName: "my-app",
 				awsProfile: "dev",
 				testMode: "none",
+				team: "my-team",
+				stage: "dev",
+				tags: {},
+				localstackSecretPath: undefined,
 			},
 			{
 				exec: async (cmd, args, cwd) => {

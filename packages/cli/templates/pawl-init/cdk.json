@@ -16,6 +16,8 @@
 	"context": {
 		"awsProfile": "{{awsProfile}}",
 		"projectName": "{{projectName}}",
-		"testMode": "{{testMode}}"
+		"testMode": "{{testMode}}",
+		"team": "{{team}}",
+		"stage": "{{stage}}"{{extraTags}}
 	}
 }

@@ -14,6 +14,16 @@ describe("parseInitArgs", () => {
 			"dev",
 			"--test-mode",
 			"localstack",
+			"--team",
+			"my-team",
+			"--stage",
+			"qa",
+			"--tag",
+			"env=staging",
+			"--tag",
+			"owner=platform",
+			"--localstack-secret-path",
+			"/localstack/token",
 		]);
 
 		expect(parsed).toEqual({
@@ -21,6 +31,10 @@ describe("parseInitArgs", () => {
 			packageManager: "pnpm",
 			awsProfile: "dev",
 			testMode: "localstack",
+			team: "my-team",
+			stage: "qa",
+			tags: { env: "staging", owner: "platform" },
+			localstackSecretPath: "/localstack/token",
 		});
 	});
 });
@@ -35,6 +49,10 @@ describe("runPawlInit overrides", () => {
 				packageManager: "bun",
 				awsProfile: "dev",
 				testMode: "none",
+				team: "my-team",
+				stage: "qa",
+				tags: { env: "staging" },
+				localstackSecretPath: "/localstack/token",
 			},
 			deps: {
 				assertEmptyTargetDir: async () => undefined,
@@ -58,6 +76,18 @@ describe("runPawlInit overrides", () => {
 					calls.push("testMode");
 					return "localstack";
 				},
+				promptTeam: async () => {
+					calls.push("team");
+					return "should-not-be-used";
+				},
+				promptStage: async () => {
+					calls.push("stage");
+					return "dev";
+				},
+				promptExtraTags: async () => {
+					calls.push("extraTags");
+					return { other: "value" };
+				},
 				promptInstallNow: async () => {
 					calls.push("installNow");
 					return true;
@@ -70,6 +100,10 @@ describe("runPawlInit overrides", () => {
 			packageManager: "bun",
 			awsProfile: "dev",
 			testMode: "none",
+			team: "my-team",
+			stage: "qa",
+			tags: { env: "staging" },
+			localstackSecretPath: "/localstack/token",
 			installNow: true,
 		});
 		expect(calls).toEqual(["installNow"]);

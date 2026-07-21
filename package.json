@@ -1,6 +1,6 @@
 {
 	"name": "pawl",
-	"author": "",
+	"author": "John Nguyen",
 	"devDependencies": {
 		"typescript": "catalog:"
 	},

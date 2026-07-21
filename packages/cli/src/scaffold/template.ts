@@ -57,6 +57,7 @@ export async function buildTemplateFiles(
 	config: ScaffoldConfig,
 ): Promise<Array<{ path: string; content: string }>> {
 	const manifest = getTemplateManifest({ testMode: config.testMode });
+	const isLocalstack = config.testMode === "localstack";
 	const variables = {
 		projectName: config.projectName,
 		projectNamePascal: toPascalCase(config.projectName),
@@ -65,14 +66,17 @@ export async function buildTemplateFiles(
 		packageManagerExec: getPackageManagerExec(config.packageManager),
 		awsProfile: config.awsProfile,
 		testMode: config.testMode,
-		localstackScripts:
-			config.testMode === "localstack" ? getLocalstackScripts(config) : "",
+		team: config.team,
+		stage: config.stage,
+		extraTags: renderExtraTags(config.tags),
+		devScript: isLocalstack
+			? `"dev": "${getPackageManagerRun(config.packageManager)} localstack && ${getPackageManagerRun(config.packageManager)} cdklocal watch"`
+			: `"dev": "AWS_PROFILE=${config.awsProfile} ${getPackageManagerExec(config.packageManager)} cdk watch"`,
+		localstackScripts: isLocalstack ? getLocalstackScripts(config) : "",
 		tsxDevDependency:
 			config.packageManager === "bun" ? "" : ',\n\t\t"tsx": "^4.19.2"',
-		localstackDevDeps:
-			config.testMode === "localstack" ? getLocalstackDependencies() : "",
-		localstackSection:
-			config.testMode === "localstack" ? getLocalstackReadmeSection() : "",
+		localstackDevDeps: isLocalstack ? getLocalstackDependencies() : "",
+		localstackSection: isLocalstack ? getLocalstackReadmeSection() : "",
 	};
 
 	const files = [];
@@ -122,12 +126,31 @@ function getPackageManagerExec(
 
 function getLocalstackScripts(config: ScaffoldConfig): string {
 	const run = getPackageManagerRun(config.packageManager);
+	const exec = getPackageManagerExec(config.packageManager);
+	const tokenPrefix = getTokenPrefix(config);
+	const appCommand = getAppCommand(config);
 	return [
-		`,\n\t\t"localstack": "docker compose -f ./node_modules/@pawl/cdk/docker-compose.yml up -d",`,
-		`"bootstrap:local": "${run} localstack && AWS_ACCESS_KEY_ID=test AWS_SECRET_ACCESS_KEY=test AWS_DEFAULT_REGION=us-east-1 AWS_PROFILE=${config.awsProfile} ${getPackageManagerExec(config.packageManager)} cdk bootstrap --all",`,
-		`"deploy:local": "${run} localstack && ${run} bootstrap:local && AWS_ACCESS_KEY_ID=test AWS_SECRET_ACCESS_KEY=test AWS_DEFAULT_REGION=us-east-1 AWS_PROFILE=${config.awsProfile} ${getPackageManagerExec(config.packageManager)} cdk deploy --all",`,
-		`"dev:local": "${run} localstack && AWS_ACCESS_KEY_ID=test AWS_SECRET_ACCESS_KEY=test AWS_DEFAULT_REGION=us-east-1 AWS_PROFILE=${config.awsProfile} ${getPackageManagerExec(config.packageManager)} cdk watch"`,
+		`,\n\t\t"localstack": "${tokenPrefix}docker compose -f ./node_modules/@pawl/cdk/docker-compose.yml up -d",`,
+		`"cdklocal": "${tokenPrefix}AWS_ACCESS_KEY_ID=test AWS_SECRET_ACCESS_KEY=test AWS_DEFAULT_REGION=us-east-1 ${exec} cdklocal --app '${appCommand}'",`,
+		`"bootstrap:local": "${run} localstack && ${run} cdklocal bootstrap --all",`,
+		`"deploy:local": "${run} localstack && ${run} bootstrap:local && ${run} cdklocal deploy -- --all",`,
+		`"remove:local": "${run} localstack && ${run} cdklocal destroy --all",`,
+		`"synth:local": "${run} cdklocal synth"`,
 	].join("\n\t\t");
+}
+
+function getTokenPrefix(config: ScaffoldConfig): string {
+	if (!config.localstackSecretPath) return "";
+	const path = config.localstackSecretPath;
+	const profile = config.awsProfile;
+	return `LOCALSTACK_AUTH_TOKEN=$(aws ssm get-parameter --name ${path} --with-decryption --query Parameter.Value --output text --profile ${profile}) `;
+}
+
+function getAppCommand(config: ScaffoldConfig): string {
+	if (config.packageManager === "bun") {
+		return "bun run local.dev.ts";
+	}
+	return `${getPackageManagerExec(config.packageManager)} tsx local.dev.ts`;
 }
 
 function getLocalstackDependencies(): string {
@@ -141,6 +164,17 @@ function getLocalstackReadmeSection(): string {
 		"",
 		"This scaffold includes a local development entrypoint and LocalStack helper scripts.",
 		"",
-		"Use `bun run dev:local` / `pnpm run dev:local` / `npm run dev:local` after starting Docker.",
+		"Start developing with `bun run dev` / `pnpm run dev` / `npm run dev`.",
 	].join("\n");
+}
+
+function renderExtraTags(tags: Record<string, string>): string {
+	const entries = Object.entries(tags);
+	if (entries.length === 0) return "";
+	return (
+		"," +
+		entries
+			.map(([key, value]) => `\n\t\t"${key}": "${value}"`)
+			.join(",")
+	);
 }

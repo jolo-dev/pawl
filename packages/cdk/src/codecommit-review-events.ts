@@ -52,6 +52,8 @@ const readActions = [
 const commentActions = [
 	"codecommit:PostCommentForPullRequest",
 	"codecommit:UpdateComment",
+	"codecommit:PostCommentReply",
+	"codecommit:PutCommentReaction",
 ];
 
 /**

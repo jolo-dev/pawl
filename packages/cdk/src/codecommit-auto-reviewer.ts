@@ -120,8 +120,9 @@ export class CodeCommitAutoReviewer {
 				"CodeCommitAutoReviewer: team and stage are required (set via CDK context or props)",
 			);
 		}
-		const reviewerName = `${team}-${stage}-Reviewer-lambda`;
-		const reviewerArn = `arn:aws:lambda:${scope.region}:${scope.account}:function:${reviewerName}:${config.reviewerAlias}`;
+		const reviewerFunctionName = `${team}-${stage}-${id}Reviewer-lambda`;
+		const reviewerArn = `arn:aws:lambda:${scope.region}:${scope.account}:function:${reviewerFunctionName}:${config.reviewerAlias}`;
+		const botArnPatterns = config.botArnPatterns !== "" ? config.botArnPatterns : reviewerFunctionName;
 
 		// 1. State table
 		const stateTable = new DynamoDbTable(scope, `${id}State`, {
@@ -137,7 +138,7 @@ export class CodeCommitAutoReviewer {
 		const codeBuildProjects = new Map<string, CodeBuildProject>();
 		const reviewerEnvironment: Record<string, string> = {
 			STATE_TABLE_NAME: stateTable.tableName,
-			BOT_ARN_PATTERNS: config.botArnPatterns,
+			BOT_ARN_PATTERNS: botArnPatterns,
 			REVIEWER_FUNCTION_ARN: reviewerArn,
 			REVIEWER_MODEL_ID: config.reviewerModelId,
 			CODEBUILD_REPOSITORIES: config.repositories.join(","),
@@ -202,7 +203,7 @@ export class CodeCommitAutoReviewer {
 				REVIEWER_FUNCTION_NAME: reviewer.lambda.functionName,
 				REVIEWER_FUNCTION_ALIAS: config.reviewerAlias,
 				REVIEWER_FUNCTION_ARN: reviewer.durableFunctionArn,
-				BOT_ARN_PATTERNS: config.botArnPatterns,
+				BOT_ARN_PATTERNS: botArnPatterns,
 			},
 		});
 

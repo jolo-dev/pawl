@@ -13,7 +13,8 @@
 		"aws-cdk": "^2.1124.1",
 		"aws-cdk-local": "^3.0.4",
 		"cdk-nag": "^2.38.2",
-		"zod": "catalog:"
+		"zod": "catalog:",
+		"@aws/durable-execution-sdk-js-testing": "catalog:"
 	},
 	"dependencies": {
 		"@aws-cdk/aws-bedrock-agentcore-alpha": "^2.257.0-alpha.0",
@@ -23,6 +24,14 @@
 		"@pawl/lambda": "workspace:*",
 		"aws-cdk-lib": "^2.257.0",
 		"cdk-monitoring-constructs": "^10.0.0",
-		"constructs": "10.6.0"
+		"constructs": "10.6.0",
+		"@aws-sdk/client-bedrock-runtime": "catalog:",
+		"@aws-sdk/client-codebuild": "catalog:",
+		"@aws-sdk/client-codecommit": "catalog:",
+		"@aws-sdk/client-dynamodb": "catalog:",
+		"@aws-sdk/lib-dynamodb": "catalog:",
+		"@aws-sdk/client-cloudwatch-logs": "catalog:",
+		"@aws/durable-execution-sdk-js": "catalog:",
+		"diff": "catalog:"
 	}
 }

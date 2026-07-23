@@ -1,0 +1,17 @@
+{
+  "commentsForPullRequestData": [
+    {
+      "repositoryName": "widgets",
+      "pullRequestId": "42",
+      "beforeCommitId": "destination-immutable-def",
+      "afterCommitId": "source-immutable-abc",
+      "comments": [
+        {
+          "commentId": "comment-2",
+          "content": "General",
+          "authorArn": "arn:aws:iam::123:role/reviewer"
+        }
+      ]
+    }
+  ]
+}

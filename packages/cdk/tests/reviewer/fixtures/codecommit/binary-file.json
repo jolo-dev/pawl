@@ -1,0 +1,8 @@
+{
+  "commitId": "source-immutable-abc",
+  "blobId": "blob-binary",
+  "filePath": "assets/image.bin",
+  "fileMode": "NORMAL",
+  "fileSize": 4,
+  "fileContent": [137, 80, 0, 71]
+}

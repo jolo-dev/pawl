@@ -1,0 +1,16 @@
+{
+  "pullRequest": {
+    "pullRequestId": "42",
+    "pullRequestStatus": "OPEN",
+    "revisionId": "revision-3",
+    "pullRequestTargets": [
+      {
+        "repositoryName": "widgets",
+        "sourceReference": "refs/heads/feature/review",
+        "destinationReference": "refs/heads/main",
+        "sourceCommit": "source-immutable-abc",
+        "destinationCommit": "destination-immutable-def"
+      }
+    ]
+  }
+}

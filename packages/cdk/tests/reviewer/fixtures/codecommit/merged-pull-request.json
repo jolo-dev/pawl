@@ -1,0 +1,19 @@
+{
+  "pullRequest": {
+    "pullRequestId": "42",
+    "pullRequestStatus": "CLOSED",
+    "revisionId": "revision-4",
+    "pullRequestTargets": [
+      {
+        "repositoryName": "widgets",
+        "sourceReference": "refs/heads/feature/review",
+        "destinationReference": "refs/heads/main",
+        "sourceCommit": "source-immutable-abc",
+        "destinationCommit": "destination-immutable-def",
+        "mergeMetadata": {
+          "isMerged": true
+        }
+      }
+    ]
+  }
+}

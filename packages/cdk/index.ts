@@ -5,6 +5,8 @@ export * from "./src/apigateway";
 export * from "./src/apigateway-v1";
 export * from "./src/basic-tags";
 export * from "./src/codebuild-project";
+export * from "./src/codecommit";
+export * from "./src/codecommit-auto-reviewer";
 export * from "./src/codecommit-review-events";
 export * from "./src/cognito";
 export * from "./src/define-stack";

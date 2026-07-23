@@ -84,6 +84,7 @@ export class LambdaFunction extends BasicConstruct {
 				// Tracer is in CJS: https://docs.powertools.aws.dev/lambda/typescript/latest/core/tracer/#usage
 				esbuildArgs: {
 					"--tree-shaking": "true",
+					...props.bundling?.esbuildArgs,
 				},
 				banner:
 					"import { createRequire } from 'module';const require = createRequire(import.meta.url);",

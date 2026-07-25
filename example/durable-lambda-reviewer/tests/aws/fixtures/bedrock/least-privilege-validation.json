@@ -1,0 +1,35 @@
+{
+  "captureSource": "live assumed-role Bedrock Converse attempts",
+  "action": "bedrock:InvokeModel",
+  "profileOnlyPolicy": {
+    "resources": ["<inference-profile-resource>"],
+    "result": "rejected",
+    "error": {
+      "code": "AccessDeniedException",
+      "missingResource": "<foundation-model-resource>"
+    }
+  },
+  "exactResourceSetFromGetInferenceProfile": {
+    "resources": [
+      "<inference-profile-resource>",
+      "<foundation-model-resource-1>",
+      "<foundation-model-resource-2>",
+      "<foundation-model-resource-3>",
+      "<foundation-model-resource-4>",
+      "<foundation-model-resource-5>",
+      "<foundation-model-resource-6>"
+    ],
+    "liveSuccessRetained": true,
+    "result": "accepted",
+    "boundedPropagationAttempt": 2,
+    "response": {
+      "role": "assistant",
+      "text": "CONTRACT_OK",
+      "stopReason": "end_turn"
+    }
+  },
+  "directProfileInvocation": {
+    "result": "accepted",
+    "responseFixture": "converse-response.json"
+  }
+}

@@ -1,0 +1,48 @@
+{
+  "captureSource": "live EventBridge native CodeCommit events",
+  "events": [
+    {
+      "version": "0",
+      "id": "<event-comment-top-level-id>",
+      "detail-type": "CodeCommit Comment on Pull Request",
+      "source": "aws.codecommit",
+      "account": "<account-id>",
+      "time": "<event-time>",
+      "region": "eu-central-1",
+      "resources": ["<repository-resource>"],
+      "detail": {
+        "afterCommitId": "<after-commit-id>",
+        "beforeCommitId": "<before-commit-id>",
+        "callerUserArn": "<caller-resource>",
+        "commentId": "<top-level-comment-id>",
+        "event": "commentOnPullRequestCreated",
+        "notificationBody": "<redacted-notification-body>",
+        "pullRequestId": "<pull-request-1-id>",
+        "repositoryId": "<repository-id>",
+        "repositoryName": "<repository-name>"
+      }
+    },
+    {
+      "version": "0",
+      "id": "<event-comment-reply-id>",
+      "detail-type": "CodeCommit Comment on Pull Request",
+      "source": "aws.codecommit",
+      "account": "<account-id>",
+      "time": "<event-time>",
+      "region": "eu-central-1",
+      "resources": ["<repository-resource>"],
+      "detail": {
+        "afterCommitId": "<after-commit-id>",
+        "beforeCommitId": "<before-commit-id>",
+        "callerUserArn": "<caller-resource>",
+        "commentId": "<reply-comment-id>",
+        "event": "commentOnPullRequestCreated",
+        "inReplyTo": "<top-level-comment-id>",
+        "notificationBody": "<redacted-notification-body>",
+        "pullRequestId": "<pull-request-1-id>",
+        "repositoryId": "<repository-id>",
+        "repositoryName": "<repository-name>"
+      }
+    }
+  ]
+}

@@ -1,0 +1,190 @@
+{
+  "captureSource": "retained read-only cleanup verification responses",
+  "validationRuns": [
+    {
+      "name": "initial-contract-capture",
+      "resourcePrefix": "<initial-disposable-prefix>",
+      "expectedManifestComplete": true,
+      "residualResourceCount": 0,
+      "verifiedAbsent": true,
+      "resources": [
+        {
+          "service": "codebuild",
+          "resourceType": "project",
+          "lookup": "BatchGetProjects",
+          "absent": true,
+          "evidence": {
+            "projects": [],
+            "projectsNotFound": ["<codebuild-project-name>"]
+          }
+        },
+        {
+          "service": "logs",
+          "resourceType": "codebuild-log-group",
+          "lookup": "DescribeLogGroups",
+          "absent": true,
+          "evidence": {
+            "logGroups": []
+          }
+        },
+        {
+          "service": "events",
+          "resourceType": "event-rule",
+          "lookup": "DescribeRule",
+          "absent": true,
+          "evidence": {
+            "error": {
+              "code": "ResourceNotFoundException",
+              "message": "Rule <event-rule-name> does not exist on EventBus default."
+            }
+          }
+        },
+        {
+          "service": "sqs",
+          "resourceType": "event-capture-queue",
+          "lookup": "GetQueueUrl",
+          "absent": true,
+          "evidence": {
+            "error": {
+              "code": "AWS.SimpleQueueService.NonExistentQueue",
+              "message": "The specified queue does not exist."
+            }
+          }
+        },
+        {
+          "service": "iam",
+          "resourceType": "codebuild-role",
+          "lookup": "GetRole",
+          "absent": true,
+          "evidence": {
+            "error": {
+              "code": "NoSuchEntity",
+              "message": "The role with name <codebuild-role-name> cannot be found."
+            }
+          }
+        },
+        {
+          "service": "iam",
+          "resourceType": "bedrock-role",
+          "lookup": "GetRole",
+          "absent": true,
+          "evidence": {
+            "error": {
+              "code": "NoSuchEntity",
+              "message": "The role with name <bedrock-role-name> cannot be found."
+            }
+          }
+        },
+        {
+          "service": "iam",
+          "resourceType": "lambda-role",
+          "lookup": "GetRole",
+          "absent": true,
+          "evidence": {
+            "error": {
+              "code": "NoSuchEntity",
+              "message": "The role with name <lambda-role-name> cannot be found."
+            }
+          }
+        },
+        {
+          "service": "lambda",
+          "resourceType": "function",
+          "lookup": "GetFunction",
+          "absent": true,
+          "evidence": {
+            "error": {
+              "code": "ResourceNotFoundException",
+              "message": "Function not found: <function-resource>"
+            }
+          }
+        },
+        {
+          "service": "logs",
+          "resourceType": "lambda-log-group",
+          "lookup": "DescribeLogGroups",
+          "absent": true,
+          "evidence": {
+            "logGroups": []
+          }
+        },
+        {
+          "service": "codecommit",
+          "resourceType": "repository",
+          "lookup": "GetRepository",
+          "absent": true,
+          "evidence": {
+            "error": {
+              "code": "RepositoryDoesNotExistException",
+              "message": "<repository-name> does not exist for <account-id>."
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "durable-completion-capture",
+      "resourcePrefix": "<completion-disposable-prefix>",
+      "expectedManifestComplete": true,
+      "residualResourceCount": 0,
+      "verifiedAbsent": true,
+      "resources": [
+        {
+          "service": "lambda",
+          "resourceType": "function-alias-and-versions",
+          "lookup": "GetFunction",
+          "absent": true,
+          "evidence": {
+            "error": {
+              "code": "ResourceNotFoundException",
+              "message": "Function not found: <function-resource>"
+            }
+          }
+        },
+        {
+          "service": "logs",
+          "resourceType": "lambda-log-group",
+          "lookup": "DescribeLogGroups",
+          "absent": true,
+          "evidence": {
+            "logGroups": []
+          }
+        },
+        {
+          "service": "sqs",
+          "resourceType": "callback-capture-queue",
+          "lookup": "ListQueuesWithPrefix",
+          "absent": true,
+          "evidence": {
+            "stdoutBytes": 0,
+            "captureNote": "The AWS CLI emitted an empty response when no queue matched the completion prefix."
+          }
+        },
+        {
+          "service": "iam",
+          "resourceType": "lambda-role",
+          "lookup": "GetRole",
+          "absent": true,
+          "evidence": {
+            "error": {
+              "code": "NoSuchEntity",
+              "message": "The role with name <lambda-role-name> cannot be found."
+            }
+          }
+        },
+        {
+          "service": "iam",
+          "resourceType": "bedrock-role",
+          "lookup": "GetRole",
+          "absent": true,
+          "evidence": {
+            "error": {
+              "code": "NoSuchEntity",
+              "message": "The role with name <bedrock-role-name> cannot be found."
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

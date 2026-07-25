@@ -1,0 +1,40 @@
+{
+  "captureSource": "live Bedrock GetInferenceProfile response",
+  "inferenceProfileName": "EU Anthropic Claude Sonnet 4.6",
+  "inferenceProfileId": "eu.anthropic.claude-sonnet-4-6",
+  "inferenceProfileArn": "<inference-profile-resource>",
+  "status": "ACTIVE",
+  "type": "SYSTEM_DEFINED",
+  "models": [
+    {
+      "modelArn": "<foundation-model-resource-1>",
+      "region": "eu-north-1",
+      "modelId": "anthropic.claude-sonnet-4-6"
+    },
+    {
+      "modelArn": "<foundation-model-resource-2>",
+      "region": "eu-west-3",
+      "modelId": "anthropic.claude-sonnet-4-6"
+    },
+    {
+      "modelArn": "<foundation-model-resource-3>",
+      "region": "eu-south-1",
+      "modelId": "anthropic.claude-sonnet-4-6"
+    },
+    {
+      "modelArn": "<foundation-model-resource-4>",
+      "region": "eu-south-2",
+      "modelId": "anthropic.claude-sonnet-4-6"
+    },
+    {
+      "modelArn": "<foundation-model-resource-5>",
+      "region": "eu-west-1",
+      "modelId": "anthropic.claude-sonnet-4-6"
+    },
+    {
+      "modelArn": "<foundation-model-resource-6>",
+      "region": "eu-central-1",
+      "modelId": "anthropic.claude-sonnet-4-6"
+    }
+  ]
+}

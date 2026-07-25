@@ -1,0 +1,47 @@
+{
+  "captureSource": "live CodeBuild StartBuild and BatchGetBuilds responses",
+  "request": {
+    "projectName": "<project-name>",
+    "sourceVersion": "<requested-full-commit-id>"
+  },
+  "startResponse": {
+    "id": "<build-id>",
+    "arn": "<build-resource>",
+    "projectName": "<project-name>",
+    "sourceVersion": "<requested-full-commit-id>",
+    "resolvedSourceVersionPresent": false,
+    "buildStatus": "IN_PROGRESS",
+    "buildComplete": false
+  },
+  "afterBranchMove": {
+    "branchCommitId": "<different-moved-branch-commit-id>",
+    "buildStatus": "IN_PROGRESS",
+    "buildComplete": false,
+    "currentPhase": "PROVISIONING",
+    "resolvedSourceVersionPresent": false
+  },
+  "finalResponse": {
+    "id": "<build-id>",
+    "projectName": "<project-name>",
+    "sourceVersion": "<requested-full-commit-id>",
+    "resolvedSourceVersion": "<requested-full-commit-id>",
+    "buildStatus": "SUCCEEDED",
+    "buildComplete": true,
+    "currentPhase": "COMPLETED"
+  },
+  "assertions": {
+    "branchMovedToDifferentCommitWhileBuildNonterminal": true,
+    "resolvedSourceVersionEqualsRequestedFullCommit": true
+  },
+  "successfulServiceRolePolicy": [
+    {
+      "action": "codecommit:GitPull",
+      "resource": "<repository-resource>"
+    },
+    {
+      "actions": ["logs:CreateLogStream", "logs:PutLogEvents"],
+      "resource": "<project-log-stream-resource>"
+    }
+  ],
+  "provisioningNote": "The log group was pre-created, so logs:CreateLogGroup was not granted to the CodeBuild service role."
+}

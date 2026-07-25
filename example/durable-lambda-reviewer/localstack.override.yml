@@ -1,0 +1,19 @@
+# LocalStack compose override for the durable reviewer app.
+#
+# Pawl ships a base compose (node_modules/@pawl/cdk/docker-compose.yml) using
+# the `localstack/localstack` image, but LocalStack 2026.x requires an auth
+# token to start. This override injects LOCALSTACK_AUTH_TOKEN from the
+# environment (the Pro token is stored in SSM at /pawl/localstack/token) and
+# pins the Pro image, which enables the CodeCommit/CodeBuild/bedrock services
+# the stack needs. It is loaded via `-f` in the `localstack` npm script.
+#
+# Usage:
+#   export LOCALSTACK_AUTH_TOKEN=$(AWS_PROFILE=jolo aws ssm get-parameter \
+#     --name /pawl/localstack/token --with-decryption --query Parameter.Value --output text)
+#   bun run deploy:local
+services:
+  localstack:
+    image: localstack/localstack-pro
+    environment:
+      - LOCALSTACK_AUTH_TOKEN=${LOCALSTACK_AUTH_TOKEN}
+      - DEBUG=0

@@ -1,0 +1,25 @@
+{
+  "captureSource": "live CodeCommit comment API calls and native EventBridge events",
+  "idempotency": {
+    "identicalTokenAndRequest": {
+      "result": "accepted",
+      "sameCommentIdReturned": true
+    },
+    "sameTokenChangedContent": {
+      "result": "rejected",
+      "error": {
+        "code": "IdempotencyParameterMismatchException",
+        "messagePresent": false,
+        "sanitizationNote": "The retained AWS CLI stderr contained no service message after the error code; no message field is fabricated in this fixture."
+      }
+    }
+  },
+  "concurrentUpdateComment": {
+    "requestCount": 2,
+    "successfulResponses": 2,
+    "preconditionOrRevisionParameterAvailable": false,
+    "finalObservedWriter": "second-launched-request",
+    "nativeCommentUpdatedEventsObserved": 2,
+    "observedSemantics": "last successful write wins; no optimistic-concurrency field was exposed by UpdateComment"
+  }
+}

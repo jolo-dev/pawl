@@ -1,0 +1,39 @@
+{
+  "name": "durable-lambda-reviewer",
+  "version": "1.0.0",
+  "description": "A pawl scaffold project",
+  "type": "module",
+  "scripts": {
+    "deploy": "AWS_PROFILE=jolo bunx cdk deploy --all",
+    "remove": "AWS_PROFILE=jolo bunx cdk destroy --all",
+    "dev": "AWS_PROFILE=jolo bunx cdk watch",
+    "bootstrap:local": "bun run localstack && bun run cdklocal bootstrap --all",
+    "cdklocal": "AWS_ACCESS_KEY_ID=test AWS_SECRET_ACCESS_KEY=test AWS_DEFAULT_REGION=eu-central-1 cdklocal --app 'bun local.dev.ts'",
+    "cdk:synth": "cdk synth",
+    "localstack": "docker compose -f ./node_modules/@pawl/cdk/docker-compose.yml -f ./localstack.override.yml up -d",
+    "deploy:local": "bun run localstack && bun run bootstrap:local && bun run cdklocal deploy -- --all --require-approval never",
+    "remove:local": "bun run localstack && bun run cdklocal destroy -- --all",
+    "synth:local": "bun run cdklocal synth",
+    "test": "bun test",
+    "lint": "oxlint",
+    "lint:fix": "oxlint --fix",
+    "fmt": "oxfmt",
+    "fmt:check": "oxfmt --check"
+  },
+  "devDependencies": {
+    "@aws-sdk/client-codecommit": "catalog:",
+    "@aws-sdk/client-dynamodb": "catalog:",
+    "@aws-sdk/client-lambda": "catalog:",
+    "@aws-sdk/lib-dynamodb": "catalog:",
+    "@pawl/cdk": "workspace:*",
+    "@types/bun": "catalog:",
+    "aws-cdk": "^2.1124.1",
+    "aws-cdk-lib": "^2.261.0",
+    "aws-cdk-local": "^3.0.4",
+    "cdk-nag": "^2.38.2",
+    "constructs": "10.6.0",
+    "esbuild": "^0.28.0",
+    "oxfmt": "0.59.0",
+    "oxlint": "1.74.0"
+  }
+}

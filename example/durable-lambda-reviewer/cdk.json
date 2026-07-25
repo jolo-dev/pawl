@@ -1,0 +1,28 @@
+{
+  "app": "bun ./index.ts",
+  "watch": {
+    "include": ["**"],
+    "exclude": [
+      "README.md",
+      "cdk*.json",
+      "**/*.d.ts",
+      "**/*.js",
+      "tsconfig.json",
+      "package*.json",
+      "node_modules",
+      "test"
+    ]
+  },
+  "context": {
+    "awsProfile": "jolo",
+    "projectName": "durable-lambda-reviewer",
+    "testMode": "none",
+    "team": "jolo",
+    "stage": "dev",
+    "repositories": ["durable-reviewer-demo"],
+    "reviewerExecutionTimeoutSeconds": 2592000,
+    "reviewerRetentionDays": 14,
+    "reviewerModelId": "eu.anthropic.claude-sonnet-4-6",
+    "reviewerCodeBuildRegistryEndpoint": "https://registry.npmjs.org"
+  }
+}

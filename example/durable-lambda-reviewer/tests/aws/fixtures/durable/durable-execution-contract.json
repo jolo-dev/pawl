@@ -1,0 +1,102 @@
+{
+  "captureSource": "live Lambda durable execution API responses",
+  "namedInvocation": {
+    "request": {
+      "InvocationType": "Event",
+      "DurableExecutionName": "<durable-execution-name>",
+      "Payload": "<redacted-payload>"
+    },
+    "response": {
+      "StatusCode": 202,
+      "DurableExecutionArn": "<durable-execution-resource>"
+    }
+  },
+  "getDurableExecution": {
+    "runningResponse": {
+      "DurableExecutionArn": "<durable-execution-resource>",
+      "DurableExecutionName": "<durable-execution-name>",
+      "FunctionArn": "<function-resource>",
+      "InputPayload": "<redacted-payload>",
+      "StartTimestamp": "<timestamp>",
+      "Status": "RUNNING",
+      "TraceHeader": {
+        "XAmznTraceId": "<trace-id>"
+      },
+      "Version": "<function-version>"
+    },
+    "terminalResponse": {
+      "DurableExecutionArn": "<durable-execution-resource>",
+      "DurableExecutionName": "<durable-execution-name>",
+      "EndTimestamp": "<timestamp>",
+      "FunctionArn": "<function-resource>",
+      "InputPayload": "<redacted-payload>",
+      "Result": "{\"tag\":\"<workflow-tag>\",\"callbackResult\":\"{\\\"outcome\\\":\\\"accepted\\\"}\\n\"}",
+      "StartTimestamp": "<timestamp>",
+      "Status": "SUCCEEDED",
+      "TraceHeader": {
+        "XAmznTraceId": "<trace-id>"
+      },
+      "Version": "<function-version>"
+    }
+  },
+  "sendDurableExecutionCallbackSuccess": {
+    "request": {
+      "CallbackId": "<callback-id>",
+      "Result": "<redacted-utf8-json-bytes>"
+    },
+    "responseBodyBytes": 0,
+    "terminalStatus": "SUCCEEDED"
+  },
+  "duplicateName": {
+    "samePayload": {
+      "response": {
+        "StatusCode": 202,
+        "DurableExecutionArn": "<durable-execution-resource>"
+      },
+      "sameArnAsOriginal": true
+    },
+    "changedPayloadRequestResponse": {
+      "cliExitCode": 254,
+      "error": {
+        "code": "DurableExecutionAlreadyStartedException",
+        "message": "Execution already started: <durable-execution-resource>"
+      }
+    }
+  },
+  "closedCallback": {
+    "supportingHistoryEvent": {
+      "EventType": "CallbackTimedOut",
+      "SubType": "Callback",
+      "CallbackTimedOutDetails": {
+        "Error": {
+          "Truncated": true
+        }
+      }
+    },
+    "sendAfterClosure": {
+      "error": {
+        "code": "CallbackTimeoutException",
+        "message": "The callback is either timed out or already completed"
+      },
+      "captureNote": "The service error was retained in the live run transcript; the supporting CallbackTimedOut history event was retained in the raw temporary evidence."
+    }
+  },
+  "listDurableExecutionsByFunction": {
+    "evidenceStatus": "notRetained",
+    "includedInContract": false
+  },
+  "setupEvidence": {
+    "purpose": "Records the initial execution-role denial and the self-permissions present during the successful execution; this is deployment evidence, not workflow output.",
+    "initialFailure": {
+      "Status": "FAILED",
+      "Error": {
+        "ErrorType": "CheckpointUnrecoverableExecutionError",
+        "ErrorMessage": "[Unrecoverable Execution] Checkpoint failed: User: <execution-role-resource> is not authorized to perform: lambda:CheckpointDurableExecution on resource: <durable-execution-resource> because no identity-based policy allows the lambda:CheckpointDurableExecution action"
+      }
+    },
+    "successfulSelfPermissions": [
+      "lambda:CheckpointDurableExecution",
+      "lambda:GetDurableExecutionState"
+    ]
+  }
+}

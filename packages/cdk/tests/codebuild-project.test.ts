@@ -1,7 +1,8 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, expectTypeOf, test } from "bun:test";
 import path from "node:path";
 import { Arn, ArnFormat, Aspects, type CfnResource } from "aws-cdk-lib";
 import { Annotations, Match, Template } from "aws-cdk-lib/assertions";
+import { Repository } from "aws-cdk-lib/aws-codecommit";
 import { AwsSolutionsChecks, NagSuppressions } from "cdk-nag";
 import { Construct } from "constructs";
 import {
@@ -141,6 +142,62 @@ describe("CodeBuildProject", () => {
 		]);
 		expect(JSON.stringify(resource)).not.toContain("SECRETS_MANAGER");
 		expect(JSON.stringify(resource)).not.toContain("PARAMETER_STORE");
+	});
+
+	test("preserves a supplied repository and uses it as the CodeBuild source", () => {
+		const stack = new Stack(createTestApp(), "SharedRepositoryStack");
+		const repository = new Repository(stack, "SharedRepository", {
+			repositoryName: "shared-review-target",
+		});
+		const construct = new CodeBuildProject(stack, "Build", {
+			repository,
+			networkPolicy: publicTestPolicy,
+		});
+		const template = Template.fromStack(stack);
+		const repositoryId = stack.getLogicalId(
+			repository.node.defaultChild as CfnResource,
+		);
+
+		expect(construct.repository).toBe(repository);
+		expectTypeOf(construct.repository).toEqualTypeOf<Repository>();
+		template.hasResourceProperties("AWS::CodeBuild::Project", {
+			Source: {
+				Location: { "Fn::GetAtt": [repositoryId, "CloneUrlHttp"] },
+				Type: "CODECOMMIT",
+			},
+		});
+	});
+
+	test("rejects missing or ambiguous repository targets before child resources", () => {
+		for (const [id, target] of [
+			["Missing", {}],
+			[
+				"Ambiguous",
+				{
+					repositoryName: "review-target",
+					repository: new Repository(
+						new Stack(createTestApp(), "OtherRepositoryStack"),
+						"Repository",
+						{ repositoryName: "other-target" },
+					),
+				},
+			],
+		] as const) {
+			const stack = new Stack(createTestApp(), `${id}Stack`);
+			expect(
+				() =>
+					new CodeBuildProject(stack, "Build", {
+						...target,
+						networkPolicy: publicTestPolicy,
+					} as CodeBuildProjectProps),
+			).toThrow(/exactly one/);
+			expect(Template.fromStack(stack).findResources("AWS::KMS::Key")).toEqual(
+				{},
+			);
+			expect(
+				Template.fromStack(stack).findResources("AWS::CodeBuild::Project"),
+			).toEqual({});
+		}
 	});
 
 	test("honors bounded timeout and compute selections", () => {
@@ -756,14 +813,25 @@ describe("CodeBuildProject", () => {
 		).toHaveLength(0);
 	});
 
-	test("exports a schema that applies secure defaults", () => {
+	test("exports a repository-free schema with secure defaults and supported retention values", () => {
 		const config = CodeBuildProjectConfigSchema.parse({
-			repositoryName: "review-target",
 			networkPolicy: publicTestPolicy,
 		});
 		expect(config.timeoutMinutes).toBe(30);
 		expect(config.computeSize).toBe("SMALL");
 		expect(config.logRetentionDays).toBe(30);
+		expect(
+			CodeBuildProjectConfigSchema.safeParse({
+				logRetentionDays: 2,
+				networkPolicy: publicTestPolicy,
+			}).success,
+		).toBe(false);
+		expect(
+			CodeBuildProjectConfigSchema.safeParse({
+				logRetentionDays: 90,
+				networkPolicy: publicTestPolicy,
+			}).success,
+		).toBe(true);
 	});
 
 	test("passes AwsSolutions checks for private CodeArtifact with narrow wildcard suppressions", () => {

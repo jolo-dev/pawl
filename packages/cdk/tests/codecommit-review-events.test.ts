@@ -1,7 +1,8 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, expectTypeOf, test } from "bun:test";
 import path from "node:path";
 import { Aspects, type CfnResource } from "aws-cdk-lib";
 import { Annotations, Match, Template } from "aws-cdk-lib/assertions";
+import { type IRepository, Repository } from "aws-cdk-lib/aws-codecommit";
 import { AwsSolutionsChecks, NagSuppressions } from "cdk-nag";
 import { Construct } from "constructs";
 import {
@@ -134,6 +135,64 @@ describe("CodeCommitReviewEvents", () => {
 			expect(serialized).not.toContain("user");
 		}
 		expect(construct.repository.repositoryName).toBe("review-target");
+	});
+
+	test("preserves a supplied repository and scopes rules to its ARN", () => {
+		const stack = new Stack(createTestApp(), "SharedRepositoryStack");
+		const repository = new Repository(stack, "SharedRepository", {
+			repositoryName: "shared-review-target",
+		});
+		const router = new LambdaFunction(stack, "Router", { entry: lambdaEntry });
+		const construct = new CodeCommitReviewEvents(stack, "ReviewEvents", {
+			repository,
+			router,
+		});
+		const template = Template.fromStack(stack);
+
+		expect(construct.repository).toBe(repository);
+		expectTypeOf(construct.repository).toEqualTypeOf<IRepository>();
+		for (const { Properties } of Object.values(
+			template.findResources("AWS::Events::Rule"),
+		)) {
+			expect(Properties.EventPattern.resources).toEqual([
+				{ "Fn::GetAtt": [expect.stringContaining("SharedRepository"), "Arn"] },
+			]);
+		}
+	});
+
+	test("rejects missing or ambiguous repository targets before child resources", () => {
+		for (const [id, target] of [
+			["Missing", {}],
+			[
+				"Ambiguous",
+				{
+					repositoryName: "review-target",
+					repository: Repository.fromRepositoryName(
+						new Stack(createTestApp(), "ImportedRepositoryStack"),
+						"Repository",
+						"other-target",
+					),
+				},
+			],
+		] as const) {
+			const stack = new Stack(createTestApp(), `${id}Stack`);
+			const router = new LambdaFunction(stack, "Router", {
+				entry: lambdaEntry,
+			});
+			expect(
+				() =>
+					new CodeCommitReviewEvents(stack, "ReviewEvents", {
+						...target,
+						router,
+					} as CodeCommitReviewEventsProps),
+			).toThrow(/exactly one/);
+			expect(
+				Template.fromStack(stack).findResources("AWS::SQS::Queue"),
+			).toEqual({});
+			expect(
+				Template.fromStack(stack).findResources("AWS::Events::Rule"),
+			).toEqual({});
+		}
 	});
 
 	test("targets the router with one shared DLQ and bounded retry policies", () => {
@@ -331,6 +390,8 @@ describe("CodeCommitReviewEvents", () => {
 					Action: [
 						"codecommit:PostCommentForPullRequest",
 						"codecommit:UpdateComment",
+						"codecommit:PostCommentReply",
+						"codecommit:PutCommentReaction",
 					],
 					Effect: "Allow",
 				},
@@ -428,10 +489,7 @@ describe("CodeCommitReviewEvents", () => {
 				]),
 			);
 		}
-		expect(
-			CodeCommitReviewEventsConfigSchema.parse({ repositoryName: "repo" }),
-		).toEqual({
-			repositoryName: "repo",
+		expect(CodeCommitReviewEventsConfigSchema.parse({})).toEqual({
 			retryAttempts: 3,
 			maxEventAgeMinutes: 60,
 		});

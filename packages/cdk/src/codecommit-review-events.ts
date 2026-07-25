@@ -1,5 +1,5 @@
 import { Duration, RemovalPolicy } from "aws-cdk-lib";
-import { type IRepository, Repository } from "aws-cdk-lib/aws-codecommit";
+import type { IRepository } from "aws-cdk-lib/aws-codecommit";
 import { Rule } from "aws-cdk-lib/aws-events";
 import { LambdaFunction as LambdaEventTarget } from "aws-cdk-lib/aws-events-targets";
 import {
@@ -15,14 +15,15 @@ import {
 	type BasicConstructProps,
 	type PolicyStatement,
 } from "./basic-construct";
+import {
+	normalizeRepositoryTarget,
+	type RepositoryTarget,
+} from "./codecommit-repository";
 import { LambdaFunction } from "./lambda-function";
 import type { Stack } from "./stack";
 
-const nonEmptyString = z.string().trim().min(1);
-
 /** Validated event-routing configuration that does not carry CDK constructs. */
 export const CodeCommitReviewEventsConfigSchema = z.object({
-	repositoryName: nonEmptyString,
 	commentEventFallback: z.literal("cloudtrail").optional(),
 	retryAttempts: z.number().int().min(0).max(10).default(3),
 	maxEventAgeMinutes: z.number().int().min(1).max(1440).default(60),
@@ -33,9 +34,8 @@ export type CodeCommitReviewEventsConfig = z.infer<
 >;
 
 /** Properties for CodeCommit review-event routing. */
-export type CodeCommitReviewEventsProps = z.input<
-	typeof CodeCommitReviewEventsConfigSchema
-> &
+export type CodeCommitReviewEventsProps = RepositoryTarget &
+	z.input<typeof CodeCommitReviewEventsConfigSchema> &
 	BasicConstructProps & {
 		/** Pawl Lambda that receives the complete EventBridge event. */
 		router: LambdaFunction;
@@ -74,17 +74,17 @@ export class CodeCommitReviewEvents extends BasicConstruct {
 
 	constructor(scope: Stack, id: string, props: CodeCommitReviewEventsProps) {
 		super(scope, id);
-		const { router, permissions, ...configInput } = props;
+		const { router, permissions, repository, repositoryName, ...configInput } =
+			props;
 		if (!(router instanceof LambdaFunction)) {
 			throw new Error("CodeCommitReviewEvents router must be a LambdaFunction");
 		}
+		this.repository = normalizeRepositoryTarget(this, "Repository", {
+			repository,
+			repositoryName,
+		} as RepositoryTarget).repository;
 		const config = CodeCommitReviewEventsConfigSchema.parse(configInput);
 
-		this.repository = Repository.fromRepositoryName(
-			this,
-			"Repository",
-			config.repositoryName,
-		);
 		this.deadLetterQueue = new Queue(this, "DeadLetterQueue", {
 			encryption: QueueEncryption.KMS_MANAGED,
 			enforceSSL: true,

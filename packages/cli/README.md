@@ -80,6 +80,32 @@ pawl init codecommit --name my-repo --no-sync --autoreviewer --model eu.anthropi
 
 **Warning:** Source files are uploaded only as the repository's initial seed. Later local edits are not automatically synchronized to CodeCommit.
 
+### `pawl init codepipeline`
+
+Create a Pawl CDK project with a CodePipeline CI/CD pipeline for an existing CodeCommit repository:
+
+```bash
+pawl init codepipeline --source codecommit --source-name my-repo --no-autoreviewer --team platform --no-install --no-deploy
+pawl init codepipeline --source codecommit --source-name my-repo --on-pr --autoreviewer --model eu.anthropic.claude-sonnet-4-6 --team platform --install --deploy --aws-profile dev --region eu-central-1
+```
+
+| Flag | Behavior |
+|------|----------|
+| `--source <type>` | Source type: `codecommit` (required) |
+| `--source-name <name>` | CodeCommit repository name (import existing) |
+| `--source-branch <name>` | Source branch (default: `main`) |
+| `--pipeline-stage <spec>` | Repeatable. Pipeline stage action |
+| `--on-pr` / `--on-pull-request` | PR-gated mode: trigger on PR events only |
+| `--autoreviewer` / `--no-autoreviewer` | Enable/disable auto-review |
+| `--model <model-id>` | Anthropic Bedrock model ID for auto-review |
+| `--team <name>` | Owning team tag |
+| `--stage <dev\|qa\|prod>` | Deployment stage (default: `dev`) |
+| `--install` / `--no-install` | Install dependencies |
+| `--deploy` / `--no-deploy` | Deploy after installation |
+| `--aws-profile <profile>` | AWS profile used for deployment |
+| `--region <region>` | AWS region used for deployment |
+| `--help` | Show help |
+
 ### Flue Agents (HTTP API)
 
 ```bash

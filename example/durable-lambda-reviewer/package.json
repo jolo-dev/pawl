@@ -11,7 +11,7 @@
     "cdklocal": "AWS_ACCESS_KEY_ID=test AWS_SECRET_ACCESS_KEY=test AWS_DEFAULT_REGION=eu-central-1 cdklocal --app 'bun local.dev.ts'",
     "cdk:synth": "cdk synth",
     "localstack": "docker compose -f ./node_modules/@pawl/cdk/docker-compose.yml -f ./localstack.override.yml up -d",
-    "deploy:local": "bun run localstack && bun run bootstrap:local && bun run cdklocal deploy -- --all --require-approval never",
+    "deploy:local": "export LOCALSTACK_AUTH_TOKEN=$$(AWS_PROFILE=jolo aws ssm get-parameter --name /pawl/localstack/token --with-decryption --query Parameter.Value --output text) && bun run localstack && bun run bootstrap:local && bun run cdklocal deploy -- --all --require-approval never",
     "remove:local": "bun run localstack && bun run cdklocal destroy -- --all",
     "synth:local": "bun run cdklocal synth",
     "test": "bun test",

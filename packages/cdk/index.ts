@@ -12,6 +12,7 @@ export * from "./src/codecommit-auto-reviewer";
 export * from "./src/codecommit-repository";
 export * from "./src/codecommit-review-events";
 export * from "./src/codecommit-source";
+export * from "./src/reviewer/pipeline-review-common";
 export * from "./src/cognito";
 export * from "./src/define-stack";
 export * from "./src/durable-lambda-function";

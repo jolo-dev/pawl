@@ -15,7 +15,7 @@ import {
 import type { LambdaFunction } from "./lambda-function";
 import type { Stack } from "./stack";
 
-const anthropicModelIdSchema = z
+export const AnthropicModelIdSchema = z
 	.string()
 	.min(2)
 	.max(256)
@@ -32,7 +32,7 @@ const anthropicModelIdSchema = z
  * here — the single repository name passed to `CodeCommit` is used.
  */
 const autoReviewConfigSchema = z.object({
-	modelId: anthropicModelIdSchema,
+	modelId: AnthropicModelIdSchema,
 	reviewerAlias: z.string().trim().min(1).default("live"),
 	reviewerExecutionTimeoutSeconds: z
 		.number()

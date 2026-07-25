@@ -1,10 +1,14 @@
 # durable-lambda-reviewer
 
-A durable CodeCommit pull-request reviewer built on AWS Lambda Durable
-Execution, [Pawl](../pawl) CDK constructs, Amazon Bedrock, CodeBuild, and
-DynamoDB.
+Two example stacks demonstrating Pawl's durable auto-review constructs:
 
-## Architecture
+1. **`DurableLambdaReviewerStack`** — Event-only review using `CodeCommitAutoReviewer`
+2. **`CodePipelineReviewerStack`** — PR-gated CI + AI review using `CodePipeline`
+
+## Stack 1: Event-only review (`CodeCommitAutoReviewer`)
+
+A durable CodeCommit pull-request reviewer built on AWS Lambda Durable
+Execution, Pawl CDK constructs, Amazon Bedrock, CodeBuild, and DynamoDB.
 
 ```
 CodeCommit PR/comment events
@@ -28,6 +32,44 @@ CodeCommit PR/comment events
   durable `step`.
 - **Per repository** — one CodeBuild project + one CodeCommit event construct.
 - **Shared** — one reviewer, one router, one DynamoDB state table.
+
+## Stack 2: PR-gated CI + AI review (`CodePipeline`)
+
+A CodePipeline CI/CD pipeline with durable auto-review. When a pull request is
+opened, the router starts a pipeline execution and invokes the durable
+reviewer in parallel. CI build results and AI review comments are posted
+independently as they complete.
+
+```
+CodeCommit PR event
+        │
+        ▼
+ router Lambda
+  ├──► StartPipelineExecution (sourceRevision = PR commit)
+  │         │
+  │         ▼
+  │    CodePipeline (Source → Build → Approve)
+  │         │
+  │         ▼
+  │    Execution State Change ──► router ──► post CI comment on PR
+  │
+  └──► Invoke durable reviewer ──► Bedrock AI review ──► post review comment
+```
+
+- **Pipeline** — `CodePipeline` with `onPullRequest: true` and
+  `CodeCommitTrigger.NONE`. The router starts executions explicitly with the
+  PR's source commit.
+- **Build stage** — `CodeBuildProject` in `pipelineMode` runs the repo's
+  `buildspec.yml`.
+- **Approve stage** — Manual approval gate before merge.
+- **Auto-review** — Same durable reviewer infrastructure as Stack 1, extended
+  with pipeline dispatch via the common runtime module.
+
+### Deploy Stack 2
+
+```bash
+bunx cdk deploy CodePipelineReviewerStack
+```
 
 ## Package manager
 

@@ -23,6 +23,8 @@
     "reviewerExecutionTimeoutSeconds": 2592000,
     "reviewerRetentionDays": 14,
     "reviewerModelId": "eu.anthropic.claude-sonnet-4-6",
-    "reviewerCodeBuildRegistryEndpoint": "https://registry.npmjs.org"
+    "reviewerCodeBuildRegistryEndpoint": "https://registry.npmjs.org",
+    "repositoryName": "durable-reviewer-demo",
+    "branchName": "main"
   }
 }

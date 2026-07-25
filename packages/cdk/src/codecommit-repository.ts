@@ -3,7 +3,15 @@ import { type IRepository, Repository } from "aws-cdk-lib/aws-codecommit";
 import type { Construct } from "constructs";
 import { z } from "zod";
 
-/** A valid AWS CodeCommit repository name. */
+/**
+ * Zod schema validating an AWS CodeCommit repository name.
+ *
+ * - 1–100 characters
+ * - Letters, digits, `.`, `_`, and `-` only
+ * - Must not end in `.git`
+ *
+ * @see [AWS CodeCommit RepositoryName](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-codecommit-repository.html#cfn-codecommit-repository-repositoryname)
+ */
 export const CodeCommitRepositoryNameSchema = z
 	.string()
 	.trim()
@@ -14,7 +22,18 @@ export const CodeCommitRepositoryNameSchema = z
 		message: "Repository name must not end with .git",
 	});
 
-/** A valid AWS CodeCommit branch name that is safe to use as a Git ref. */
+/**
+ * Zod schema validating an AWS CodeCommit branch name that is safe to use as a Git ref.
+ *
+ * - 1–256 characters
+ * - Must satisfy CodeCommit's branch pattern and Git ref safety checks
+ * - Cannot begin with `-`, contain `HEAD`, end in `.lock`, contain `..`,
+ *   `@{`, control characters, spaces, `~`, `^`, `:`, `?`, `*`, `[`, `\`,
+ *   repeated `/`, or begin/end with `/` or `.`
+ * - Slash-delimited components must not begin with `.` or end with `.lock`
+ *
+ * @see [AWS CodeCommit BranchName](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-codecommit-repository-code.html#cfn-codecommit-repository-code-branchname)
+ */
 export const CodeCommitBranchNameSchema = z
 	.string()
 	.min(1)
@@ -80,7 +99,13 @@ function validateRepositoryName(repositoryName: string): string {
 		: CodeCommitRepositoryNameSchema.parse(repositoryName);
 }
 
-/** Selects an existing CodeCommit repository by exactly one form of identity. */
+/**
+ * Selects an existing CodeCommit repository by exactly one form of identity.
+ *
+ * Provide either a `repositoryName` string (imported by name) or a concrete
+ * `repository` resource (preserves identity and cross-stack references).
+ * Providing both or neither is a runtime error.
+ */
 export type RepositoryTarget =
 	| {
 			repositoryName: string;
@@ -91,7 +116,19 @@ export type RepositoryTarget =
 			repositoryName?: never;
 	  };
 
-/** Resolves a CodeCommit repository target to both its resource and valid name. */
+/**
+ * Resolves a CodeCommit repository target to both its `IRepository` and a validated name.
+ *
+ * When a concrete `repository` is supplied, its `repositoryName` is validated
+ * (unless it is an unresolved CDK token) and the resource identity is preserved.
+ * When only a `repositoryName` is supplied, the repository is imported by name.
+ *
+ * @param scope - The construct scope for imported repositories.
+ * @param id - The construct id for the imported repository.
+ * @param target - The exact-one repository target.
+ * @returns The resolved repository and its validated name.
+ * @throws {Error} when both or neither target variant is provided.
+ */
 export function normalizeRepositoryTarget(
 	scope: Construct,
 	id: string,

@@ -140,7 +140,14 @@ export type CodeBuildProjectConfig = z.infer<
   typeof CodeBuildProjectConfigSchema
 >;
 
-/** Selects a CodeCommit source by name or by a concrete repository resource. */
+/**
+ * Selects a CodeCommit source for a CodeBuild project by name or by a
+ * concrete repository resource.
+ *
+ * Provide either a `repositoryName` string (imported by name) or a concrete
+ * `repository` resource (preserves identity and source ARN). Providing both
+ * or neither is a runtime error.
+ */
 export type CodeBuildRepositoryTarget =
   | {
       repositoryName: string;

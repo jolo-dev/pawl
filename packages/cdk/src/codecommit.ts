@@ -15,6 +15,14 @@ import {
 import type { LambdaFunction } from "./lambda-function";
 import type { Stack } from "./stack";
 
+/**
+ * Zod schema validating an Anthropic Bedrock model or inference-profile ID.
+ *
+ * Accepts `anthropic.<model>` or `<scope>.anthropic.<model>` (e.g.
+ * `eu.anthropic.claude-sonnet-4-6`). Rejects ARNs, non-Anthropic providers,
+ * and malformed values. This matches the current `anthropic.*` foundation-model
+ * IAM grant in `CodeCommitAutoReviewer`.
+ */
 export const AnthropicModelIdSchema = z
 	.string()
 	.min(2)
@@ -25,11 +33,11 @@ export const AnthropicModelIdSchema = z
 	);
 
 /**
- * Configuration for the auto-reviewer when opted in via `autoReview`.
+ * Zod schema for the auto-reviewer configuration accepted by `CodeCommit`.
  *
- * `modelId` is required; all other fields are optional with documented defaults
- * (see `CodeCommitAutoReviewerConfigSchema`). `repositories` is NOT accepted
- * here — the single repository name passed to `CodeCommit` is used.
+ * `modelId` is required; all other fields are optional with documented defaults.
+ * `repositories` is NOT accepted here — the single repository name passed to
+ * `CodeCommit` is used internally.
  */
 const autoReviewConfigSchema = z.object({
 	modelId: AnthropicModelIdSchema,
@@ -111,38 +119,117 @@ const codeCommitCreateSchema = z
 		}
 	});
 
+/**
+ * Props for creating a new CodeCommit repository.
+ *
+ * When `sourcePath` is supplied, the directory is analyzed, packaged into a
+ * deterministic ZIP, and used to seed the repository's initial commit via
+ * CloudFormation's `Code` property. `branchName` and `forceIncludePath` are
+ * only valid when `sourcePath` is set.
+ */
 export interface CodeCommitCreateProps {
+	/** Local directory path to analyze and seed as the repository's initial commit. */
 	readonly sourcePath?: string;
+	/** Initial branch name. Defaults to `main`. Only valid with `sourcePath`. */
 	readonly branchName?: string;
+	/** Repository description (max 1,000 characters). */
 	readonly description?: string;
+	/**
+	 * One safe direct-child directory name to force-include despite root
+	 * `.gitignore` exclusion. Used to ensure generated infrastructure is seeded.
+	 * Only valid with `sourcePath`.
+	 */
 	readonly forceIncludePath?: string;
 }
 
+/**
+ * Props for the high-level {@link CodeCommit} construct.
+ */
 export interface CodeCommitProps {
-	/** CodeCommit repository name. */
+	/** CodeCommit repository name (1–100 chars, letters/digits/`.\_\-`, no `.git` suffix). */
 	readonly repositoryName: string;
 	/** When present, creates the repository instead of importing it by name. */
 	readonly create?: CodeCommitCreateProps;
-	/** Pawl Lambda that receives EventBridge events. */
+	/** Pawl Lambda that receives EventBridge events. Mutually exclusive with `autoReview`. */
 	readonly router?: LambdaFunction;
-	/** Deploys the full durable auto-reviewer for this repository. */
+	/**
+	 * Deploys the full durable auto-reviewer (reviewer Lambda, router, state
+	 * table, CodeBuild, Bedrock IAM) for this repository. Mutually exclusive
+	 * with `router`.
+	 */
 	readonly autoReview?: AutoReviewConfig;
 }
 
 /**
  * High-level CodeCommit repository construct with optional review automation.
  *
- * When neither `router` nor `autoReview` is supplied, only the repository is
- * created or imported. `events` is intentionally optional as of the pre-1.0
- * 0.1 API; consumers migrating from 0.0.x must check it before use.
+ * Supports two modes:
  *
- * A supplied `router` creates `CodeCommitReviewEvents` for the same repository.
- * `autoReview` instead deploys the durable reviewer infrastructure and wires
- * its internally created events to the same concrete repository when created.
+ * **Create mode** (`create` prop supplied): Creates a new
+ * `AWS::CodeCommit::Repository` resource. When `create.sourcePath` is set,
+ * the source directory is analyzed, packaged into a deterministic ZIP asset,
+ * and used to seed the repository's initial branch. Created repositories use
+ * `RemovalPolicy.RETAIN_ON_UPDATE_OR_DELETE` so failed creation rolls back
+ * while established repositories survive stack deletion.
+ *
+ * **Import mode** (`create` omitted): Imports an existing repository by name
+ * without emitting a repository resource.
+ *
+ * Review automation:
+ * - `router` — creates `CodeCommitReviewEvents` for the same repository.
+ * - `autoReview` — deploys the full durable auto-reviewer (reviewer Lambda,
+ *   router, state table, CodeBuild, Bedrock IAM) and wires event routing.
+ * - Neither — repository-only mode with no EventBridge, Lambda, CodeBuild,
+ *   DynamoDB, or Bedrock resources.
+ * - `router` and `autoReview` are mutually exclusive.
+ *
+ * **Pre-1.0 API change:** `events` changed from required to optional in v0.1.0.
+ * Consumers migrating from v0.0.x must narrow before use:
+ * ```ts
+ * if (codeCommit.events === undefined) {
+ *   throw new Error("Expected review event resources");
+ * }
+ * ```
+ *
+ * @example Create and seed a repository:
+ * ```ts
+ * new CodeCommit(this, "Repo", {
+ *   repositoryName: "my-repo",
+ *   create: {
+ *     sourcePath: path.resolve(__dirname, ".."),
+ *     branchName: "main",
+ *     forceIncludePath: "infra",
+ *   },
+ * });
+ * ```
+ *
+ * @example Create with auto-review:
+ * ```ts
+ * new CodeCommit(this, "Repo", {
+ *   repositoryName: "my-repo",
+ *   autoReview: { modelId: "eu.anthropic.claude-sonnet-4-6" },
+ * });
+ * ```
+ *
+ * @example Import an existing repository with custom router:
+ * ```ts
+ * new CodeCommit(this, "Repo", {
+ *   repositoryName: "existing-repo",
+ *   router: myRouterLambda,
+ * });
+ * ```
  */
 export class CodeCommit {
+	/** The created or imported CodeCommit repository. */
 	readonly repository: IRepository;
+	/**
+	 * Event routing construct. Defined only when `router` or `autoReview` is supplied.
+	 *
+	 * **Pre-1.0 breaking change:** This property is optional as of v0.1.0.
+	 * Consumers must narrow before use.
+	 */
 	readonly events?: CodeCommitReviewEvents;
+	/** The durable auto-reviewer, if deployed via `autoReview`. */
 	readonly autoReviewer?: CodeCommitAutoReviewer;
 
 	constructor(scope: Stack, id: string, props: CodeCommitProps) {

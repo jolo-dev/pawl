@@ -17,6 +17,20 @@ import path from "node:path";
 import { deflateRawSync } from "node:zlib";
 import { IgnoreStrategy } from "aws-cdk-lib";
 
+/**
+ * AWS CodeCommit initial-import limits enforced during source analysis.
+ *
+ * These are the decimal-byte thresholds for the CloudFormation
+ * `AWS::CodeCommit::Repository.Code` S3 ZIP:
+ * - `archiveBytes`: 4 MB maximum compressed ZIP
+ * - `totalBytes`: 20 MB maximum uncompressed content
+ * - `fileBytes`: 6 MB maximum per individual file
+ * - `files`: 100 maximum included files
+ * - `pathCharacters`: 4,096 maximum repository-relative file path length
+ *
+ * @see [CloudFormation Code property](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-codecommit-repository-code.html)
+ * @see [CodeCommit quotas](https://docs.aws.amazon.com/codecommit/latest/userguide/limits.html)
+ */
 export const CODECOMMIT_SOURCE_LIMITS = {
 	archiveBytes: 4_000_000,
 	totalBytes: 20_000_000,
@@ -25,6 +39,14 @@ export const CODECOMMIT_SOURCE_LIMITS = {
 	pathCharacters: 4_096,
 } as const;
 
+/**
+ * Immutable security denylist applied after user `.gitignore` patterns and
+ * forced infrastructure inclusion.
+ *
+ * These patterns cannot be negated by user rules. They exclude nested `.git`
+ * directories/files, `node_modules`, `cdk.out`, `.cdk.staging`, environment
+ * files, AWS credentials, private keys, and certificates at every depth.
+ */
 export const CODECOMMIT_SECURITY_EXCLUDES = [
 	"**/.git",
 	"**/.git/**",
@@ -43,11 +65,13 @@ export const CODECOMMIT_SECURITY_EXCLUDES = [
 	"**/id_ed25519",
 ] as const;
 
+/** Options for {@link analyzeCodeCommitSource}. */
 export interface AnalyzeCodeCommitSourceOptions {
 	readonly sourcePath: string;
 	readonly forceIncludePath?: string;
 }
 
+/** A single file discovered during source analysis with its identity metadata. */
 export interface CodeCommitSourceFile {
 	readonly absolutePath: string;
 	readonly canonicalPath: string;
@@ -57,6 +81,7 @@ export interface CodeCommitSourceFile {
 	readonly inode: number;
 }
 
+/** Result of analyzing a CodeCommit source directory for initial seeding. */
 export interface CodeCommitSourceAnalysis {
 	readonly sourcePath: string;
 	readonly files: readonly CodeCommitSourceFile[];
@@ -64,6 +89,7 @@ export interface CodeCommitSourceAnalysis {
 	readonly totalBytes: number;
 }
 
+/** The kind of limit exceeded during source analysis. */
 export type CodeCommitSourceLimitKind =
 	| "archiveBytes"
 	| "fileBytes"
@@ -71,6 +97,12 @@ export type CodeCommitSourceLimitKind =
 	| "pathCharacters"
 	| "totalBytes";
 
+/**
+ * Error thrown when a CodeCommit source exceeds an AWS initial-import limit.
+ *
+ * Contains structured metadata (kind, limit, actual, relativePath) but never
+ * includes file contents in the error message.
+ */
 export class CodeCommitSourceLimitError extends Error {
 	readonly kind: CodeCommitSourceLimitKind;
 	readonly limit: number;
@@ -254,6 +286,23 @@ function validateFileLimits(files: readonly CodeCommitSourceFile[]): number {
 	return totalBytes;
 }
 
+/**
+ * Analyze a local source directory for CodeCommit initial seeding.
+ *
+ * Applies the following ignore precedence:
+ * 1. Root `.gitignore` patterns from the source path.
+ * 2. Forced inclusion of `forceIncludePath` (when supplied) via negation patterns.
+ * 3. Discovered symlink paths (as literal excludes so CDK packaging omits them).
+ * 4. The immutable {@link CODECOMMIT_SECURITY_EXCLUDES} denylist, applied last.
+ *
+ * Validates that the source is a real directory, never follows symlinks, and
+ * enforces all {@link CODECOMMIT_SOURCE_LIMITS} before returning.
+ *
+ * @param options - The source path and optional forced infrastructure child.
+ * @returns The filtered file set, ordered asset excludes, and total byte count.
+ * @throws {CodeCommitSourceLimitError} when any limit is exceeded.
+ * @throws {TypeError} when the source path is not a real directory.
+ */
 export function analyzeCodeCommitSource(
 	options: AnalyzeCodeCommitSourceOptions,
 ): CodeCommitSourceAnalysis {
@@ -442,6 +491,20 @@ function createEndOfCentralDirectory(
 	return footer;
 }
 
+/**
+ * Create the exact deterministic ZIP that CDK uploads to S3 for CodeCommit
+ * initial seeding.
+ *
+ * Reads each analyzed file with TOCTOU defenses (canonical containment,
+ * device/inode/size identity) and never dereferences symlinks. The ZIP is
+ * written using Node built-ins (`deflateRawSync`, CRC32, UTF-8 local/central
+ * headers) with a fixed DOS timestamp for deterministic output. The filename
+ * is derived from a SHA-256 of paths and content.
+ *
+ * @param options - The source analysis and output directory.
+ * @returns The archive path and compressed byte count.
+ * @throws {CodeCommitSourceLimitError} when the ZIP exceeds 4 MB or any file limit.
+ */
 export function createCodeCommitSourceArchive(options: {
 	readonly analysis: CodeCommitSourceAnalysis;
 	readonly outputDirectory: string;

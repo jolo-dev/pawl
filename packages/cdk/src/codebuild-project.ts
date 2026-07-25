@@ -25,6 +25,7 @@ import {
   Policy,
   ServicePrincipal,
 } from "aws-cdk-lib/aws-iam";
+import { Bucket } from "aws-cdk-lib/aws-s3";
 import { Key } from "aws-cdk-lib/aws-kms";
 import { LogGroup, RetentionDays } from "aws-cdk-lib/aws-logs";
 import { NagSuppressions } from "cdk-nag";
@@ -158,9 +159,12 @@ export type CodeBuildRepositoryTarget =
       repositoryName?: never;
     };
 
-export type CodeBuildProjectProps = CodeBuildRepositoryTarget &
-  z.input<typeof CodeBuildProjectConfigSchema> &
-  BasicConstructProps;
+export type CodeBuildProjectProps =
+  | (CodeBuildRepositoryTarget &
+      z.input<typeof CodeBuildProjectConfigSchema> &
+      BasicConstructProps & { readonly pipelineMode?: false })
+  | (z.input<typeof CodeBuildProjectConfigSchema> &
+      BasicConstructProps & { readonly pipelineMode: true });
 
 function normalizeCodeBuildRepositoryTarget(
   scope: Construct,
@@ -207,11 +211,24 @@ export class CodeBuildProject extends BasicConstruct {
   constructor(scope: Stack, id: string, props: CodeBuildProjectProps) {
     super(scope, id);
 
-    const { permissions, repository, repositoryName, ...configInput } = props;
-    this.repository = normalizeCodeBuildRepositoryTarget(this, "Repository", {
-      repository,
-      repositoryName,
-    } as CodeBuildRepositoryTarget);
+    const { permissions, pipelineMode, ...configInput } =
+      props as Record<string, unknown> & {
+        permissions?: unknown;
+        pipelineMode?: boolean;
+      };
+    const isPipelineMode = pipelineMode === true;
+
+    if (!isPipelineMode) {
+      const { repository, repositoryName } =
+        props as CodeBuildRepositoryTarget;
+      this.repository = normalizeCodeBuildRepositoryTarget(
+        this,
+        "Repository",
+        { repository, repositoryName } as CodeBuildRepositoryTarget,
+      );
+    } else {
+      this.repository = undefined as unknown as Repository;
+    }
     const config = CodeBuildProjectConfigSchema.parse(configInput);
     const projectName = CodeBuildProjectNameSchema.parse(
       `${this.prefix}${id}-codebuild`,
@@ -324,19 +341,28 @@ export class CodeBuildProject extends BasicConstruct {
           },
         };
 
+    const pipelinePlaceholderBucket = Bucket.fromBucketName(
+      this,
+      "PipelinePlaceholderBucket",
+      "pipeline-placeholder",
+    );
     this.project = new Project(this, "Project", {
       projectName,
-      source: Source.codeCommit({ repository: this.repository }),
-      buildSpec: BuildSpec.fromObject({
-        version: "0.2",
-        phases: {
-          build: {
-            commands: [
-              'echo "No approved buildspec was supplied; exiting safely."',
-            ],
-          },
-        },
-      }),
+      source: isPipelineMode
+        ? Source.s3({ bucket: pipelinePlaceholderBucket, path: "pipeline-placeholder" })
+        : Source.codeCommit({ repository: this.repository }),
+      buildSpec: isPipelineMode
+        ? undefined
+        : BuildSpec.fromObject({
+            version: "0.2",
+            phases: {
+              build: {
+                commands: [
+                  'echo "No approved buildspec was supplied; exiting safely."',
+                ],
+              },
+            },
+          }),
       environment: {
         buildImage: LinuxBuildImage.STANDARD_7_0,
         computeType: computeTypes[config.computeSize],

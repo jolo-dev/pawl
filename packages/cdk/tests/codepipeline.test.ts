@@ -85,3 +85,26 @@ describe("CodePipeline push mode", () => {
 		});
 	});
 });
+
+describe("CodePipeline PR-gated mode", () => {
+	test("uses CodeCommitTrigger.NONE when onPullRequest is true", () => {
+		const { template } = createPipelineStack("PRGated", {
+			onPullRequest: true,
+		});
+		const pipelines = Object.values(
+			template.findResources("AWS::CodePipeline::Pipeline"),
+		);
+		const sourceStage = (pipelines[0] as { Properties: { Stages: Array<{ Actions: Array<{ Configuration: Record<string, string> }> }> } }).Properties.Stages[0];
+		const sourceConfig = sourceStage.Actions[0]!.Configuration;
+		expect(sourceConfig.PollForSourceChanges).toBe(false);
+	});
+
+	test("does not create reviewer infrastructure with onPullRequest but no autoReview", () => {
+		const { template } = createPipelineStack("PRNoReview", {
+			onPullRequest: true,
+		});
+		const serialized = JSON.stringify(template.toJSON());
+		expect(serialized).not.toContain("AWS::Lambda::Function");
+		expect(serialized).not.toContain("AWS::DynamoDB::Table");
+	});
+});

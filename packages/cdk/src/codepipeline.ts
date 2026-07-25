@@ -1,26 +1,26 @@
-import { Key } from "aws-cdk-lib/aws-kms";
-import { Bucket } from "aws-cdk-lib/aws-s3";
+import { RemovalPolicy } from "aws-cdk-lib";
+import type { IRepository } from "aws-cdk-lib/aws-codecommit";
 import {
   Artifact,
   Pipeline,
   type PipelineProps,
 } from "aws-cdk-lib/aws-codepipeline";
 import {
+  CloudFormationCreateUpdateStackAction,
+  CodeBuildAction,
   CodeCommitSourceAction,
   CodeCommitTrigger,
-  CodeBuildAction,
-  ManualApprovalAction,
   LambdaInvokeAction,
+  ManualApprovalAction,
   S3DeployAction,
-  CloudFormationCreateUpdateStackAction,
 } from "aws-cdk-lib/aws-codepipeline-actions";
-import { RemovalPolicy } from "aws-cdk-lib";
-import type { Construct } from "constructs";
-import type { IRepository } from "aws-cdk-lib/aws-codecommit";
+import { Key } from "aws-cdk-lib/aws-kms";
 import type { IBucket } from "aws-cdk-lib/aws-s3";
-import type { LambdaFunction } from "./lambda-function";
+import { Bucket } from "aws-cdk-lib/aws-s3";
+import type { Construct } from "constructs";
+import { BasicConstruct, type PolicyStatement } from "./basic-construct";
 import type { CodeBuildProject } from "./codebuild-project";
-import { BasicConstruct } from "./basic-construct";
+import type { LambdaFunction } from "./lambda-function";
 import type { Stack } from "./stack";
 
 /**
@@ -32,21 +32,21 @@ import type { Stack } from "./stack";
  */
 export type PipelineSource =
   | {
-      readonly type: "codecommit";
-      readonly repository: IRepository;
-      readonly branchName?: string;
-    }
+    readonly type: "codecommit";
+    readonly repository: IRepository;
+    readonly branchName?: string;
+  }
   | {
-      readonly type: "s3";
-      readonly bucket: IBucket;
-      readonly objectKey: string;
-    }
+    readonly type: "s3";
+    readonly bucket: IBucket;
+    readonly objectKey: string;
+  }
   | {
-      readonly type: "github";
-      readonly repository: string;
-      readonly branch: string;
-      readonly connectionArn: string;
-    };
+    readonly type: "github";
+    readonly repository: string;
+    readonly branch: string;
+    readonly connectionArn: string;
+  };
 
 /**
  * A single stage in a pipeline with a name and ordered actions.
@@ -64,43 +64,43 @@ export interface PipelineStage {
  */
 export type PipelineAction =
   | {
-      readonly type: "codebuild";
-      readonly name?: string;
-      readonly project: CodeBuildProject;
-      readonly inputArtifact?: Artifact;
-      readonly outputArtifacts?: readonly Artifact[];
-    }
+    readonly type: "codebuild";
+    readonly name?: string;
+    readonly project: CodeBuildProject;
+    readonly inputArtifact?: Artifact;
+    readonly outputArtifacts?: readonly Artifact[];
+  }
   | {
-      readonly type: "manualApproval";
-      readonly name?: string;
-      readonly description?: string;
-    }
+    readonly type: "manualApproval";
+    readonly name?: string;
+    readonly description?: string;
+  }
   | {
-      readonly type: "lambda";
-      readonly name?: string;
-      readonly handler: LambdaFunction;
-      readonly inputs?: Record<string, string>;
-    }
+    readonly type: "lambda";
+    readonly name?: string;
+    readonly handler: LambdaFunction;
+    readonly inputs?: Record<string, string>;
+  }
   | {
-      readonly type: "s3Deploy";
-      readonly name?: string;
-      readonly bucket: IBucket;
-      readonly inputArtifact: Artifact;
-      readonly objectKey: string;
-    }
+    readonly type: "s3Deploy";
+    readonly name?: string;
+    readonly bucket: IBucket;
+    readonly inputArtifact: Artifact;
+    readonly objectKey: string;
+  }
   | {
-      readonly type: "cloudFormationDeploy";
-      readonly name?: string;
-      readonly stackName: string;
-      readonly templatePath: string;
-      readonly inputArtifact: Artifact;
-      readonly actionMode?: "CREATE_UPDATE" | "REPLACE_ON_FAILURE";
-      readonly capabilities?: readonly (
-        | "CAPABILITY_IAM"
-        | "CAPABILITY_NAMED_IAM"
-        | "CAPABILITY_AUTO_EXPAND"
-      )[];
-    };
+    readonly type: "cloudFormationDeploy";
+    readonly name?: string;
+    readonly stackName: string;
+    readonly templatePath: string;
+    readonly inputArtifact: Artifact;
+    readonly actionMode?: "CREATE_UPDATE" | "REPLACE_ON_FAILURE";
+    readonly capabilities?: readonly (
+      | "CAPABILITY_IAM"
+      | "CAPABILITY_NAMED_IAM"
+      | "CAPABILITY_AUTO_EXPAND"
+    )[];
+  };
 
 /**
  * Props for the {@link CodePipeline} construct.
@@ -198,7 +198,9 @@ export class CodePipeline extends BasicConstruct {
       stageName: "Source",
       actions: [sourceAction],
     });
-    return sourceAction.actionProperties.outputs?.[0] ?? new Artifact("SourceOutput");
+    return (
+      sourceAction.actionProperties.outputs?.[0] ?? new Artifact("SourceOutput")
+    );
   }
 
   private createSourceAction(props: CodePipelineProps): CodeCommitSourceAction {
@@ -207,12 +209,15 @@ export class CodePipeline extends BasicConstruct {
         actionName: "Source",
         repository: props.source.repository,
         branch: props.source.branchName ?? "main",
-        trigger: props.onPullRequest === true ? CodeCommitTrigger.NONE : undefined,
+        trigger:
+          props.onPullRequest === true ? CodeCommitTrigger.NONE : undefined,
         output: new Artifact("SourceOutput"),
       });
     }
     // S3 and GitHub sources — placeholder for future implementation
-    throw new Error(`Source type "${props.source.type}" is not yet implemented`);
+    throw new Error(
+      `Source type "${props.source.type}" is not yet implemented`,
+    );
   }
 
   private addStage(stage: PipelineStage, sourceArtifact: Artifact): void {
@@ -261,15 +266,24 @@ export class CodePipeline extends BasicConstruct {
           templatePath: action.inputArtifact.atPath(action.templatePath),
           actionMode: action.actionMode ?? "CREATE_UPDATE",
           capabilities: action.capabilities as
-            | ("CAPABILITY_IAM" | "CAPABILITY_NAMED_IAM" | "CAPABILITY_AUTO_EXPAND")[]
+            | (
+              | "CAPABILITY_IAM"
+              | "CAPABILITY_NAMED_IAM"
+              | "CAPABILITY_AUTO_EXPAND"
+            )[]
             | undefined,
         });
       default:
-        throw new Error(`Unknown action type: ${(action as { type: string }).type}`);
+        throw new Error(
+          `Unknown action type: ${(action as { type: string }).type}`,
+        );
     }
   }
 
-  private createAction(action: PipelineAction, sourceArtifact: Artifact): unknown {
+  private createAction(
+    action: PipelineAction,
+    sourceArtifact: Artifact,
+  ): unknown {
     return this.addAction(action, sourceArtifact);
   }
 
@@ -284,5 +298,22 @@ export class CodePipeline extends BasicConstruct {
         }),
       ],
     });
+  }
+  protected applyPermissionPolicy(
+    _construct: Construct,
+    _policyStatement: PolicyStatement,
+  ): void {
+    // CodePipeline does not expose grant methods for custom permission
+    // policies in the same way Lambda or CodeBuild constructs do. Pipeline
+    // access is managed through the pipeline's service role and per-action
+    // permissions. This method is a no-op for CodePipeline.
+  }
+
+  createAlarm(scope: Stack): void {
+    // Monitor pipeline execution failures via the monitoring facade.
+    // The cdk-monitoring-constructs library does not have a direct
+    // pipeline monitor, so we monitor the artifact bucket S3 bucket
+    // access instead as a baseline.
+    scope.monitoring.monitorS3Bucket({ bucket: this.artifactBucket });
   }
 }

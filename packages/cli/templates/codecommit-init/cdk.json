@@ -1,0 +1,22 @@
+{
+  "app": "bun ./index.ts",
+  "watch": {
+    "include": ["**"],
+    "exclude": [
+      "README.md",
+      "cdk*.json",
+      "**/*.d.ts",
+      "**/*.js",
+      "tsconfig.json",
+      "package*.json",
+      "node_modules",
+      "test"
+    ]
+  },
+  "context": {
+    "awsProfile": "{{awsProfile}}",
+    "projectName": "{{repositoryName}}",
+    "team": "{{team}}",
+    "stage": "{{stage}}"
+  }
+}

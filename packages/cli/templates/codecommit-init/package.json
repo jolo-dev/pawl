@@ -1,0 +1,18 @@
+{
+  "name": "{{repositoryName}}",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "A Pawl CodeCommit project",
+  "scripts": {
+    "deploy": "AWS_PROFILE={{awsProfile}} bunx cdk deploy --all",
+    "remove": "AWS_PROFILE={{awsProfile}} bunx cdk destroy --all",
+    "synth": "bunx cdk synth",
+    "test": "bun test"
+  },
+  "devDependencies": {
+    "@pawl/cdk": "^0.1.0",
+    "@types/bun": "catalog:",
+    "aws-cdk": "^2.1124.1",
+    "typescript": "catalog:"
+  }
+}

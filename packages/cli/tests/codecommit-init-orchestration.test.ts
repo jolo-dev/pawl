@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync, statSync } from "node:fs";
+import { mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { runCodeCommitInit } from "../src/codecommit-init";
@@ -30,10 +30,12 @@ function makeThrowingPrompts(): CodeCommitInitPromptDeps {
 }
 
 const fullNonTTYArgs = [
-	"--name", "my-repo",
+	"--name",
+	"my-repo",
 	"--no-sync",
 	"--no-autoreviewer",
-	"--team", "platform",
+	"--team",
+	"platform",
 	"--no-install",
 	"--no-deploy",
 ];
@@ -48,14 +50,20 @@ describe("runCodeCommitInit — non-TTY", () => {
 				isTTY: false,
 				deps: {
 					prompts: makeThrowingPrompts(),
-					install: async () => { throw new Error("should not install"); },
-					deploy: async () => { throw new Error("should not deploy"); },
+					install: async () => {
+						throw new Error("should not install");
+					},
+					deploy: async () => {
+						throw new Error("should not deploy");
+					},
 				},
 			});
 			expect(result.repositoryName).toBe("my-repo");
 			expect(result.install).toBe(false);
 			expect(result.deploy).toBe(false);
-			expect(statSync(path.join(dir, "my-repo", "package.json")).isFile()).toBe(true);
+			expect(statSync(path.join(dir, "my-repo", "package.json")).isFile()).toBe(
+				true,
+			);
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
 		}
@@ -92,10 +100,13 @@ describe("runCodeCommitInit — non-TTY", () => {
 
 			const result = await runCodeCommitInit({
 				argv: [
-					"--name", "my-repo",
-					"--sync", ".",
+					"--name",
+					"my-repo",
+					"--sync",
+					".",
 					"--no-autoreviewer",
-					"--team", "platform",
+					"--team",
+					"platform",
 					"--no-install",
 					"--no-deploy",
 				],
@@ -105,11 +116,13 @@ describe("runCodeCommitInit — non-TTY", () => {
 			});
 			expect(result.repositoryName).toBe("my-repo");
 			expect(result.preflight).toBeDefined();
-			expect(result.preflight!.fileCount).toBeGreaterThan(0);
+			expect(result.preflight?.fileCount).toBeGreaterThan(0);
 			// Pre-existing files unchanged
 			expect(statSync(path.join(dir, "README.md")).isFile()).toBe(true);
 			// Generated infra exists
-			expect(statSync(path.join(dir, "infra", "package.json")).isFile()).toBe(true);
+			expect(statSync(path.join(dir, "infra", "package.json")).isFile()).toBe(
+				true,
+			);
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
 		}
@@ -122,20 +135,62 @@ describe("runCodeCommitInit — TTY", () => {
 		try {
 			const order: string[] = [];
 			const prompts: CodeCommitInitPromptDeps = {
-				promptRepositoryName: async () => { order.push("repo"); return "tty-repo"; },
-				promptSyncExisting: async () => { order.push("syncExisting"); return false; },
-				promptSyncPath: async () => { order.push("syncPath"); return "."; },
-				promptDirectory: async () => { order.push("directory"); return undefined; },
-				promptBranch: async () => { order.push("branch"); return "main"; },
-				promptTeam: async () => { order.push("team"); return "platform"; },
-				promptStage: async () => { order.push("stage"); return "dev" as const; },
-				promptAutoReviewer: async () => { order.push("auto"); return false; },
-				promptModelId: async () => { order.push("model"); return ""; },
-				promptConfirm: async () => { order.push("confirm"); return true; },
-				promptInstall: async () => { order.push("install"); return false; },
-				promptDeploy: async () => { order.push("deploy"); return false; },
-				promptAwsProfile: async () => { order.push("profile"); return "dev"; },
-				promptRegion: async () => { order.push("region"); return "eu-central-1"; },
+				promptRepositoryName: async () => {
+					order.push("repo");
+					return "tty-repo";
+				},
+				promptSyncExisting: async () => {
+					order.push("syncExisting");
+					return false;
+				},
+				promptSyncPath: async () => {
+					order.push("syncPath");
+					return ".";
+				},
+				promptDirectory: async () => {
+					order.push("directory");
+					return undefined;
+				},
+				promptBranch: async () => {
+					order.push("branch");
+					return "main";
+				},
+				promptTeam: async () => {
+					order.push("team");
+					return "platform";
+				},
+				promptStage: async () => {
+					order.push("stage");
+					return "dev" as const;
+				},
+				promptAutoReviewer: async () => {
+					order.push("auto");
+					return false;
+				},
+				promptModelId: async () => {
+					order.push("model");
+					return "";
+				},
+				promptConfirm: async () => {
+					order.push("confirm");
+					return true;
+				},
+				promptInstall: async () => {
+					order.push("install");
+					return false;
+				},
+				promptDeploy: async () => {
+					order.push("deploy");
+					return false;
+				},
+				promptAwsProfile: async () => {
+					order.push("profile");
+					return "dev";
+				},
+				promptRegion: async () => {
+					order.push("region");
+					return "eu-central-1";
+				},
 				listProfiles: async () => ["dev"],
 				getProfileRegion: async () => "eu-central-1",
 			};
@@ -145,8 +200,12 @@ describe("runCodeCommitInit — TTY", () => {
 				isTTY: true,
 				deps: {
 					prompts,
-					install: async () => { throw new Error("should not install"); },
-					deploy: async () => { throw new Error("should not deploy"); },
+					install: async () => {
+						throw new Error("should not install");
+					},
+					deploy: async () => {
+						throw new Error("should not deploy");
+					},
 				},
 			});
 			// Core prompts happen before confirm
@@ -154,7 +213,9 @@ describe("runCodeCommitInit — TTY", () => {
 			expect(order.indexOf("confirm")).toBeLessThan(order.indexOf("install"));
 			expect(result.repositoryName).toBe("tty-repo");
 			expect(result.install).toBe(false);
-			expect(statSync(path.join(dir, "tty-repo", "package.json")).isFile()).toBe(true);
+			expect(
+				statSync(path.join(dir, "tty-repo", "package.json")).isFile(),
+			).toBe(true);
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
 		}

@@ -45,6 +45,41 @@ Flags override prompts when provided.
 If you choose Bun, the scaffold omits `tsx` from `package.json`.
 If you choose LocalStack, the scaffold includes local dev helpers and example integration test scaffolding. `pawl init` refuses to run in a non-empty directory.
 
+### `pawl init codecommit`
+
+Create a Pawl CDK project that creates and initially seeds a CodeCommit repository:
+
+```bash
+pawl init codecommit --sync . --directory infra --no-autoreviewer --team platform --no-install --no-deploy
+pawl init codecommit --name my-repo --no-sync --autoreviewer --model eu.anthropic.claude-sonnet-4-6 --team platform --install --deploy --aws-profile dev --region eu-central-1
+```
+
+**Interactive (TTY):** You will be prompted for repository name, sync mode, directory, branch (default `main`), team, stage (default `dev`), auto-review, model (when auto-review is enabled), confirmation, install, deploy, and AWS profile/region (when deploying).
+
+**Non-interactive (non-TTY):** All choices must be supplied as flags. Required: `--name`, exactly one of `--sync`/`--no-sync`, `--team`, exactly one of `--autoreviewer`/`--no-autoreviewer`, exactly one of `--install`/`--no-install`, exactly one of `--deploy`/`--no-deploy`. `--model` is required with `--autoreviewer`. Deployment requires `--install`, `--aws-profile`, and `--region`.
+
+| Flag | Behavior |
+|------|----------|
+| `--name <name>` | CodeCommit repository name |
+| `--sync <path>` | Seed from an existing source path (use `.` for cwd) |
+| `--no-sync` | Create a new project without existing source |
+| `--directory <name>` | Infrastructure directory (sync: default `infra`) or output path (no-sync: default `./<name>`) |
+| `--branch <name>` | Initial branch (default: `main`) |
+| `--autoreviewer` | Enable the durable Anthropic auto-reviewer |
+| `--no-autoreviewer` | Disable the auto-reviewer |
+| `--model <model-id>` | Anthropic Bedrock model ID for auto-review |
+| `--team <name>` | Owning team tag |
+| `--stage <dev\|qa\|prod>` | Deployment stage (default: `dev`) |
+| `--install` | Install generated project dependencies |
+| `--no-install` | Do not install dependencies |
+| `--deploy` | Deploy after installation |
+| `--no-deploy` | Do not deploy |
+| `--aws-profile <profile>` | AWS profile used for deployment |
+| `--region <region>` | AWS region used for deployment |
+| `--help` | Show help without prompting or writing files |
+
+**Warning:** Source files are uploaded only as the repository's initial seed. Later local edits are not automatically synchronized to CodeCommit.
+
 ### Flue Agents (HTTP API)
 
 ```bash

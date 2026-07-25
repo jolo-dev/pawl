@@ -1,17 +1,24 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from "node:fs";
+import {
+	mkdtempSync,
+	readdirSync,
+	readFileSync,
+	rmSync,
+	statSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { defineStacks } from "@pawl/cdk";
 import {
+	type CodeCommitGeneratorConfig,
+	generateCodeCommitProject,
 	getCodeCommitTemplateManifest,
 	renderCodeCommitTemplateFiles,
-	type CodeCommitGeneratorConfig,
 } from "../src/codecommit-init/generator";
-import { generateCodeCommitProject } from "../src/codecommit-init/generator";
 import type { CodeCommitInitLayout } from "../src/codecommit-init/layout";
 
-function baseConfig(overrides: Partial<CodeCommitGeneratorConfig> = {}): CodeCommitGeneratorConfig {
+function baseConfig(
+	overrides: Partial<CodeCommitGeneratorConfig> = {},
+): CodeCommitGeneratorConfig {
 	return {
 		repositoryName: "my-repo",
 		branchName: "main",
@@ -22,7 +29,9 @@ function baseConfig(overrides: Partial<CodeCommitGeneratorConfig> = {}): CodeCom
 	};
 }
 
-function baseLayout(overrides: Partial<CodeCommitInitLayout> = {}): CodeCommitInitLayout {
+function _baseLayout(
+	overrides: Partial<CodeCommitInitLayout> = {},
+): CodeCommitInitLayout {
 	return {
 		sourceRoot: "/tmp/source-root",
 		projectDir: "/tmp/source-root/infra",
@@ -62,7 +71,7 @@ describe("renderCodeCommitTemplateFiles", () => {
 	test("uses Bun and depends on @pawl/cdk ^0.1.0 without workspace/file/link specifiers", () => {
 		const files = renderCodeCommitTemplateFiles(baseConfig());
 		const pkgJson = JSON.parse(
-			files.find((f) => f.path === "package.json")!.content,
+			files.find((f) => f.path === "package.json")?.content,
 		) as Record<string, unknown>;
 
 		expect(pkgJson).toBeDefined();
@@ -87,7 +96,9 @@ describe("renderCodeCommitTemplateFiles", () => {
 		expect(stack.content).toContain('from "@pawl/cdk"');
 		expect(stack.content).not.toContain('from "aws-cdk-lib"');
 
-		const testFile = files.find((f) => f.path === "tests/codecommit-stack.test.ts")!;
+		const testFile = files.find(
+			(f) => f.path === "tests/codecommit-stack.test.ts",
+		)!;
 		expect(testFile.content).toContain('from "@pawl/cdk"');
 		expect(testFile.content).not.toContain('from "aws-cdk-lib"');
 	});
@@ -96,7 +107,7 @@ describe("renderCodeCommitTemplateFiles", () => {
 		const withoutAuto = renderCodeCommitTemplateFiles(baseConfig());
 		const withoutStack = withoutAuto.find(
 			(f) => f.path === "stacks/codecommit-stack.ts",
-		)!.content;
+		)?.content;
 		expect(withoutStack).not.toContain("autoReview");
 
 		const withAuto = renderCodeCommitTemplateFiles(
@@ -107,7 +118,7 @@ describe("renderCodeCommitTemplateFiles", () => {
 		);
 		const withStack = withAuto.find(
 			(f) => f.path === "stacks/codecommit-stack.ts",
-		)!.content;
+		)?.content;
 		expect(withStack).toContain("autoReview");
 
 		// modelId should not appear as a raw string without escaping
@@ -119,7 +130,7 @@ describe("renderCodeCommitTemplateFiles", () => {
 			baseConfig({ team: "my-team", stage: "qa" }),
 		);
 		const cdkJson = JSON.parse(
-			files.find((f) => f.path === "cdk.json")!.content,
+			files.find((f) => f.path === "cdk.json")?.content,
 		) as Record<string, unknown>;
 		const context = cdkJson.context as Record<string, string>;
 		expect(context.team).toBe("my-team");
@@ -132,7 +143,7 @@ describe("renderCodeCommitTemplateFiles", () => {
 		);
 		const stack = files.find(
 			(f) => f.path === "stacks/codecommit-stack.ts",
-		)!.content;
+		)?.content;
 		// The double quote in the repo name should be escaped
 		expect(stack).toContain('\\"');
 		expect(stack).not.toContain('repo"; evil');
@@ -141,7 +152,7 @@ describe("renderCodeCommitTemplateFiles", () => {
 	test("uses Bun in package.json scripts", () => {
 		const files = renderCodeCommitTemplateFiles(baseConfig());
 		const pkgJson = JSON.parse(
-			files.find((f) => f.path === "package.json")!.content,
+			files.find((f) => f.path === "package.json")?.content,
 		) as Record<string, unknown>;
 		const scripts = pkgJson.scripts as Record<string, string>;
 		expect(scripts.deploy).toContain("bunx");

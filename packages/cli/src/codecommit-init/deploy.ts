@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { mkdtempSync, rmSync, readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -11,7 +11,10 @@ export interface CodeCommitDeployDeps {
 		env: Record<string, string>,
 	) => Promise<void>;
 	readonly checkCredentials: (profile: string, region: string) => Promise<void>;
-	readonly checkBedrockAccess: (profile: string, region: string) => Promise<boolean>;
+	readonly checkBedrockAccess: (
+		profile: string,
+		region: string,
+	) => Promise<boolean>;
 	readonly getProfileRegion: (profile: string) => Promise<string | undefined>;
 }
 

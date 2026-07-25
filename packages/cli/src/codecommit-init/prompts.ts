@@ -153,8 +153,8 @@ export async function promptAutoReviewer(): Promise<boolean> {
 
 export async function promptModelId(): Promise<string> {
 	const allModels = getModels("amazon-bedrock");
-	const anthropicModels = allModels.filter((m) =>
-		AnthropicModelIdSchema.safeParse(m.id).success,
+	const anthropicModels = allModels.filter(
+		(m) => AnthropicModelIdSchema.safeParse(m.id).success,
 	);
 
 	if (anthropicModels.length === 0) {
@@ -179,9 +179,9 @@ export async function promptModelId(): Promise<string> {
 
 	const value = await select<string>({
 		message: "Select Anthropic Bedrock model",
-		options: [...grouped.entries()].map(([baseId, variants]) => ({
-			value: variants[0]!.id,
-			label: `${variants[0]!.name} (${variants.map((v) => v.id).join(", ")})`,
+		options: [...grouped.entries()].map(([_baseId, variants]) => ({
+			value: variants[0]?.id,
+			label: `${variants[0]?.name} (${variants.map((v) => v.id).join(", ")})`,
 		})),
 	});
 	return handleCancel(value);
@@ -208,9 +208,7 @@ export async function promptDeploy(): Promise<boolean> {
 	return handleCancel(value);
 }
 
-export async function promptAwsProfile(
-	profiles: string[],
-): Promise<string> {
+export async function promptAwsProfile(profiles: string[]): Promise<string> {
 	const value = await select<string>({
 		message: "Which AWS profile?",
 		options: profiles.map((p) => ({ value: p, label: p })),
@@ -218,9 +216,7 @@ export async function promptAwsProfile(
 	return handleCancel(value);
 }
 
-export async function promptRegion(
-	defaultRegion?: string,
-): Promise<string> {
+export async function promptRegion(defaultRegion?: string): Promise<string> {
 	const value = await text({
 		message: "AWS region",
 		initialValue: defaultRegion ?? "us-east-1",
@@ -287,7 +283,9 @@ export async function resolveCorePrompts(
 		branchName,
 		team,
 		stage,
-		...(autoReviewer ? { autoReviewer: true as const } : { noAutoReviewer: true as const }),
+		...(autoReviewer
+			? { autoReviewer: true as const }
+			: { noAutoReviewer: true as const }),
 		...(modelId === undefined ? {} : { modelId }),
 	};
 }
@@ -300,9 +298,13 @@ export async function resolveCorePrompts(
 export async function resolvePostConfirmPrompts(
 	deps: CodeCommitInitPromptDeps,
 	core: ValidatedCodeCommitInitCoreConfig,
-): Promise<{ install: boolean; deploy: boolean; awsProfile?: string; region?: string }> {
-	const install =
-		core.install ?? (await deps.promptInstall());
+): Promise<{
+	install: boolean;
+	deploy: boolean;
+	awsProfile?: string;
+	region?: string;
+}> {
+	const install = core.install ?? (await deps.promptInstall());
 	if (!install) {
 		return { install: false, deploy: false };
 	}
@@ -313,6 +315,7 @@ export async function resolvePostConfirmPrompts(
 	const awsProfile =
 		core.awsProfile ?? (await deps.promptAwsProfile(await deps.listProfiles()));
 	const region =
-		core.region ?? (await deps.promptRegion(await deps.getProfileRegion(awsProfile)));
+		core.region ??
+		(await deps.promptRegion(await deps.getProfileRegion(awsProfile)));
 	return { install, deploy, awsProfile, region };
 }

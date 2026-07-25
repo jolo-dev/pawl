@@ -1,6 +1,6 @@
 import {
-	mkdtempSync,
 	mkdirSync,
+	mkdtempSync,
 	readFileSync as nodeReadFileSync,
 	renameSync,
 	rmSync,
@@ -66,8 +66,7 @@ export function renderCodeCommitTemplateFiles(
 	const awsProfile = config.awsProfile ?? "default";
 
 	const infraName = config.infrastructureName ?? "infra";
-	const forceIncludeProperty =
-		`,\n        forceIncludePath: ${JSON.stringify(infraName)}`;
+	const forceIncludeProperty = `,\n        forceIncludePath: ${JSON.stringify(infraName)}`;
 
 	const autoReviewProperty = config.autoReviewer
 		? `,\n      autoReview: { modelId: ${JSON.stringify(config.modelId ?? "")} }`
@@ -124,10 +123,9 @@ function renderStackTemplate(
 	const repoName = JSON.stringify(config.repositoryName);
 	const branchName = JSON.stringify(config.branchName);
 	const sourcePathFromStack = variables.sourcePathFromStack ?? "..";
-	const forceIncludeProp =
-		config.infrastructureName
-			? `,\n        forceIncludePath: ${JSON.stringify(config.infrastructureName)}`
-			: "";
+	const forceIncludeProp = config.infrastructureName
+		? `,\n        forceIncludePath: ${JSON.stringify(config.infrastructureName)}`
+		: "";
 	const autoReviewProp = config.autoReviewer
 		? `,\n      autoReview: { modelId: ${JSON.stringify(config.modelId ?? "")} }`
 		: "";

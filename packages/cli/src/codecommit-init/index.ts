@@ -1,32 +1,26 @@
+import { parseCodeCommitInitArgs } from "./cli";
 import type { CodeCommitInitFlags } from "./config";
 import {
+	type ValidatedCodeCommitInitConfig,
 	validateCodeCommitInitConfig,
 	validateCodeCommitInitCoreConfig,
-	type ValidatedCodeCommitInitConfig,
 } from "./config";
-import { parseCodeCommitInitArgs } from "./cli";
+import {
+	type CodeCommitGeneratorConfig,
+	generateCodeCommitProject,
+} from "./generator";
 import type { CodeCommitInitLayout } from "./layout";
 import { resolveCodeCommitInitLayout } from "./layout";
 import {
-	generateCodeCommitProject,
-	type CodeCommitGeneratorConfig,
-} from "./generator";
-import {
-	runCodeCommitSourcePreflight,
-	formatPreflightError,
-} from "./source-preflight";
-import {
-	installCodeCommitProject,
-	deployCodeCommitProject,
-	formatDeployRetryCommand,
-	type CodeCommitDeployDeps,
-} from "./deploy";
-import {
+	type CodeCommitInitPromptDeps,
 	defaultPromptDeps,
 	resolveCorePrompts,
 	resolvePostConfirmPrompts,
-	type CodeCommitInitPromptDeps,
 } from "./prompts";
+import {
+	formatPreflightError,
+	runCodeCommitSourcePreflight,
+} from "./source-preflight";
 
 export interface CodeCommitInitResult {
 	readonly repositoryName: string;
@@ -132,10 +126,15 @@ export async function runCodeCommitInit(options: {
 		}
 
 		// Phase 4: post-confirmation prompts
-		const postConfirm = await resolvePostConfirmPrompts(deps.prompts, coreConfig);
+		const postConfirm = await resolvePostConfirmPrompts(
+			deps.prompts,
+			coreConfig,
+		);
 		flags = {
 			...mergedFlags,
-			...(postConfirm.install === true ? { install: true as const } : { noInstall: true as const }),
+			...(postConfirm.install === true
+				? { install: true as const }
+				: { noInstall: true as const }),
 			...(postConfirm.deploy === true
 				? { deploy: true as const }
 				: { noDeploy: true as const }),
@@ -163,7 +162,9 @@ export async function runCodeCommitInit(options: {
 		stage: config.stage,
 		autoReviewer: config.autoReviewer,
 		...(config.modelId === undefined ? {} : { modelId: config.modelId }),
-		...(config.awsProfile === undefined ? {} : { awsProfile: config.awsProfile }),
+		...(config.awsProfile === undefined
+			? {}
+			: { awsProfile: config.awsProfile }),
 		...(layout.infrastructureName === undefined
 			? {}
 			: { infrastructureName: layout.infrastructureName }),
@@ -238,7 +239,16 @@ export async function runCodeCommitInit(options: {
 }
 
 function formatSummary(
-	core: { repositoryName: string; branchName: string; team: string; stage: string; autoReviewer: boolean; syncPath?: string; noSync?: true; directory?: string },
+	core: {
+		repositoryName: string;
+		branchName: string;
+		team: string;
+		stage: string;
+		autoReviewer: boolean;
+		syncPath?: string;
+		noSync?: true;
+		directory?: string;
+	},
 	layout: CodeCommitInitLayout,
 ): string {
 	const mode = core.syncPath !== undefined ? "sync" : "new project";
@@ -249,7 +259,9 @@ function formatSummary(
 /**
  * Print the result of a CodeCommit init run for the CLI entrypoint.
  */
-export function printCodeCommitInitResult(result: CodeCommitInitResult): string {
+export function printCodeCommitInitResult(
+	result: CodeCommitInitResult,
+): string {
 	const lines: string[] = [
 		`Created CodeCommit project "${result.repositoryName}" in ${result.projectDir}`,
 		`  Branch: ${result.branchName}`,
@@ -270,10 +282,10 @@ export function printCodeCommitInitResult(result: CodeCommitInitResult): string 
 		lines.push(`  Next: cd ${result.projectDir} && bun install`);
 	}
 	if (!result.deploy) {
-		lines.push(`  Deploy: AWS_PROFILE=<profile> AWS_REGION=<region> bunx cdk deploy --all`);
+		lines.push(
+			`  Deploy: AWS_PROFILE=<profile> AWS_REGION=<region> bunx cdk deploy --all`,
+		);
 	}
-	lines.push(
-		"  Warning: CDK initial seeding is not ongoing synchronization.",
-	);
+	lines.push("  Warning: CDK initial seeding is not ongoing synchronization.");
 	return lines.join("\n");
 }

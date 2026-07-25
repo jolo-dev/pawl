@@ -1,10 +1,10 @@
-import { mkdtempSync, rmSync, statSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
 	analyzeCodeCommitSource,
-	createCodeCommitSourceArchive,
 	CodeCommitSourceLimitError,
+	createCodeCommitSourceArchive,
 } from "@pawl/cdk";
 
 export interface CodeCommitPreflightResult {

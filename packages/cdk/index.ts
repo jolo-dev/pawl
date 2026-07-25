@@ -1,4 +1,5 @@
-export { Duration } from "aws-cdk-lib";
+export { App, CfnOutput, Duration } from "aws-cdk-lib";
+export type { Construct } from "constructs";
 export * from "./src/agentcore";
 export * from "./src/api-destination";
 export * from "./src/apigateway";

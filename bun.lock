@@ -69,7 +69,7 @@
     },
     "packages/cdk": {
       "name": "@pawl/cdk",
-      "version": "0.0.1",
+      "version": "0.1.0",
       "dependencies": {
         "@aws-cdk/aws-bedrock-agentcore-alpha": "^2.257.0-alpha.0",
         "@aws-cdk/aws-pipes-alpha": "^2.257.0-alpha.0",

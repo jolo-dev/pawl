@@ -1,4 +1,4 @@
-import { RemovalPolicy } from "aws-cdk-lib";
+import { CfnCapabilities, RemovalPolicy } from "aws-cdk-lib";
 import type { IRepository } from "aws-cdk-lib/aws-codecommit";
 import {
   Artifact,
@@ -14,6 +14,7 @@ import {
   ManualApprovalAction,
   S3DeployAction,
 } from "aws-cdk-lib/aws-codepipeline-actions";
+import type { IAction } from "aws-cdk-lib/aws-codepipeline";
 import { Key } from "aws-cdk-lib/aws-kms";
 import type { IBucket } from "aws-cdk-lib/aws-s3";
 import { Bucket } from "aws-cdk-lib/aws-s3";
@@ -115,7 +116,7 @@ export interface CodePipelineProps {
   /** When true, pipeline only triggers on PR events (router starts executions). Default: false (push-triggered). */
   readonly onPullRequest?: boolean;
   /** When set, deploys the durable auto-reviewer and wires it to the pipeline. */
-  readonly autoReview?: AutoReviewConfig;
+  readonly autoReview?: import("./codecommit").AutoReviewConfig;
   /** Team/stage overrides (required when autoReview is set). */
   readonly team?: string;
   readonly stage?: string;
@@ -184,7 +185,7 @@ export class CodePipeline extends BasicConstruct {
         this.addStage(stage, sourceArtifact);
       }
     } else {
-      this.addDefaultStages(sourceArtifact);
+      this.addDefaultStages();
     }
 
     // 5. Auto-review infrastructure (if enabled)
@@ -230,14 +231,14 @@ export class CodePipeline extends BasicConstruct {
     });
   }
 
-  private addAction(action: PipelineAction, sourceArtifact: Artifact): unknown {
+  private addAction(action: PipelineAction, sourceArtifact: Artifact): IAction {
     switch (action.type) {
       case "codebuild":
         return new CodeBuildAction({
           actionName: action.name ?? "Build",
           project: action.project.project,
           input: action.inputArtifact ?? sourceArtifact,
-          outputs: action.outputArtifacts,
+          outputs: action.outputArtifacts ? [...action.outputArtifacts] : undefined,
         });
       case "manualApproval":
         return new ManualApprovalAction({
@@ -264,14 +265,11 @@ export class CodePipeline extends BasicConstruct {
           actionName: action.name ?? "Deploy",
           stackName: action.stackName,
           templatePath: action.inputArtifact.atPath(action.templatePath),
-          actionMode: action.actionMode ?? "CREATE_UPDATE",
-          capabilities: action.capabilities as
-            | (
-              | "CAPABILITY_IAM"
-              | "CAPABILITY_NAMED_IAM"
-              | "CAPABILITY_AUTO_EXPAND"
-            )[]
-            | undefined,
+          replaceOnFailure: action.actionMode === "REPLACE_ON_FAILURE",
+          adminPermissions: false,
+          cfnCapabilities: action.capabilities?.map((c) =>
+            CfnCapabilities[c as keyof typeof CfnCapabilities],
+          ),
         });
       default:
         throw new Error(
@@ -283,11 +281,11 @@ export class CodePipeline extends BasicConstruct {
   private createAction(
     action: PipelineAction,
     sourceArtifact: Artifact,
-  ): unknown {
+  ): IAction {
     return this.addAction(action, sourceArtifact);
   }
 
-  private addDefaultStages(sourceArtifact: Artifact): void {
+  private addDefaultStages(): void {
     // Build stage — placeholder, user creates their own CodeBuildProject
     // For now, just add a manual approval stage
     this.pipeline.addStage({

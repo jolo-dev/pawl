@@ -15,8 +15,29 @@ import {
 	writeScaffoldProject,
 } from "./src/scaffold";
 import { parseInitArgs } from "./src/scaffold/cli";
+import {
+	runCodeCommitInit,
+	printCodeCommitInitResult,
+} from "./src/codecommit-init";
 
 const argv = process.argv.slice(2);
+
+// Dispatch codecommit subcommand before generic init
+if (argv[0] === "init" && argv[1] === "codecommit") {
+	try {
+		const result = await runCodeCommitInit({
+			argv: argv.slice(2),
+			cwd: process.cwd(),
+			isTTY: process.stdin.isTTY === true && process.stdout.isTTY === true,
+		});
+		console.log(printCodeCommitInitResult(result));
+		process.exit(0);
+	} catch (error: unknown) {
+		console.error(error instanceof Error ? error.message : String(error));
+		process.exit(1);
+	}
+}
+
 if (argv[0] === "init") {
 	const overrides = parseInitArgs(argv);
 	const config = await runPawlInit({

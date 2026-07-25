@@ -15,11 +15,10 @@ import {
 	type GetCallerIdentityCommandOutput,
 	STSClient,
 } from "@aws-sdk/client-sts";
+import { fromIni } from "@aws-sdk/credential-providers";
 import {
-	fromIni,
 	getSSOTokenFromFile,
 	loadSsoSessionData,
-	parseKnownFiles,
 } from "@smithy/shared-ini-file-loader";
 import { $ } from "bun";
 

@@ -19,6 +19,10 @@ import {
 	runCodeCommitInit,
 	printCodeCommitInitResult,
 } from "./src/codecommit-init";
+import {
+	runCodePipelineInit,
+	printCodePipelineInitResult,
+} from "./src/codepipeline-init";
 
 const argv = process.argv.slice(2);
 
@@ -31,6 +35,22 @@ if (argv[0] === "init" && argv[1] === "codecommit") {
 			isTTY: process.stdin.isTTY === true && process.stdout.isTTY === true,
 		});
 		console.log(printCodeCommitInitResult(result));
+		process.exit(0);
+	} catch (error: unknown) {
+		console.error(error instanceof Error ? error.message : String(error));
+		process.exit(1);
+	}
+}
+
+// Dispatch codepipeline subcommand before generic init
+if (argv[0] === "init" && argv[1] === "codepipeline") {
+	try {
+		const result = await runCodePipelineInit({
+			argv: argv.slice(2),
+			cwd: process.cwd(),
+			isTTY: process.stdin.isTTY === true && process.stdout.isTTY === true,
+		});
+		console.log(printCodePipelineInitResult(result));
 		process.exit(0);
 	} catch (error: unknown) {
 		console.error(error instanceof Error ? error.message : String(error));

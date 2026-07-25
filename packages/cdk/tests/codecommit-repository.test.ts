@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { Stack } from "aws-cdk-lib";
+import { CfnParameter, Stack, Token } from "aws-cdk-lib";
 import { type IRepository, Repository } from "aws-cdk-lib/aws-codecommit";
 import {
 	CodeCommitBranchNameSchema,
@@ -53,8 +53,10 @@ describe("CodeCommitBranchNameSchema", () => {
 		["leading hyphen", "-feature"],
 		["HEAD substring", "feature/HEAD-review"],
 		["trailing .lock", "feature/review.lock"],
+		["component ending .lock", "feature.lock/review"],
 		["double dot", "feature..review"],
 		["reflog marker", "feature@{review"],
+		["lone at sign", "@"],
 		["NUL control character", "feature\0review"],
 		["unit separator control character", "feature\u001freview"],
 		["DEL control character", "feature\u007freview"],
@@ -70,6 +72,7 @@ describe("CodeCommitBranchNameSchema", () => {
 		["leading slash", "/feature"],
 		["trailing slash", "feature/"],
 		["leading dot", ".feature"],
+		["component beginning dot", "feature/.hidden"],
 		["trailing dot", "feature."],
 	])("rejects %s", (_condition, branchName) => {
 		expect(CodeCommitBranchNameSchema.safeParse(branchName).success).toBe(
@@ -139,6 +142,25 @@ describe("normalizeRepositoryTarget", () => {
 		expect(() =>
 			normalizeRepositoryTarget(stack, "Target", { repository }),
 		).toThrow();
+	});
+
+	test("preserves an unresolved repository name token", () => {
+		const stack = new Stack(createTestApp(), "TokenRepositoryStack");
+		const repositoryName = new CfnParameter(stack, "RepositoryName")
+			.valueAsString;
+		const repository = Repository.fromRepositoryName(
+			stack,
+			"Repository",
+			repositoryName,
+		);
+
+		const normalized = normalizeRepositoryTarget(stack, "Target", {
+			repository,
+		});
+
+		expect(Token.isUnresolved(normalized.repositoryName)).toBe(true);
+		expect(normalized.repositoryName).toBe(repositoryName);
+		expect(normalized.repository).toBe(repository);
 	});
 
 	test("models repository targets as an exact-one union", () => {

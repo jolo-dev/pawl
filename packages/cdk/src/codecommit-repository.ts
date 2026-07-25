@@ -1,3 +1,4 @@
+import { Token } from "aws-cdk-lib";
 import { type IRepository, Repository } from "aws-cdk-lib/aws-codecommit";
 import type { Construct } from "constructs";
 import { z } from "zod";
@@ -24,14 +25,21 @@ export const CodeCommitBranchNameSchema = z
 	.refine((branchName) => !branchName.includes("HEAD"), {
 		message: "Branch name must not contain HEAD",
 	})
-	.refine((branchName) => !branchName.endsWith(".lock"), {
-		message: "Branch name must not end with .lock",
-	})
+	.refine(
+		(branchName) =>
+			branchName.split("/").every((component) => !component.endsWith(".lock")),
+		{
+			message: "Branch name components must not end with .lock",
+		},
+	)
 	.refine((branchName) => !branchName.includes(".."), {
 		message: "Branch name must not contain two consecutive dots",
 	})
 	.refine((branchName) => !branchName.includes("@{"), {
 		message: "Branch name must not contain @{",
+	})
+	.refine((branchName) => branchName !== "@", {
+		message: "Branch name must not be @",
 	})
 	.refine(
 		(branchName) =>
@@ -56,11 +64,21 @@ export const CodeCommitBranchNameSchema = z
 		},
 	)
 	.refine(
-		(branchName) => !branchName.startsWith(".") && !branchName.endsWith("."),
+		(branchName) =>
+			branchName.split("/").every((component) => !component.startsWith(".")),
 		{
-			message: "Branch name must not start or end with a dot",
+			message: "Branch name components must not start with a dot",
 		},
-	);
+	)
+	.refine((branchName) => !branchName.endsWith("."), {
+		message: "Branch name must not end with a dot",
+	});
+
+function validateRepositoryName(repositoryName: string): string {
+	return Token.isUnresolved(repositoryName)
+		? repositoryName
+		: CodeCommitRepositoryNameSchema.parse(repositoryName);
+}
 
 /** Selects an existing CodeCommit repository by exactly one form of identity. */
 export type RepositoryTarget =
@@ -88,15 +106,13 @@ export function normalizeRepositoryTarget(
 	}
 
 	if (target.repository !== undefined) {
-		const repositoryName = CodeCommitRepositoryNameSchema.parse(
+		const repositoryName = validateRepositoryName(
 			target.repository.repositoryName,
 		);
 		return { repository: target.repository, repositoryName };
 	}
 
-	const repositoryName = CodeCommitRepositoryNameSchema.parse(
-		target.repositoryName,
-	);
+	const repositoryName = validateRepositoryName(target.repositoryName);
 	return {
 		repository: Repository.fromRepositoryName(scope, id, repositoryName),
 		repositoryName,

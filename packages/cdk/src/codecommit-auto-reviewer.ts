@@ -1,6 +1,7 @@
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
-import { Duration } from "aws-cdk-lib";
+import { Duration, Token } from "aws-cdk-lib";
+import { CfnRepository, type Repository } from "aws-cdk-lib/aws-codecommit";
 import { Effect, PolicyStatement } from "aws-cdk-lib/aws-iam";
 import { NagSuppressions } from "cdk-nag";
 import { z } from "zod";
@@ -36,7 +37,13 @@ const repositoryNameSchema = nonEmptyString.regex(
  * sharing a single durable reviewer, router, and state table.
  */
 export const CodeCommitAutoReviewerConfigSchema = z.object({
-  repositories: z.array(repositoryNameSchema).min(1),
+  repositories: z
+    .array(repositoryNameSchema)
+    .min(1)
+    .refine(
+      (repositories) => new Set(repositories).size === repositories.length,
+      "duplicate repository names are not allowed",
+    ),
   reviewerModelId: nonEmptyString,
   reviewerAlias: z.string().trim().min(1).default("live"),
   reviewerExecutionTimeoutSeconds: z
@@ -78,11 +85,27 @@ export type CodeCommitAutoReviewerConfig = z.infer<
 export type CodeCommitAutoReviewerProps = z.input<
   typeof CodeCommitAutoReviewerConfigSchema
 > & {
+  /** Concrete repositories to reuse, keyed by configured repository name. */
+  readonly repositoryResources?: ReadonlyMap<string, Repository>;
   /** Override the team context value (defaults to CDK context `team`). */
-  team?: string;
+  readonly team?: string;
   /** Override the stage context value (defaults to CDK context `stage`). */
-  stage?: string;
+  readonly stage?: string;
 };
+
+function configuredRepositoryName(repository: Repository): string {
+  const resource = repository.node.defaultChild;
+  const repositoryName =
+    resource instanceof CfnRepository
+      ? resource.repositoryName
+      : repository.repositoryName;
+  if (repositoryName === undefined || Token.isUnresolved(repositoryName)) {
+    throw new Error(
+      "CodeCommitAutoReviewer: repository resources must have a resolved repository name",
+    );
+  }
+  return repositoryName;
+}
 
 /**
  * Deploys the full durable CodeCommit PR auto-reviewer infrastructure.
@@ -106,9 +129,28 @@ export class CodeCommitAutoReviewer {
   readonly eventConstructs: ReadonlyMap<string, CodeCommitReviewEvents>;
 
   constructor(scope: Stack, id: string, props: CodeCommitAutoReviewerProps) {
-    const config = CodeCommitAutoReviewerConfigSchema.parse(props);
-    const team = props.team ?? scope.node.tryGetContext("team");
-    const stage = props.stage ?? scope.node.tryGetContext("stage");
+    const {
+      repositoryResources,
+      team: teamOverride,
+      stage: stageOverride,
+      ...configInput
+    } = props;
+    const config = CodeCommitAutoReviewerConfigSchema.parse(configInput);
+    const configuredRepositories = new Set(config.repositories);
+    for (const [repositoryName, repository] of repositoryResources ?? []) {
+      if (!configuredRepositories.has(repositoryName)) {
+        throw new Error(
+          `CodeCommitAutoReviewer: unknown repository resource key ${repositoryName}`,
+        );
+      }
+      if (configuredRepositoryName(repository) !== repositoryName) {
+        throw new Error(
+          `CodeCommitAutoReviewer: repository resource name must match map key ${repositoryName}`,
+        );
+      }
+    }
+    const team = teamOverride ?? scope.node.tryGetContext("team");
+    const stage = stageOverride ?? scope.node.tryGetContext("stage");
     if (!team || !stage) {
       throw new Error(
         "CodeCommitAutoReviewer: team and stage are required (set via CDK context or props)",
@@ -141,8 +183,12 @@ export class CodeCommitAutoReviewer {
       CODEBUILD_REPOSITORIES: config.repositories.join(","),
     };
     for (const repo of config.repositories) {
+      const repositoryResource = repositoryResources?.get(repo);
+      const repositoryTarget = repositoryResource
+        ? { repository: repositoryResource }
+        : { repositoryName: repo };
       const codeBuild = new CodeBuildProject(scope, `${id}Checks-${repo}`, {
-        repositoryName: repo,
+        ...repositoryTarget,
         computeSize: config.codeBuildComputeSize,
         networkPolicy: config.codeBuildNetworkPolicy,
       });
@@ -215,8 +261,12 @@ export class CodeCommitAutoReviewer {
       if (codeBuild === undefined) continue;
       codeBuild.grantRunAndRead(reviewer);
 
+      const repositoryResource = repositoryResources?.get(repo);
+      const repositoryTarget = repositoryResource
+        ? { repository: repositoryResource }
+        : { repositoryName: repo };
       const events = new CodeCommitReviewEvents(scope, `${id}Events-${repo}`, {
-        repositoryName: repo,
+        ...repositoryTarget,
         router,
       });
       events.grantRead(router);

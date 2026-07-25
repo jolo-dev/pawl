@@ -21,6 +21,8 @@ export interface CodeCommitGeneratorConfig {
 	readonly autoReviewer: boolean;
 	readonly modelId?: string;
 	readonly awsProfile?: string;
+	readonly infrastructureName?: string;
+	readonly sourcePathFromStack?: string;
 }
 
 /**
@@ -63,8 +65,9 @@ export function renderCodeCommitTemplateFiles(
 	const manifest = getCodeCommitTemplateManifest();
 	const awsProfile = config.awsProfile ?? "default";
 
+	const infraName = config.infrastructureName ?? "infra";
 	const forceIncludeProperty =
-		",\n        forceIncludePath: \"infra\"";
+		`,\n        forceIncludePath: ${JSON.stringify(infraName)}`;
 
 	const autoReviewProperty = config.autoReviewer
 		? `,\n      autoReview: { modelId: ${JSON.stringify(config.modelId ?? "")} }`
@@ -122,9 +125,9 @@ function renderStackTemplate(
 	const branchName = JSON.stringify(config.branchName);
 	const sourcePathFromStack = variables.sourcePathFromStack ?? "..";
 	const forceIncludeProp =
-		config.autoReviewer === false && config.sourcePathFromStack === undefined
-			? ""
-			: ",\n        forceIncludePath: \"infra\"";
+		config.infrastructureName
+			? `,\n        forceIncludePath: ${JSON.stringify(config.infrastructureName)}`
+			: "";
 	const autoReviewProp = config.autoReviewer
 		? `,\n      autoReview: { modelId: ${JSON.stringify(config.modelId ?? "")} }`
 		: "";
@@ -158,8 +161,7 @@ export class CodeCommitStack extends Stack {
 function renderTestTemplate(variables: Record<string, string>): string {
 	const repoName = variables.repositoryName ?? "my-repo";
 	return `import { describe, expect, test } from "bun:test";
-import { Template } from "aws-cdk-lib/assertions";
-import { App } from "@pawl/cdk";
+import { App, Template } from "@pawl/cdk";
 import { CodeCommitStack } from "../stacks/codecommit-stack";
 
 describe("CodeCommitStack", () => {

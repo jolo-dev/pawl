@@ -74,6 +74,7 @@ describe("renderCodeCommitTemplateFiles", () => {
 		expect(serialized).not.toContain("workspace:");
 		expect(serialized).not.toContain("file:");
 		expect(serialized).not.toContain("link:");
+		expect(serialized).not.toContain("catalog:");
 
 		// No raw aws-cdk-lib dependency
 		expect(devDeps["aws-cdk-lib"]).toBeUndefined();
@@ -85,6 +86,10 @@ describe("renderCodeCommitTemplateFiles", () => {
 		const stack = files.find((f) => f.path === "stacks/codecommit-stack.ts")!;
 		expect(stack.content).toContain('from "@pawl/cdk"');
 		expect(stack.content).not.toContain('from "aws-cdk-lib"');
+
+		const testFile = files.find((f) => f.path === "tests/codecommit-stack.test.ts")!;
+		expect(testFile.content).toContain('from "@pawl/cdk"');
+		expect(testFile.content).not.toContain('from "aws-cdk-lib"');
 	});
 
 	test("renders auto-review only when selected", () => {

@@ -7,8 +7,6 @@ import { CodePipelineReviewerStack } from "../../stacks/pipeline-stack";
 const DEFAULT_CONTEXT: Record<string, unknown> = {
   team: "jolo",
   stage: "dev",
-  repositoryName: "test-repo",
-  branchName: "main",
   reviewerModelId: "anthropic.claude-sonnet-4-6",
 };
 
@@ -25,7 +23,14 @@ function createStack(
 }
 
 describe("CodePipelineReviewerStack", () => {
-  test("synthesizes a CodePipeline with CodeCommit source", () => {
+  test("creates and seeds a CodeCommit repository from local source", () => {
+    const { template } = createStack();
+    template.hasResourceProperties("AWS::CodeCommit::Repository", {
+      RepositoryName: "durable-lambda-reviewer",
+    });
+  });
+
+  test("creates a CodePipeline with the created repository as source", () => {
     const { template } = createStack();
     template.hasResourceProperties("AWS::CodePipeline::Pipeline", {
       Stages: Match.arrayWith([
@@ -88,16 +93,18 @@ describe("CodePipelineReviewerStack", () => {
     });
   });
 
-  test("requires repositoryName context", () => {
-    expect(() => createStack("NoRepo", { ...DEFAULT_CONTEXT, repositoryName: undefined })).toThrow(
-      /repositoryName/,
-    );
+  test("uses retained removal policy for the created repository", () => {
+    const { template } = createStack();
+    template.hasResource("AWS::CodeCommit::Repository", {
+      DeletionPolicy: "RetainExceptOnCreate",
+      UpdateReplacePolicy: "Retain",
+    });
   });
 
   test("requires reviewerModelId context", () => {
-    expect(() => createStack("NoModel", { ...DEFAULT_CONTEXT, reviewerModelId: undefined })).toThrow(
-      /reviewerModelId/,
-    );
+    expect(() =>
+      createStack("NoModel", { ...DEFAULT_CONTEXT, reviewerModelId: undefined }),
+    ).toThrow(/reviewerModelId/);
   });
 
   test("passes AwsSolutions checks", () => {
@@ -110,15 +117,18 @@ describe("CodePipelineReviewerStack", () => {
     NagSuppressions.addStackSuppressions(stack, [
       {
         id: "AwsSolutions-S1",
-        reason: "The artifact bucket does not require versioning for CI/CD pipelines.",
+        reason:
+          "The artifact bucket does not require versioning for CI/CD pipelines.",
       },
       {
         id: "AwsSolutions-S10",
-        reason: "The artifact bucket is internal to CodePipeline and not directly accessible; SSL is enforced by the pipeline service.",
+        reason:
+          "The artifact bucket is internal to CodePipeline and not directly accessible; SSL is enforced by the pipeline service.",
       },
       {
         id: "AwsSolutions-IAM5",
-        reason: "CodePipeline actions require wildcard permissions for cross-service access.",
+        reason:
+          "CodePipeline actions require wildcard permissions for cross-service access.",
       },
     ], true);
 

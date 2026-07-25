@@ -1,59 +1,55 @@
+import path from "node:path";
 import type { Construct } from "@pawl/cdk";
 import {
   CodeBuildProject,
+  CodeCommit,
   CodePipeline,
   type PipelineStage,
   Stack,
 } from "@pawl/cdk";
-import { Repository } from "aws-cdk-lib/aws-codecommit";
 import { Artifact } from "aws-cdk-lib/aws-codepipeline";
 
 /**
- * Example stack showcasing `CodePipeline` with durable auto-review and
- * PR-gated triggering.
+ * Example stack showcasing `CodePipeline` with `CodeCommit` source seeding
+ * and durable auto-review with PR-gated triggering.
  *
- * This stack creates a CI/CD pipeline for the `durable-reviewer-demo`
- * CodeCommit repository. The pipeline only starts when a pull request is
- * opened or updated (`onPullRequest: true`). On each PR event, the router
- * Lambda starts a pipeline execution with the PR's source commit and
- * simultaneously invokes the durable reviewer Lambda for AI review — both
- * running in parallel via `Promise.allSettled`.
+ * This stack creates a new CodeCommit repository seeded from this example
+ * directory's source code, then wires it into a CI/CD pipeline with
+ * PR-gated auto-review.
+ *
+ * Flow:
+ * 1. `CodeCommit` creates and seeds a repository from `sourcePath` (this
+ *    directory). The initial commit includes all project files.
+ * 2. `CodePipeline` creates a CI/CD pipeline using the created repository as
+ *    its source. With `onPullRequest: true`, the pipeline only starts when a
+ *    PR is opened — the router starts executions with the PR's source commit.
+ * 3. `autoReview` deploys the durable reviewer infrastructure. On each PR
+ *    event, the router starts the pipeline (CI) and invokes the durable
+ *    reviewer (AI review) in parallel via `Promise.allSettled`.
  *
  * Pipeline stages:
- * 1. **Source** — CodeCommit repository, branch `main`, trigger disabled
- *    (`CodeCommitTrigger.NONE`). The router starts executions explicitly.
+ * 1. **Source** — CodeCommit repository (created and seeded above), branch
+ *    `main`, trigger disabled (`CodeCommitTrigger.NONE`).
  * 2. **Build** — A `CodeBuildProject` in pipeline mode runs the repository's
- *    `buildspec.yml`. The project uses a placeholder S3 source (CodePipeline
- *    overrides it at execution time).
+ *    `buildspec.yml`.
  * 3. **Approve** — A manual approval gate before any deployment.
- *
- * Review infrastructure (created automatically by `autoReview`):
- * - Durable reviewer Lambda (AI review via Bedrock)
- * - Router Lambda (starts pipeline + invokes reviewer in parallel)
- * - DynamoDB state table (review status + execution-to-PR mapping)
- * - CodeBuild review-check projects
- * - EventBridge rules (CodeCommit PR events + CodePipeline execution state)
- * - Bedrock IAM (anthropic.* foundation-model grant)
  *
  * @example
  * ```bash
  * # Deploy
  * AWS_PROFILE=jolo bunx cdk deploy CodePipelineReviewerStack
  *
- * # The pipeline and reviewer are now active. Opening a PR on the
- * # `durable-reviewer-demo` repository will trigger both CI and AI review.
+ * # The pipeline creates a CodeCommit repository seeded with this example's
+ * # source code. Opening a PR triggers both CI and AI review in parallel.
  * ```
  */
 export class CodePipelineReviewerStack extends Stack {
   constructor(scope: Construct, id: string) {
     super(scope, id);
 
-    const repositoryName = this.node.tryGetContext("repositoryName") as
+    const repositoryName = (this.node.tryGetContext("repositoryName") as
       | string
-      | undefined;
-    if (repositoryName === undefined) {
-      throw new Error("repositoryName context is required");
-    }
+      | undefined) ?? "durable-lambda-reviewer";
     const branchName = (this.node.tryGetContext("branchName") as
       | string
       | undefined) ?? "main";
@@ -64,12 +60,19 @@ export class CodePipelineReviewerStack extends Stack {
       throw new Error("reviewerModelId context is required");
     }
 
-    // Import the existing CodeCommit repository by name
-    const repository = Repository.fromRepositoryName(
-      this,
-      "Repository",
+    // The source path is this example directory itself (parent of stacks/)
+    const sourcePath = path.resolve(import.meta.dirname, "..");
+
+    // Create and seed a CodeCommit repository from the local source code.
+    // The repository is created with the initial content of this directory.
+    const codeCommit = new CodeCommit(this, "Repository", {
       repositoryName,
-    );
+      create: {
+        sourcePath,
+        branchName,
+        description: "Durable Lambda reviewer example with CodePipeline",
+      },
+    });
 
     // Create a pipeline-mode CodeBuild project for the Build stage
     const buildProject = new CodeBuildProject(this, "BuildProject", {
@@ -112,11 +115,12 @@ export class CodePipelineReviewerStack extends Stack {
       },
     ];
 
-    // Create the pipeline with PR-gated auto-review
+    // Create the pipeline with PR-gated auto-review, using the created
+    // repository as its source.
     new CodePipeline(this, "Pipeline", {
       source: {
         type: "codecommit",
-        repository,
+        repository: codeCommit.repository,
         branchName,
       },
       stages,

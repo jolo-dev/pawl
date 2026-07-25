@@ -147,3 +147,28 @@ describe("CodeCommitAutoReviewer", () => {
 		Template.fromStack(stack).resourceCountIs("AWS::CodeBuild::Project", 2);
 	});
 });
+
+describe("CodeCommitAutoReviewer pipeline regression", () => {
+	test("does not create codepipeline IAM grants", () => {
+		const stack = createStack("RegressionNoPipeline");
+		createReviewer(stack);
+		const template = Template.fromStack(stack);
+		const serialized = JSON.stringify(template.toJSON());
+		expect(serialized).not.toContain("codepipeline:");
+		expect(serialized).not.toContain("CodePipeline");
+	});
+
+	test("does not set PIPELINE_NAME env var on router", () => {
+		const stack = createStack("RegressionNoPipelineEnv");
+		createReviewer(stack);
+		const template = Template.fromStack(stack);
+		const functions = Object.values(template.findResources("AWS::Lambda::Function"));
+		const routerFunc = functions.find((f) => {
+			const env = (f.Properties as { Environment?: { Variables?: Record<string, string> } }).Environment?.Variables;
+			return env?.REVIEWER_FUNCTION_NAME !== undefined && env?.STATE_TABLE_NAME !== undefined;
+		});
+		expect(routerFunc).toBeDefined();
+		const routerEnv = (routerFunc!.Properties as { Environment?: { Variables?: Record<string, string> } }).Environment?.Variables;
+		expect(routerEnv?.PIPELINE_NAME).toBeUndefined();
+	});
+});

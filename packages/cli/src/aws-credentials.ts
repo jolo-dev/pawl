@@ -16,6 +16,7 @@ import {
 	STSClient,
 } from "@aws-sdk/client-sts";
 import {
+	fromIni,
 	getSSOTokenFromFile,
 	loadSsoSessionData,
 	parseKnownFiles,
@@ -29,8 +30,13 @@ export async function listProfiles(): Promise<string[]> {
 
 export async function checkCredentials(
 	profile?: string,
+	region?: string,
 ): Promise<GetCallerIdentityCommandOutput> {
-	const client = new STSClient({ profile });
+	const client = new STSClient({
+		profile,
+		region,
+		credentials: profile ? fromIni({ profile }) : undefined,
+	});
 	return client.send(new GetCallerIdentityCommand({}));
 }
 
@@ -126,9 +132,23 @@ export async function ssoLogin(profile: string): Promise<void> {
 	console.log(`SSO login successful for profile "${profile}"`);
 }
 
-export async function checkBedrockAccess(profile?: string): Promise<boolean> {
+export async function getProfileRegion(
+	profile: string,
+): Promise<string | undefined> {
+	const profiles = await parseKnownFiles({});
+	return profiles[profile]?.region;
+}
+
+export async function checkBedrockAccess(
+	profile?: string,
+	region?: string,
+): Promise<boolean> {
 	try {
-		const client = new BedrockClient({ profile });
+		const client = new BedrockClient({
+			profile,
+			region,
+			credentials: profile ? fromIni({ profile }) : undefined,
+		});
 		await client.send(
 			new ListFoundationModelsCommand({ byOutputModality: "TEXT" }),
 		);

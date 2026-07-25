@@ -16,6 +16,12 @@ import {
 	formatPreflightError,
 } from "./source-preflight";
 import {
+	installCodeCommitProject,
+	deployCodeCommitProject,
+	formatDeployRetryCommand,
+	type CodeCommitDeployDeps,
+} from "./deploy";
+import {
 	defaultPromptDeps,
 	resolveCorePrompts,
 	resolvePostConfirmPrompts,
@@ -206,6 +212,7 @@ export async function runCodeCommitInit(options: {
 			layout.projectDir,
 			config.awsProfile,
 			config.region,
+			{ autoReviewer: config.autoReviewer },
 		);
 		deployOutput = {
 			repositoryName: outputs.RepositoryName ?? config.repositoryName,

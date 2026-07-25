@@ -8,6 +8,7 @@ import {
 	openSync,
 	readdirSync,
 	readFileSync,
+	realpathSync,
 	rmSync,
 	statSync,
 	writeFileSync,
@@ -49,11 +50,15 @@ export interface AnalyzeCodeCommitSourceOptions {
 
 export interface CodeCommitSourceFile {
 	readonly absolutePath: string;
+	readonly canonicalPath: string;
 	readonly relativePath: string;
 	readonly bytes: number;
+	readonly device: number;
+	readonly inode: number;
 }
 
 export interface CodeCommitSourceAnalysis {
+	readonly sourcePath: string;
 	readonly files: readonly CodeCommitSourceFile[];
 	readonly assetExcludes: readonly string[];
 	readonly totalBytes: number;
@@ -104,6 +109,52 @@ function readRegularFileWithoutFollowingSymlinks(absolutePath: string): Buffer {
 		if (!metadata.isFile()) {
 			throw new TypeError(
 				`CodeCommit source entry is not a regular file: ${JSON.stringify(absolutePath)}`,
+			);
+		}
+		return readFileSync(descriptor);
+	} finally {
+		closeSync(descriptor);
+	}
+}
+
+function isCanonicalChild(sourcePath: string, candidatePath: string): boolean {
+	const relativePath = path.relative(sourcePath, candidatePath);
+	return (
+		relativePath.length > 0 &&
+		relativePath !== ".." &&
+		!relativePath.startsWith(`..${path.sep}`) &&
+		!path.isAbsolute(relativePath)
+	);
+}
+
+function readAnalyzedFileWithoutFollowingSymlinks(
+	file: CodeCommitSourceFile,
+	sourcePath: string,
+): Buffer {
+	const canonicalPath = realpathSync.native(file.absolutePath);
+	if (
+		canonicalPath !== file.canonicalPath ||
+		!isCanonicalChild(sourcePath, canonicalPath)
+	) {
+		throw new Error(
+			`CodeCommit source changed after analysis: ${JSON.stringify(file.relativePath)}`,
+		);
+	}
+
+	const descriptor = openSync(
+		file.absolutePath,
+		constants.O_RDONLY | constants.O_NOFOLLOW,
+	);
+	try {
+		const metadata = fstatSync(descriptor);
+		if (
+			!metadata.isFile() ||
+			metadata.dev !== file.device ||
+			metadata.ino !== file.inode ||
+			metadata.size !== file.bytes
+		) {
+			throw new Error(
+				`CodeCommit source changed after analysis: ${JSON.stringify(file.relativePath)}`,
 			);
 		}
 		return readFileSync(descriptor);
@@ -211,17 +262,21 @@ export function analyzeCodeCommitSource(
 	if (!sourceMetadata.isDirectory() || sourceMetadata.isSymbolicLink()) {
 		throw new TypeError("CodeCommit sourcePath must be a real directory");
 	}
+	const canonicalSourcePath = realpathSync.native(sourcePath);
 
-	const assetExcludes = readRootGitIgnore(sourcePath);
+	const userExcludes = readRootGitIgnore(sourcePath);
 	if (options.forceIncludePath !== undefined) {
 		validateForceIncludePath(options.forceIncludePath);
-		assetExcludes.push(
+		userExcludes.push(
 			`!/${options.forceIncludePath}/`,
 			`!/${options.forceIncludePath}/**`,
 		);
 	}
-	assetExcludes.push(...CODECOMMIT_SECURITY_EXCLUDES);
-	const ignoreStrategy = IgnoreStrategy.git(sourcePath, assetExcludes);
+	const enumerationExcludes = [
+		...userExcludes,
+		...CODECOMMIT_SECURITY_EXCLUDES,
+	];
+	const ignoreStrategy = IgnoreStrategy.git(sourcePath, enumerationExcludes);
 	const files: CodeCommitSourceFile[] = [];
 	const symlinkExcludes: string[] = [];
 
@@ -243,10 +298,19 @@ export function analyzeCodeCommitSource(
 				continue;
 			}
 			if (metadata.isFile() && !ignoreStrategy.ignores(absolutePath)) {
+				const canonicalPath = realpathSync.native(absolutePath);
+				if (!isCanonicalChild(canonicalSourcePath, canonicalPath)) {
+					throw new Error(
+						`CodeCommit source escaped its root during analysis: ${JSON.stringify(relativePath)}`,
+					);
+				}
 				files.push({
 					absolutePath,
+					canonicalPath,
 					relativePath,
 					bytes: metadata.size,
+					device: metadata.dev,
+					inode: metadata.ino,
 				});
 			}
 		}
@@ -257,9 +321,29 @@ export function analyzeCodeCommitSource(
 		comparePaths(left.relativePath, right.relativePath),
 	);
 	symlinkExcludes.sort(comparePaths);
-	assetExcludes.push(...symlinkExcludes);
+	const assetExcludes = [
+		...userExcludes,
+		...symlinkExcludes.map(toLiteralGitExclude),
+		...CODECOMMIT_SECURITY_EXCLUDES,
+	];
 	const totalBytes = validateFileLimits(files);
-	return { files, assetExcludes, totalBytes };
+	return {
+		sourcePath: canonicalSourcePath,
+		files,
+		assetExcludes,
+		totalBytes,
+	};
+}
+
+function toLiteralGitExclude(relativePath: string): string {
+	const escapedPath = relativePath
+		.replaceAll("\\", "\\\\")
+		.replaceAll("*", "\\*")
+		.replaceAll("?", "\\?")
+		.replaceAll("[", "\\[")
+		.replaceAll("]", "\\]")
+		.replaceAll(" ", "\\ ");
+	return `/${escapedPath}`;
 }
 
 function crc32(contents: Buffer): number {
@@ -366,6 +450,12 @@ export function createCodeCommitSourceArchive(options: {
 		comparePaths(left.relativePath, right.relativePath),
 	);
 	validateFileLimits(sortedFiles);
+	if (
+		realpathSync.native(options.analysis.sourcePath) !==
+		options.analysis.sourcePath
+	) {
+		throw new Error("CodeCommit source root changed after analysis");
+	}
 	const seenPaths = new Set<string>();
 	const hash = createHash("sha256");
 	const entries: ArchiveEntry[] = [];
@@ -379,7 +469,10 @@ export function createCodeCommitSourceArchive(options: {
 			);
 		}
 		seenPaths.add(file.relativePath);
-		const contents = readRegularFileWithoutFollowingSymlinks(file.absolutePath);
+		const contents = readAnalyzedFileWithoutFollowingSymlinks(
+			file,
+			options.analysis.sourcePath,
+		);
 		if (contents.byteLength > CODECOMMIT_SOURCE_LIMITS.fileBytes) {
 			throw new CodeCommitSourceLimitError({
 				kind: "fileBytes",

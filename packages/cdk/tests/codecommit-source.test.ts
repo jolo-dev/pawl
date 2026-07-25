@@ -5,6 +5,7 @@ import {
 	mkdtempSync,
 	readdirSync,
 	readFileSync,
+	renameSync,
 	rmSync,
 	symlinkSync,
 	writeFileSync,
@@ -144,6 +145,11 @@ describe("analyzeCodeCommitSource", () => {
 		write(root, "z-last.txt", "last");
 		write(root, "nested/a-first.txt", "first");
 		write(external, "external-secret.txt", "DO-NOT-READ-EXTERNAL-CONTENT");
+		mkdirSync(path.join(root, "!foo"));
+		symlinkSync(
+			path.join(external, "external-secret.txt"),
+			path.join(root, "!foo", ".env"),
+		);
 		symlinkSync(
 			path.join(external, "external-secret.txt"),
 			path.join(root, "external-link"),
@@ -160,11 +166,23 @@ describe("analyzeCodeCommitSource", () => {
 		expect(
 			result.files.every(({ relativePath }) => !relativePath.includes("\\")),
 		).toBe(true);
-		expect(result.assetExcludes.slice(-3)).toEqual([
-			"broken-link",
-			"directory-link",
-			"external-link",
+		const securityExcludes = result.assetExcludes.slice(
+			-CODECOMMIT_SECURITY_EXCLUDES.length,
+		);
+		const dynamicExcludes = result.assetExcludes.slice(
+			0,
+			-CODECOMMIT_SECURITY_EXCLUDES.length,
+		);
+		expect(securityExcludes).toEqual(CODECOMMIT_SECURITY_EXCLUDES);
+		expect(dynamicExcludes).toEqual([
+			"/!foo/.env",
+			"/broken-link",
+			"/directory-link",
+			"/external-link",
 		]);
+		expect(dynamicExcludes.every((pattern) => !pattern.startsWith("!"))).toBe(
+			true,
+		);
 		expect(JSON.stringify(result)).not.toContain(
 			"DO-NOT-READ-EXTERNAL-CONTENT",
 		);
@@ -286,6 +304,26 @@ describe("createCodeCommitSourceArchive", () => {
 		for (const entry of entries.values()) {
 			expect(entry.crc).toBe(crc32(entry.contents));
 		}
+	});
+
+	test("rejects a parent-directory symlink swap without reading external content", () => {
+		const root = makeTemporaryDirectory();
+		const external = makeTemporaryDirectory();
+		const output = makeTemporaryDirectory();
+		write(root, "parent/file.txt", "safe original");
+		write(external, "file.txt", "DO-NOT-ARCHIVE-EXTERNAL-CONTENT");
+		const analysis = analyzeCodeCommitSource({ sourcePath: root });
+		renameSync(path.join(root, "parent"), path.join(root, "parent-original"));
+		symlinkSync(external, path.join(root, "parent"), "dir");
+
+		try {
+			createCodeCommitSourceArchive({ analysis, outputDirectory: output });
+			expect.unreachable();
+		} catch (error) {
+			expect(error).toBeInstanceOf(Error);
+			expect(String(error)).not.toContain("DO-NOT-ARCHIVE-EXTERNAL-CONTENT");
+		}
+		expect(readdirSync(output)).toEqual([]);
 	});
 
 	test("defensively rejects absolute, traversal, and overlong archive paths", () => {

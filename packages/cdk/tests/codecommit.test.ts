@@ -61,7 +61,7 @@ describe("CodeCommit repository lifecycle", () => {
 		const stack = createStack("SeededRepositoryStack");
 		const sourcePath = createSource();
 		const construct = new CodeCommit(stack, "Code", {
-			repoName: "seeded-repository",
+			repositoryName: "seeded-repository",
 			create: {
 				sourcePath,
 				branchName: "develop",
@@ -106,7 +106,7 @@ describe("CodeCommit repository lifecycle", () => {
 	test("defaults the seeded branch to main", () => {
 		const stack = createStack("DefaultBranchStack");
 		new CodeCommit(stack, "Code", {
-			repoName: "default-branch-repository",
+			repositoryName: "default-branch-repository",
 			create: { sourcePath: createSource() },
 		});
 
@@ -119,7 +119,7 @@ describe("CodeCommit repository lifecycle", () => {
 	test("creates a retained empty repository without a Code property", () => {
 		const stack = createStack("EmptyRepositoryStack");
 		new CodeCommit(stack, "Code", {
-			repoName: "empty-repository",
+			repositoryName: "empty-repository",
 			create: { description: "Empty repository" },
 		});
 		const repositories = Template.fromStack(stack).findResources(
@@ -135,7 +135,7 @@ describe("CodeCommit repository lifecycle", () => {
 	test("imports by name and creates no repository resource", () => {
 		const stack = createStack("ImportedRepositoryStack");
 		const construct = new CodeCommit(stack, "Code", {
-			repoName: "imported-repository",
+			repositoryName: "imported-repository",
 		});
 
 		expect(construct.repository.repositoryName).toBe("imported-repository");
@@ -143,19 +143,10 @@ describe("CodeCommit repository lifecycle", () => {
 		Template.fromStack(stack).resourceCountIs("AWS::CodeCommit::Repository", 0);
 	});
 
-	test("accepts the existing repositoryName spelling for compatibility", () => {
-		const stack = createStack("CompatibleRepositoryNameStack");
-		const construct = new CodeCommit(stack, "Code", {
-			repositoryName: "compatible-repository",
-		});
-
-		expect(construct.repository.repositoryName).toBe("compatible-repository");
-	});
-
 	test("repository-only mode has no ancillary review resources and optional outputs stay absent", () => {
 		const stack = createStack("RepositoryOnlyStack");
 		const construct = new CodeCommit(stack, "Code", {
-			repoName: "repository-only",
+			repositoryName: "repository-only",
 			create: {},
 		});
 		const template = Template.fromStack(stack);
@@ -179,7 +170,7 @@ describe("CodeCommit review combinations", () => {
 		const stack = createStack("RouterRepositoryStack");
 		const router = new LambdaFunction(stack, "Router", { entry: lambdaEntry });
 		const construct = new CodeCommit(stack, "Code", {
-			repoName: "router-repository",
+			repositoryName: "router-repository",
 			create: {},
 			router,
 		});
@@ -193,7 +184,7 @@ describe("CodeCommit review combinations", () => {
 	test("auto-review mode passes a concrete created repository through every consumer", () => {
 		const stack = createStack("AutoReviewRepositoryStack");
 		const construct = new CodeCommit(stack, "Code", {
-			repoName: "auto-review-repository",
+			repositoryName: "auto-review-repository",
 			create: {},
 			autoReview: { modelId: "eu.anthropic.claude-sonnet-4-6" },
 		});
@@ -203,14 +194,14 @@ describe("CodeCommit review combinations", () => {
 		expect(construct.events?.repository).toBe(construct.repository);
 		expect(
 			construct.autoReviewer?.codeBuildProjects.get("auto-review-repository")
-				?.repository,
+				?.repository as typeof construct.repository,
 		).toBe(construct.repository);
 	});
 
 	test("auto-review import mode preserves name-based fallback", () => {
 		const stack = createStack("ImportedAutoReviewRepositoryStack");
 		const construct = new CodeCommit(stack, "Code", {
-			repoName: "imported-auto-review-repository",
+			repositoryName: "imported-auto-review-repository",
 			autoReview: { modelId: "anthropic.claude-sonnet-4-6" },
 		});
 
@@ -228,7 +219,7 @@ describe("CodeCommit review combinations", () => {
 		expect(
 			() =>
 				new CodeCommit(stack, "Code", {
-					repoName: "conflicting-repository",
+					repositoryName: "conflicting-repository",
 					router,
 					autoReview: { modelId: "eu.anthropic.claude-sonnet-4-6" },
 				}),
@@ -245,9 +236,9 @@ describe("CodeCommit validation", () => {
 		"invalid repository",
 		"repo/name",
 		"repo.git",
-	])("rejects invalid repository name %p", (repoName) => {
-		const stack = createStack(`InvalidRepository${repoName.length}Stack`);
-		expect(() => new CodeCommit(stack, "Code", { repoName })).toThrow();
+	])("rejects invalid repository name %p", (repositoryName) => {
+		const stack = createStack(`InvalidRepository${repositoryName.length}Stack`);
+		expect(() => new CodeCommit(stack, "Code", { repositoryName })).toThrow();
 	});
 
 	test.each([
@@ -260,7 +251,7 @@ describe("CodeCommit validation", () => {
 		expect(
 			() =>
 				new CodeCommit(stack, "Code", {
-					repoName: "branch-repository",
+					repositoryName: "branch-repository",
 					create: { sourcePath: createSource(), branchName },
 				}),
 		).toThrow();
@@ -271,7 +262,7 @@ describe("CodeCommit validation", () => {
 		expect(
 			() =>
 				new CodeCommit(branchStack, "Code", {
-					repoName: "branch-without-source",
+					repositoryName: "branch-without-source",
 					create: { branchName: "main" },
 				}),
 		).toThrow(/sourcePath/i);
@@ -279,7 +270,7 @@ describe("CodeCommit validation", () => {
 		expect(
 			() =>
 				new CodeCommit(forceStack, "Code", {
-					repoName: "force-without-source",
+					repositoryName: "force-without-source",
 					create: { forceIncludePath: "infra" },
 				}),
 		).toThrow(/sourcePath/i);
@@ -302,7 +293,7 @@ describe("CodeCommit validation", () => {
 		expect(
 			() =>
 				new CodeCommit(stack, "Code", {
-					repoName: "unsafe-force-repository",
+					repositoryName: "unsafe-force-repository",
 					create: { sourcePath: createSource(), forceIncludePath },
 				}),
 		).toThrow(/forceIncludePath|safe direct child/i);
@@ -322,28 +313,13 @@ describe("CodeCommit validation", () => {
 		expect(
 			() =>
 				new CodeCommit(stack, "Code", {
-					repoName: "invalid-model-repository",
+					repositoryName: "invalid-model-repository",
 					autoReview: { modelId },
 				}),
 		).toThrow(/model|anthropic/i);
 		const template = Template.fromStack(stack);
 		template.resourceCountIs("AWS::CodeBuild::Project", 0);
 		template.resourceCountIs("AWS::DynamoDB::Table", 0);
-	});
-
-	test("rejects neither or both repository-name spellings", () => {
-		const neitherStack = createStack("MissingNameStack");
-		expect(
-			() => new CodeCommit(neitherStack, "Code", {} as CodeCommitProps),
-		).toThrow();
-		const bothStack = createStack("BothNamesStack");
-		expect(
-			() =>
-				new CodeCommit(bothStack, "Code", {
-					repoName: "repo",
-					repositoryName: "repo",
-				} as CodeCommitProps),
-		).toThrow();
 	});
 });
 
@@ -357,16 +333,20 @@ describe("CodeCommit package entrypoint", () => {
 		expect(output).toBeDefined();
 		expect(scope).toBe(stack);
 		expectTypeOf<Construct>().not.toBeAny();
+
+		// @ts-expect-error CodeCommitProps requires repositoryName.
+		const missingRepositoryName: CodeCommitProps = {};
+		void missingRepositoryName;
 	});
 
 	test("passes AwsSolutions checks in repository-only mode", () => {
 		const stack = createStack("NagRepositoryStack");
 		new CodeCommit(stack, "Code", {
-			repoName: "nag-repository",
+			repositoryName: "nag-repository",
 			create: {},
 		});
 		Aspects.of(stack).add(new AwsSolutionsChecks({ verbose: true }));
-		stack.node.root.synth();
+		(stack.node.root as App).synth();
 
 		const errors = Annotations.fromStack(stack).findError(
 			"*",
@@ -378,7 +358,7 @@ describe("CodeCommit package entrypoint", () => {
 	test("exposes the created repository as the synthesized L1 identity", () => {
 		const stack = createStack("IdentityRepositoryStack");
 		const construct = new CodeCommit(stack, "Code", {
-			repoName: "identity-repository",
+			repositoryName: "identity-repository",
 			create: {},
 		});
 		const child = construct.repository.node.defaultChild;

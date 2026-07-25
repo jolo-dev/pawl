@@ -120,26 +120,13 @@ export interface CodeCommitCreateProps {
 
 export interface CodeCommitProps {
 	/** CodeCommit repository name. */
-	readonly repoName?: string;
-	/** @deprecated Use `repoName`. Retained for compatibility with 0.0.x. */
-	readonly repositoryName?: string;
+	readonly repositoryName: string;
 	/** When present, creates the repository instead of importing it by name. */
 	readonly create?: CodeCommitCreateProps;
 	/** Pawl Lambda that receives EventBridge events. */
 	readonly router?: LambdaFunction;
 	/** Deploys the full durable auto-reviewer for this repository. */
 	readonly autoReview?: AutoReviewConfig;
-}
-
-function parseRepositoryName(props: CodeCommitProps): string {
-	if ((props.repoName === undefined) === (props.repositoryName === undefined)) {
-		throw new Error(
-			"CodeCommit requires exactly one of repoName or repositoryName",
-		);
-	}
-	return CodeCommitRepositoryNameSchema.parse(
-		props.repoName ?? props.repositoryName,
-	);
 }
 
 /**
@@ -159,7 +146,9 @@ export class CodeCommit {
 	readonly autoReviewer?: CodeCommitAutoReviewer;
 
 	constructor(scope: Stack, id: string, props: CodeCommitProps) {
-		const repositoryName = parseRepositoryName(props);
+		const repositoryName = CodeCommitRepositoryNameSchema.parse(
+			props.repositoryName,
+		);
 		if (props.router !== undefined && props.autoReview !== undefined) {
 			throw new Error(
 				"CodeCommit router and autoReview are mutually exclusive",

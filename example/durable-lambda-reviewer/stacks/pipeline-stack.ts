@@ -1,13 +1,13 @@
 import path from "node:path";
 import type { Construct } from "@pawl/cdk";
 import {
+  Artifact,
   CodeBuildProject,
   CodeCommit,
   CodePipeline,
   type PipelineStage,
   Stack,
 } from "@pawl/cdk";
-import { Artifact } from "aws-cdk-lib/aws-codepipeline";
 
 /**
  * Example stack showcasing `CodePipeline` with `CodeCommit` source seeding

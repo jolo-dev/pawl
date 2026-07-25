@@ -1,5 +1,6 @@
 export { App, CfnOutput, Duration } from "aws-cdk-lib";
 export { Template } from "aws-cdk-lib/assertions";
+export { Artifact } from "aws-cdk-lib/aws-codepipeline";
 export type { Construct } from "constructs";
 export * from "./src/agentcore";
 export * from "./src/api-destination";

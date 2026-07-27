@@ -193,16 +193,9 @@ export class CodePipeline extends BasicConstruct {
     // 3. Source stage
     const sourceArtifact = this.addSourceStage(props);
 
-    // 4. User stages or default Build + ManualApproval
-    if (props.stages !== undefined) {
-      for (const stage of props.stages) {
-        this.addStage(stage, sourceArtifact);
-      }
-    } else {
-      this.addDefaultStages();
-    }
-
-    // 5. Auto-review infrastructure (if enabled)
+    // 4. Auto-review infrastructure (if enabled) — created BEFORE stages so
+    //    the reviewer Lambda can be injected as a parallel pipeline action.
+    let autoReviewer: CodeCommitAutoReviewer | undefined;
     if (props.autoReview !== undefined) {
       if (props.source.type !== "codecommit") {
         throw new Error(
@@ -225,7 +218,7 @@ export class CodePipeline extends BasicConstruct {
             );
           })();
 
-      const autoReviewer = new CodeCommitAutoReviewer(
+      autoReviewer = new CodeCommitAutoReviewer(
         scope,
         `${id}AutoReview`,
         {
@@ -237,8 +230,8 @@ export class CodePipeline extends BasicConstruct {
         },
       );
 
-      // Wire the pipeline name to the router so it starts the pipeline
-      // execution when a PR event arrives, alongside the AI review.
+      // Wire the pipeline name to the router so it starts pipeline
+      // execution when a PR event arrives.
       autoReviewer.router.lambda.addEnvironment(
         "PIPELINE_NAME",
         this.pipeline.pipelineName,
@@ -270,6 +263,29 @@ export class CodePipeline extends BasicConstruct {
         },
         targets: [new LambdaEventTarget(autoReviewer.router.lambda)],
       });
+    }
+
+    // 5. User stages or default Build + ManualApproval.
+    //    When auto-review is active, inject the reviewer Lambda as a parallel
+    //    action in the first non-Source stage so CodeBuild and AI review run
+    //    concurrently.
+    if (props.stages !== undefined) {
+      const stageActions = [...props.stages];
+      if (autoReviewer !== undefined && stageActions.length > 0) {
+        const firstStage = stageActions[0];
+        firstStage.actions.push({
+          type: "lambda",
+          name: "AIReview",
+          handler: autoReviewer.reviewer,
+          inputs: { source: sourceArtifact.artifactName ?? "SourceOutput" },
+        });
+      }
+      for (const stage of stageActions) {
+        this.addStage(stage, sourceArtifact);
+      }
+    } else {
+      // Default stages — no auto-review injection for default mode.
+      this.addDefaultStages();
     }
   }
 

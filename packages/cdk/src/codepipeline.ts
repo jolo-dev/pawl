@@ -1,4 +1,4 @@
-import { CfnCapabilities, RemovalPolicy } from "aws-cdk-lib";
+import { CfnCapabilities, Fn, RemovalPolicy } from "aws-cdk-lib";
 import type { IRepository } from "aws-cdk-lib/aws-codecommit";
 import {
   Artifact,
@@ -210,9 +210,24 @@ export class CodePipeline extends BasicConstruct {
 
   private createSourceAction(props: CodePipelineProps): CodeCommitSourceAction {
     if (props.source.type === "codecommit") {
+      // Build the repository ARN via Fn::Sub so LocalStack (and any provider
+      // that does not support Fn::GetAtt on CodeCommit) can resolve it.
+      const repoArn = Fn.sub(
+        "arn:${AWS::Partition}:codecommit:${AWS::Region}:${AWS::AccountId}:${repoName}",
+        { repoName: props.source.repository.repositoryName },
+      );
+      // Create a proxy that preserves the full IRepository interface but
+      // overrides repositoryArn with the Fn::Sub-based ARN.
+      const repository: IRepository = new Proxy(props.source.repository, {
+        get(target, prop, receiver) {
+          if (prop === "repositoryArn") return repoArn;
+          const value = Reflect.get(target, prop, receiver);
+          return typeof value === "function" ? value.bind(target) : value;
+        },
+      });
       return new CodeCommitSourceAction({
         actionName: "Source",
-        repository: props.source.repository,
+        repository,
         branch: props.source.branchName ?? "main",
         trigger:
           props.onPullRequest === true ? CodeCommitTrigger.NONE : undefined,

@@ -10,12 +10,9 @@ import {
 } from "@pawl/cdk";
 
 /**
- * Example stack showcasing `CodePipeline` with `CodeCommit` source seeding
- * and durable auto-review with PR-gated triggering.
- *
- * This stack creates a new CodeCommit repository seeded from this example
- * directory's source code, then wires it into a CI/CD pipeline with
- * PR-gated auto-review.
+ * Example stack showcasing `CodePipeline` with a CodeCommit repository
+ * seeded from this directory's source code and durable auto-review with
+ * PR-gated triggering.
  *
  * Flow:
  * 1. `CodeCommit` creates and seeds a repository from `sourcePath` (this
@@ -27,32 +24,21 @@ import {
  *    event, the router starts the pipeline (CI) and invokes the durable
  *    reviewer (AI review) in parallel via `Promise.allSettled`.
  *
- * Pipeline stages:
- * 1. **Source** — CodeCommit repository (created and seeded above), branch
- *    `main`, trigger disabled (`CodeCommitTrigger.NONE`).
- * 2. **Build** — A `CodeBuildProject` in pipeline mode runs the repository's
- *    `buildspec.yml`.
- * 3. **Approve** — A manual approval gate before any deployment.
- *
  * @example
  * ```bash
  * # Deploy
- * AWS_PROFILE=jolo bunx cdk deploy CodePipelineReviewerStack
- *
- * # The pipeline creates a CodeCommit repository seeded with this example's
- * # source code. Opening a PR triggers both CI and AI review in parallel.
+ * AWS_PROFILE=my-profile bunx cdk deploy CodePipelineReviewerStack
  * ```
  */
 export class CodePipelineReviewerStack extends Stack {
   constructor(scope: Construct, id: string) {
     super(scope, id);
 
-    const repositoryName = (this.node.tryGetContext("repositoryName") as
-      | string
-      | undefined) ?? "durable-lambda-reviewer";
-    const branchName = (this.node.tryGetContext("branchName") as
-      | string
-      | undefined) ?? "main";
+    const repositoryName =
+      (this.node.tryGetContext("repositoryName") as string | undefined) ??
+      "durable-lambda-reviewer";
+    const branchName =
+      (this.node.tryGetContext("branchName") as string | undefined) ?? "main";
     const modelId = this.node.tryGetContext("reviewerModelId") as
       | string
       | undefined;
@@ -64,7 +50,7 @@ export class CodePipelineReviewerStack extends Stack {
     const sourcePath = path.resolve(import.meta.dirname, "..");
 
     // Create and seed a CodeCommit repository from the local source code.
-    // The repository is created with the initial content of this directory.
+    // The Pawl construct handles .gitignore-aware file filtering.
     const codeCommit = new CodeCommit(this, "Repository", {
       repositoryName,
       create: {

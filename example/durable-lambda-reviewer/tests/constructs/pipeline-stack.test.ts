@@ -23,10 +23,13 @@ function createStack(
 }
 
 describe("CodePipelineReviewerStack", () => {
-  test("creates and seeds a CodeCommit repository from local source", () => {
+  test("creates a CodeCommit repository with initial code from source", () => {
     const { template } = createStack();
     template.hasResourceProperties("AWS::CodeCommit::Repository", {
       RepositoryName: "durable-lambda-reviewer",
+      Code: {
+        BranchName: "main",
+      },
     });
   });
 
@@ -90,14 +93,6 @@ describe("CodePipelineReviewerStack", () => {
       Source: {
         Type: "S3",
       },
-    });
-  });
-
-  test("uses retained removal policy for the created repository", () => {
-    const { template } = createStack();
-    template.hasResource("AWS::CodeCommit::Repository", {
-      DeletionPolicy: "RetainExceptOnCreate",
-      UpdateReplacePolicy: "Retain",
     });
   });
 

@@ -27,7 +27,7 @@ import {
 } from "aws-cdk-lib/aws-iam";
 import { Key } from "aws-cdk-lib/aws-kms";
 import { LogGroup, RetentionDays } from "aws-cdk-lib/aws-logs";
-import { Bucket } from "aws-cdk-lib/aws-s3";
+import { Bucket, BucketEncryption } from "aws-cdk-lib/aws-s3";
 import { NagSuppressions } from "cdk-nag";
 import type { Construct } from "constructs";
 import { z } from "zod";
@@ -351,11 +351,19 @@ export class CodeBuildProject extends BasicConstruct {
           },
         };
 
-    const pipelinePlaceholderBucket = Bucket.fromBucketName(
-      this,
-      "PipelinePlaceholderBucket",
-      "pipeline-placeholder",
-    );
+    const pipelinePlaceholderBucket = new Bucket(this, "PipelinePlaceholderBucket", {
+      encryption: BucketEncryption.S3_MANAGED,
+      enforceSSL: true,
+      autoDeleteObjects: true,
+      removalPolicy: RemovalPolicy.DESTROY,
+    });
+    NagSuppressions.addResourceSuppressions(pipelinePlaceholderBucket, [
+      {
+        id: "AwsSolutions-S1",
+        reason:
+          "Placeholder bucket for pipeline-mode CodeBuild — never accessed at runtime.",
+      },
+    ]);
     this.project = new Project(this, "Project", {
       projectName,
       source: isPipelineMode

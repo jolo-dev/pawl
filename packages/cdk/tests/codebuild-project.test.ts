@@ -367,9 +367,13 @@ describe("CodeBuildProject", () => {
 				},
 			},
 		});
-		for (const role of Object.values(
+		for (const [logicalId, role] of Object.entries(
 			template.findResources("AWS::IAM::Role"),
 		)) {
+			// The autoDeleteObjects custom resource (created by Bucket) adds a
+			// Lambda role with AWSLambdaBasicExecutionRole — that's expected.
+			// All other roles must not use managed policies.
+			if (logicalId.includes("CustomResource")) continue;
 			expect(role.Properties.ManagedPolicyArns).toBeUndefined();
 		}
 	});

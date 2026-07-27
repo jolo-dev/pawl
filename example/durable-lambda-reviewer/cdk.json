@@ -1,7 +1,9 @@
 {
   "app": "bun ./index.ts",
   "watch": {
-    "include": ["**"],
+    "include": [
+      "**"
+    ],
     "exclude": [
       "README.md",
       "cdk*.json",
@@ -19,10 +21,12 @@
     "testMode": "none",
     "team": "jolo",
     "stage": "dev",
-    "repositories": ["durable-reviewer-demo"],
+    "repositories": [
+      "durable-reviewer-demo"
+    ],
     "reviewerExecutionTimeoutSeconds": 2592000,
     "reviewerRetentionDays": 14,
-    "reviewerModelId": "eu.anthropic.claude-sonnet-4-6",
+    "reviewerModelId": "eu.amazon.nova-2-lite-v1:0",
     "reviewerCodeBuildRegistryEndpoint": "https://registry.npmjs.org",
     "repositoryName": "durable-reviewer-demo",
     "branchName": "main",

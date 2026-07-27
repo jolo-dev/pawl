@@ -26,6 +26,7 @@ import type { Construct } from "constructs";
 import { CodeCommitAutoReviewer } from "./codecommit-auto-reviewer";
 import { BasicConstruct, type PolicyStatement } from "./basic-construct";
 import type { CodeBuildProject } from "./codebuild-project";
+import type { ILambda } from "aws-cdk-lib/aws-lambda";
 import type { LambdaFunction } from "./lambda-function";
 import type { Stack } from "./stack";
 
@@ -358,14 +359,34 @@ export class CodePipeline extends BasicConstruct {
           actionName: action.name ?? "Approve",
           additionalInformation: action.description,
         });
-      case "lambda":
+      case "lambda": {
+        // Durable Lambda functions require a qualified ARN (with alias) for
+        // invocation. LambdaInvokeAction reads functionName from the stored
+        // props.lambda reference, so we must wrap it in a Proxy before
+        // passing to the constructor.
+        const raw = action.handler;
+        const durableArn =
+          "durableFunctionArn" in raw &&
+          typeof (raw as Record<string, unknown>).durableFunctionArn === "string"
+          ? (raw as Record<string, unknown>).durableFunctionArn
+          : undefined;
+        const lambdaTarget = durableArn
+          ? new Proxy(raw.lambda, {
+            get(target, prop, receiver) {
+              if (prop === "functionName") return durableArn;
+              const v = Reflect.get(target, prop, receiver);
+              return typeof v === "function" ? v.bind(target) : v;
+            },
+          })
+          : raw.lambda;
         return new LambdaInvokeAction({
           actionName: action.name ?? "Invoke",
-          lambda: action.handler.lambda,
+          lambda: lambdaTarget,
           inputs: action.inputs
             ? Object.values(action.inputs).map((v) => new Artifact(v))
             : undefined,
         });
+      }
       case "s3Deploy":
         return new S3DeployAction({
           actionName: action.name ?? "Deploy",

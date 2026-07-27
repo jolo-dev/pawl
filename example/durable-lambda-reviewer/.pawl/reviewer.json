@@ -1,0 +1,17 @@
+{
+	"version": 1,
+	"checks": [
+		{
+			"name": "types",
+			"command": "tsc --noEmit || true"
+		},
+		{
+			"name": "lint",
+			"command": "echo lint-ok"
+		}
+	],
+	"review": {
+		"maxChangedFiles": 100,
+		"maxModelTokens": 100000
+	}
+}

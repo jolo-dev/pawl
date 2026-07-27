@@ -360,20 +360,24 @@ export class CodePipeline extends BasicConstruct {
           additionalInformation: action.description,
         });
       case "lambda": {
-        // Durable Lambda functions require a qualified ARN (with alias) for
-        // invocation. LambdaInvokeAction reads functionName from the stored
-        // props.lambda reference, so we must wrap it in a Proxy before
-        // passing to the constructor.
+        // Durable Lambda functions require a qualified ARN. LambdaInvokeAction
+        // reads functionName from the stored props.lambda reference, so we
+        // wrap it in a Proxy to return the qualified ARN (with $LATEST)
+        // instead of the unqualified function name.
         const raw = action.handler;
-        const durableArn =
+        const isDurable =
           "durableFunctionArn" in raw &&
-          typeof (raw as Record<string, unknown>).durableFunctionArn === "string"
-          ? (raw as Record<string, unknown>).durableFunctionArn
-          : undefined;
-        const lambdaTarget = durableArn
+          typeof (raw as Record<string, unknown>).durableFunctionArn === "string";
+        const lambdaTarget = isDurable
           ? new Proxy(raw.lambda, {
             get(target, prop, receiver) {
-              if (prop === "functionName") return durableArn;
+              if (prop === "functionName") {
+                // Build arn:...:function:name:$LATEST
+                return Fn.join("", [
+                  target.functionArn,
+                  ":$LATEST",
+                ]);
+              }
               const v = Reflect.get(target, prop, receiver);
               return typeof v === "function" ? v.bind(target) : v;
             },

@@ -106,6 +106,7 @@ export class CodePipelineReviewerStack extends Stack {
         type: "codecommit",
         repository: codeCommit.repository,
         branchName,
+        repositoryName,
       },
       stages,
       onPullRequest: true,

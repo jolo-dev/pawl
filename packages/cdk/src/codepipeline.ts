@@ -1,5 +1,6 @@
 import { CfnCapabilities, Fn, RemovalPolicy } from "aws-cdk-lib";
 import type { IRepository } from "aws-cdk-lib/aws-codecommit";
+import { Effect, PolicyStatement } from "aws-cdk-lib/aws-iam";
 import {
   Artifact,
   Pipeline,
@@ -19,7 +20,10 @@ import type { IAction } from "aws-cdk-lib/aws-codepipeline";
 import { Key } from "aws-cdk-lib/aws-kms";
 import type { IBucket } from "aws-cdk-lib/aws-s3";
 import { Bucket } from "aws-cdk-lib/aws-s3";
+import { Rule } from "aws-cdk-lib/aws-events";
+import { LambdaFunction as LambdaEventTarget } from "aws-cdk-lib/aws-events-targets";
 import type { Construct } from "constructs";
+import { CodeCommitAutoReviewer } from "./codecommit-auto-reviewer";
 import { BasicConstruct, type PolicyStatement } from "./basic-construct";
 import type { CodeBuildProject } from "./codebuild-project";
 import type { LambdaFunction } from "./lambda-function";
@@ -37,6 +41,12 @@ export type PipelineSource =
     readonly type: "codecommit";
     readonly repository: IRepository;
     readonly branchName?: string;
+    /**
+     * Literal repository name. Required when `autoReview` is set, because
+     * `IRepository.repositoryName` returns a CDK intrinsic token that Zod
+     * validation (used internally by the auto-reviewer) cannot parse.
+     */
+    readonly repositoryName?: string;
   }
   | {
     readonly type: "s3";
@@ -193,8 +203,74 @@ export class CodePipeline extends BasicConstruct {
     }
 
     // 5. Auto-review infrastructure (if enabled)
-    // This will be fully implemented in Task 5 when we wire the router
-    // For now, the construct creates the pipeline without review infrastructure
+    if (props.autoReview !== undefined) {
+      if (props.source.type !== "codecommit") {
+        throw new Error(
+          "Auto-review is only supported with CodeCommit source",
+        );
+      }
+
+      const { modelId, ...otherAutoReviewProps } = props.autoReview;
+      const repositoryName =
+        props.source.type === "codecommit"
+          ? (props.source.repositoryName ??
+            (() => {
+              throw new Error(
+                "CodePipeline auto-review requires repositoryName in source config",
+              );
+            })())
+          : (() => {
+            throw new Error(
+              "Auto-review is only supported with CodeCommit source",
+            );
+          })();
+
+      const autoReviewer = new CodeCommitAutoReviewer(
+        scope,
+        `${id}AutoReview`,
+        {
+          ...otherAutoReviewProps,
+          repositories: [repositoryName],
+          reviewerModelId: modelId,
+          team: props.team,
+          stage: props.stage,
+        },
+      );
+
+      // Wire the pipeline name to the router so it starts the pipeline
+      // execution when a PR event arrives, alongside the AI review.
+      autoReviewer.router.lambda.addEnvironment(
+        "PIPELINE_NAME",
+        this.pipeline.pipelineName,
+      );
+
+      // Grant the router IAM permissions to start and monitor the pipeline.
+      autoReviewer.router.lambda.addToRolePolicy(
+        new PolicyStatement({
+          effect: Effect.ALLOW,
+          actions: [
+            "codepipeline:StartPipelineExecution",
+            "codepipeline:GetPipelineExecution",
+            "codepipeline:ListPipelineExecutions",
+            "codepipeline:ListActionExecutions",
+          ],
+          resources: [this.pipeline.pipelineArn],
+        }),
+      );
+
+      // EventBridge rule: pipeline execution state changes → router.
+      // The router posts CI result summaries as PR comments.
+      new Rule(scope, `${id}PipelineExecutionRule`, {
+        eventPattern: {
+          source: ["aws.codepipeline"],
+          detailType: ["CodePipeline Pipeline Execution State Change"],
+          detail: {
+            pipeline: [this.pipeline.pipelineName],
+          },
+        },
+        targets: [new LambdaEventTarget(autoReviewer.router.lambda)],
+      });
+    }
   }
 
   private addSourceStage(props: CodePipelineProps): Artifact {
@@ -212,9 +288,11 @@ export class CodePipeline extends BasicConstruct {
     if (props.source.type === "codecommit") {
       // Build the repository ARN via Fn::Sub so LocalStack (and any provider
       // that does not support Fn::GetAtt on CodeCommit) can resolve it.
+      const repoName =
+        props.source.repositoryName ?? props.source.repository.repositoryName;
       const repoArn = Fn.sub(
         "arn:${AWS::Partition}:codecommit:${AWS::Region}:${AWS::AccountId}:${repoName}",
-        { repoName: props.source.repository.repositoryName },
+        { repoName },
       );
       // Create a proxy that preserves the full IRepository interface but
       // overrides repositoryArn with the Fn::Sub-based ARN.

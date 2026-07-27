@@ -34,9 +34,7 @@ export class CodePipelineReviewerStack extends Stack {
   constructor(scope: Construct, id: string) {
     super(scope, id);
 
-    const repositoryName =
-      (this.node.tryGetContext("repositoryName") as string | undefined) ??
-      "durable-lambda-reviewer";
+    const repositoryName = "codepipeline-autoreviewer-demo";
     const branchName =
       (this.node.tryGetContext("branchName") as string | undefined) ?? "main";
     const modelId = this.node.tryGetContext("reviewerModelId") as

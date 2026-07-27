@@ -918,7 +918,7 @@ describe("CodeBuildProject pipeline mode", () => {
     expect(construct.repository).toBeUndefined();
   });
 
-  test("does not generate an internal no-op buildspec in pipeline mode", () => {
+  test("uses a default inline buildspec in pipeline mode", () => {
     const stack = new Stack(createTestApp(), "NoBuildSpecStack");
     new CodeBuildProject(stack, "PipelineBuild", {
       pipelineMode: true,
@@ -926,10 +926,16 @@ describe("CodeBuildProject pipeline mode", () => {
     });
     const template = Template.fromStack(stack);
 
-    const projects = Object.values(template.findResources("AWS::CodeBuild::Project"));
+    const projects = Object.values(
+      template.findResources("AWS::CodeBuild::Project"),
+    );
     for (const project of projects) {
       const source = project.Properties.Source as { BuildSpec?: string };
-      expect(source.BuildSpec).toBeUndefined();
+      expect(source.BuildSpec).toEqual(
+        expect.stringContaining(
+          "No buildspec supplied for pipeline mode; exiting safely.",
+        ),
+      );
     }
   });
 

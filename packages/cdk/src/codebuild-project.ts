@@ -25,9 +25,9 @@ import {
   Policy,
   ServicePrincipal,
 } from "aws-cdk-lib/aws-iam";
-import { Bucket } from "aws-cdk-lib/aws-s3";
 import { Key } from "aws-cdk-lib/aws-kms";
 import { LogGroup, RetentionDays } from "aws-cdk-lib/aws-logs";
+import { Bucket } from "aws-cdk-lib/aws-s3";
 import { NagSuppressions } from "cdk-nag";
 import type { Construct } from "constructs";
 import { z } from "zod";
@@ -151,20 +151,29 @@ export type CodeBuildProjectConfig = z.infer<
  */
 export type CodeBuildRepositoryTarget =
   | {
-      repositoryName: string;
-      repository?: never;
-    }
+    repositoryName: string;
+    repository?: never;
+  }
   | {
-      repository: Repository;
-      repositoryName?: never;
-    };
+    repository: Repository;
+    repositoryName?: never;
+  };
 
 export type CodeBuildProjectProps =
   | (CodeBuildRepositoryTarget &
-      z.input<typeof CodeBuildProjectConfigSchema> &
-      BasicConstructProps & { readonly pipelineMode?: false })
+    z.input<typeof CodeBuildProjectConfigSchema> &
+    BasicConstructProps & { readonly pipelineMode?: false })
   | (z.input<typeof CodeBuildProjectConfigSchema> &
-      BasicConstructProps & { readonly pipelineMode: true });
+    BasicConstructProps & {
+      readonly pipelineMode: true;
+      /**
+       * Inline buildspec for pipeline mode. When omitted, a placeholder
+       * buildspec that succeeds immediately is used — CodeBuild would
+       * otherwise fail with `YAML_FILE_ERROR` when the source repository
+       * has no `buildspec.yml` at its root.
+       */
+      readonly buildSpec?: BuildSpec;
+    });
 
 function normalizeCodeBuildRepositoryTarget(
   scope: Construct,
@@ -211,21 +220,22 @@ export class CodeBuildProject extends BasicConstruct {
   constructor(scope: Stack, id: string, props: CodeBuildProjectProps) {
     super(scope, id);
 
-    const { permissions, pipelineMode, ...configInput } =
-      props as Record<string, unknown> & {
-        permissions?: unknown;
-        pipelineMode?: boolean;
-      };
+    const { permissions, pipelineMode, buildSpec: pipelineBuildSpec, ...configInput } = props as Record<
+      string,
+      unknown
+    > & {
+      permissions?: unknown;
+      pipelineMode?: boolean;
+      buildSpec?: BuildSpec;
+    };
     const isPipelineMode = pipelineMode === true;
 
     if (!isPipelineMode) {
-      const { repository, repositoryName } =
-        props as CodeBuildRepositoryTarget;
-      this.repository = normalizeCodeBuildRepositoryTarget(
-        this,
-        "Repository",
-        { repository, repositoryName } as CodeBuildRepositoryTarget,
-      );
+      const { repository, repositoryName } = props as CodeBuildRepositoryTarget;
+      this.repository = normalizeCodeBuildRepositoryTarget(this, "Repository", {
+        repository,
+        repositoryName,
+      } as CodeBuildRepositoryTarget);
     } else {
       this.repository = undefined as unknown as Repository;
     }
@@ -349,20 +359,33 @@ export class CodeBuildProject extends BasicConstruct {
     this.project = new Project(this, "Project", {
       projectName,
       source: isPipelineMode
-        ? Source.s3({ bucket: pipelinePlaceholderBucket, path: "pipeline-placeholder" })
+        ? Source.s3({
+          bucket: pipelinePlaceholderBucket,
+          path: "pipeline-placeholder",
+        })
         : Source.codeCommit({ repository: this.repository }),
       buildSpec: isPipelineMode
-        ? undefined
-        : BuildSpec.fromObject({
+        ? (pipelineBuildSpec ??
+          BuildSpec.fromObject({
             version: "0.2",
             phases: {
               build: {
                 commands: [
-                  'echo "No approved buildspec was supplied; exiting safely."',
+                  'echo "No buildspec supplied for pipeline mode; exiting safely."',
                 ],
               },
             },
-          }),
+          }))
+        : BuildSpec.fromObject({
+          version: "0.2",
+          phases: {
+            build: {
+              commands: [
+                'echo "No approved buildspec was supplied; exiting safely."',
+              ],
+            },
+          },
+        }),
       environment: {
         buildImage: LinuxBuildImage.STANDARD_7_0,
         computeType: computeTypes[config.computeSize],

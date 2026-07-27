@@ -25,6 +25,14 @@
     "reviewerModelId": "eu.anthropic.claude-sonnet-4-6",
     "reviewerCodeBuildRegistryEndpoint": "https://registry.npmjs.org",
     "repositoryName": "durable-reviewer-demo",
-    "branchName": "main"
+    "branchName": "main",
+    "Construct-Annotations::@aws-cdk/aws-codepipeline:unspecifiedPipelineType": {
+      "metadataIcon": "🔗",
+      "description": "Pipeline type is set to V2 in the CodePipeline construct."
+    },
+    "Construct-Annotations::aws-lambda:Function.DurableConfig": {
+      "metadataIcon": "🔗",
+      "description": "Durable Lambda functions require resource replacement. This is expected."
+    }
   }
 }

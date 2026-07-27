@@ -3,6 +3,7 @@ import type { IRepository } from "aws-cdk-lib/aws-codecommit";
 import {
   Artifact,
   Pipeline,
+  PipelineType,
   type PipelineProps,
 } from "aws-cdk-lib/aws-codepipeline";
 import {
@@ -174,7 +175,10 @@ export class CodePipeline extends BasicConstruct {
       artifactBucket: this.artifactBucket,
       crossAccountKeys: false,
     };
-    this.pipeline = new Pipeline(this, "Pipeline", pipelineProps);
+    this.pipeline = new Pipeline(this, "Pipeline", {
+      ...pipelineProps,
+      pipelineType: PipelineType.V2,
+    });
 
     // 3. Source stage
     const sourceArtifact = this.addSourceStage(props);

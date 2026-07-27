@@ -20,6 +20,7 @@
         "@aws-sdk/client-lambda": "catalog:",
         "@aws-sdk/lib-dynamodb": "catalog:",
         "@pawl/cdk": "workspace:*",
+        "@tsconfig/node22": "^22.0.5",
         "@types/bun": "catalog:",
         "aws-cdk": "^2.1124.1",
         "aws-cdk-lib": "^2.261.0",

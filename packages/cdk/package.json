@@ -8,13 +8,17 @@
 		"test:cdk:synth": "cdk --app 'npx tsx ./tests/cdk-stack/index.ts' synth"
 	},
 	"devDependencies": {
+		"@aws-sdk/client-cloudformation": "^3.1096.0",
+		"@aws-sdk/client-codepipeline": "^3.1096.0",
+		"@aws-sdk/client-eventbridge": "^3.1096.0",
+		"@aws-sdk/client-iam": "^3.1096.0",
+		"@aws/durable-execution-sdk-js-testing": "catalog:",
 		"@testcontainers/localstack": "^12.0.0",
 		"@tsconfig/node22": "catalog:",
 		"aws-cdk": "^2.1124.1",
 		"aws-cdk-local": "^3.0.4",
 		"cdk-nag": "^2.38.2",
-		"zod": "catalog:",
-		"@aws/durable-execution-sdk-js-testing": "catalog:"
+		"zod": "catalog:"
 	},
 	"dependencies": {
 		"@aws-cdk/aws-bedrock-agentcore-alpha": "^2.257.0-alpha.0",

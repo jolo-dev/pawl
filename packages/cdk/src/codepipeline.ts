@@ -6,6 +6,7 @@ import {
 	Pipeline,
 	type PipelineProps,
 	PipelineType,
+	Variable,
 } from "aws-cdk-lib/aws-codepipeline";
 import {
 	CloudFormationCreateUpdateStackAction,
@@ -18,12 +19,19 @@ import {
 } from "aws-cdk-lib/aws-codepipeline-actions";
 import { Rule } from "aws-cdk-lib/aws-events";
 import { LambdaFunction as LambdaEventTarget } from "aws-cdk-lib/aws-events-targets";
-import { Effect, PolicyStatement } from "aws-cdk-lib/aws-iam";
+import {
+	Effect,
+	PolicyStatement as IamPolicyStatement,
+} from "aws-cdk-lib/aws-iam";
 import { Key } from "aws-cdk-lib/aws-kms";
 import type { IBucket } from "aws-cdk-lib/aws-s3";
 import { Bucket } from "aws-cdk-lib/aws-s3";
 import type { Construct } from "constructs";
-import { BasicConstruct } from "./basic-construct";
+import { z } from "zod";
+import {
+	BasicConstruct,
+	type PolicyStatement as BasicPolicyStatement,
+} from "./basic-construct";
 import type { CodeBuildProject } from "./codebuild-project";
 import { CodeCommitAutoReviewer } from "./codecommit-auto-reviewer";
 import type { LambdaFunction } from "./lambda-function";
@@ -92,6 +100,7 @@ export type PipelineAction =
 			readonly name?: string;
 			readonly handler: LambdaFunction;
 			readonly inputs?: Record<string, string>;
+			readonly userParameters?: Record<string, string>;
 	  }
 	| {
 			readonly type: "s3Deploy";
@@ -131,6 +140,8 @@ export interface CodePipelineProps {
 	/** Team/stage overrides (required when autoReview is set). */
 	readonly team?: string;
 	readonly stage?: string;
+	/** Deadline for the PR-gated AIReview action. Default: 60 minutes. */
+	readonly reviewActionTimeoutMinutes?: number;
 }
 
 /**
@@ -160,6 +171,16 @@ export interface CodePipelineProps {
  * });
  * ```
  */
+const reviewActionTimeoutSchema = z.number().int().min(5).max(1_380);
+const PAWL_PIPELINE_VARIABLE_NAMES = [
+	"PAWL_PROVIDER",
+	"PAWL_REPOSITORY",
+	"PAWL_REQUEST_ID",
+	"PAWL_GENERATION",
+	"PAWL_SOURCE_REVISION",
+	"PAWL_DESTINATION_REVISION",
+] as const;
+
 export class CodePipeline extends BasicConstruct {
 	readonly pipeline: Pipeline;
 	readonly artifactBucket: Bucket;
@@ -167,6 +188,27 @@ export class CodePipeline extends BasicConstruct {
 
 	constructor(scope: Stack, id: string, props: CodePipelineProps) {
 		super(scope, id);
+		const pipelineCoordination =
+			props.onPullRequest === true && props.autoReview !== undefined;
+		if (
+			props.reviewActionTimeoutMinutes !== undefined &&
+			!pipelineCoordination
+		) {
+			throw new Error(
+				"reviewActionTimeoutMinutes requires PR-gated auto-review",
+			);
+		}
+		const reviewActionTimeoutMinutes = pipelineCoordination
+			? reviewActionTimeoutSchema.parse(props.reviewActionTimeoutMinutes ?? 60)
+			: undefined;
+		const reviewVariables = pipelineCoordination
+			? new Map(
+					PAWL_PIPELINE_VARIABLE_NAMES.map((name) => [
+						name,
+						new Variable({ variableName: name, defaultValue: "UNSET" }),
+					]),
+				)
+			: undefined;
 
 		// 1. Artifact bucket with KMS encryption
 		this.artifactEncryptionKey =
@@ -185,9 +227,12 @@ export class CodePipeline extends BasicConstruct {
 			artifactBucket: this.artifactBucket,
 			crossAccountKeys: false,
 		};
+		const pipelinePhysicalName = `${this.prefix}${id}-pipeline`;
 		this.pipeline = new Pipeline(this, "Pipeline", {
 			...pipelineProps,
+			pipelineName: pipelinePhysicalName,
 			pipelineType: PipelineType.V2,
+			variables: reviewVariables ? [...reviewVariables.values()] : undefined,
 		});
 
 		// 3. Source stage
@@ -222,6 +267,10 @@ export class CodePipeline extends BasicConstruct {
 				reviewerModelId: modelId,
 				team: props.team,
 				stage: props.stage,
+				pipelineCoordination:
+					reviewActionTimeoutMinutes === undefined
+						? undefined
+						: { reviewActionTimeoutMinutes },
 			});
 
 			// Wire the pipeline name to the router so it starts pipeline
@@ -230,10 +279,14 @@ export class CodePipeline extends BasicConstruct {
 				"PIPELINE_NAME",
 				this.pipeline.pipelineName,
 			);
+			autoReviewer.router.lambda.addEnvironment(
+				"PIPELINE_SOURCE_ACTION_NAME",
+				"Source",
+			);
 
 			// Grant the router IAM permissions to start and monitor the pipeline.
 			autoReviewer.router.lambda.addToRolePolicy(
-				new PolicyStatement({
+				new IamPolicyStatement({
 					effect: Effect.ALLOW,
 					actions: [
 						"codepipeline:StartPipelineExecution",
@@ -260,18 +313,45 @@ export class CodePipeline extends BasicConstruct {
 		}
 
 		// 5. User stages or default Build + ManualApproval.
-		//    When auto-review is active, inject the reviewer Lambda as a parallel
-		//    action in the first non-Source stage so CodeBuild and AI review run
-		//    concurrently.
+		//    PR-gated auto-review injects an ordinary bridge Lambda action. The
+		//    bridge leaves the job pending until the durable reviewer outcome is
+		//    reconciled through PutJobSuccessResult/PutJobFailureResult.
 		if (props.stages !== undefined) {
-			const stageActions = [...props.stages];
-			if (autoReviewer !== undefined && stageActions.length > 0) {
+			const stageActions = props.stages.map((stage) => ({
+				...stage,
+				actions: [...stage.actions],
+			}));
+			if (
+				autoReviewer?.pipelineBridge !== undefined &&
+				reviewVariables !== undefined &&
+				stageActions.length > 0
+			) {
+				const variable = (
+					name: (typeof PAWL_PIPELINE_VARIABLE_NAMES)[number],
+				) => {
+					const value = reviewVariables.get(name);
+					if (value === undefined)
+						throw new Error(`Missing pipeline variable ${name}`);
+					return value.reference();
+				};
 				const firstStage = stageActions[0];
 				firstStage.actions.push({
 					type: "lambda",
 					name: "AIReview",
-					handler: autoReviewer.reviewer,
+					handler: autoReviewer.pipelineBridge,
 					inputs: { source: sourceArtifact.artifactName ?? "SourceOutput" },
+					userParameters: {
+						pipelineExecutionId: "#{codepipeline.PipelineExecutionId}",
+						pipelineName: pipelinePhysicalName,
+						stageName: firstStage.name,
+						actionName: "AIReview",
+						provider: variable("PAWL_PROVIDER"),
+						repository: variable("PAWL_REPOSITORY"),
+						requestId: variable("PAWL_REQUEST_ID"),
+						generation: variable("PAWL_GENERATION"),
+						sourceRevision: variable("PAWL_SOURCE_REVISION"),
+						destinationRevision: variable("PAWL_DESTINATION_REVISION"),
+					},
 				});
 			}
 			for (const stage of stageActions) {
@@ -356,33 +436,18 @@ export class CodePipeline extends BasicConstruct {
 					additionalInformation: action.description,
 				});
 			case "lambda": {
-				// Durable Lambda functions require a qualified ARN. LambdaInvokeAction
-				// reads functionName from the stored props.lambda reference, so we
-				// wrap it in a Proxy to return the qualified ARN (with $LATEST)
-				// instead of the unqualified function name.
-				const raw = action.handler;
-				const isDurable =
-					"durableFunctionArn" in raw &&
-					typeof (raw as Record<string, unknown>).durableFunctionArn ===
-						"string";
-				const lambdaTarget = isDurable
-					? new Proxy(raw.lambda, {
-							get(target, prop, receiver) {
-								if (prop === "functionName") {
-									// Build arn:...:function:name:$LATEST
-									return Fn.join("", [target.functionArn, ":$LATEST"]);
-								}
-								const v = Reflect.get(target, prop, receiver);
-								return typeof v === "function" ? v.bind(target) : v;
-							},
-						})
-					: raw.lambda;
+				if ("durableFunctionArn" in action.handler) {
+					throw new Error(
+						"CodePipeline Lambda actions cannot invoke durable functions directly; use an ordinary bridge Lambda",
+					);
+				}
 				return new LambdaInvokeAction({
 					actionName: action.name ?? "Invoke",
-					lambda: lambdaTarget,
+					lambda: action.handler.lambda,
 					inputs: action.inputs
 						? Object.values(action.inputs).map((v) => new Artifact(v))
 						: undefined,
+					userParameters: action.userParameters,
 				});
 			}
 			case "s3Deploy":
@@ -431,7 +496,7 @@ export class CodePipeline extends BasicConstruct {
 	}
 	protected applyPermissionPolicy(
 		_construct: Construct,
-		_policyStatement: PolicyStatement,
+		_policyStatement: BasicPolicyStatement,
 	): void {
 		// CodePipeline does not expose grant methods for custom permission
 		// policies in the same way Lambda or CodeBuild constructs do. Pipeline

@@ -170,9 +170,15 @@ if (!stacks(CodePipelineIntegStack)) {
 			// Check action type using lowercase keys (AWS SDK v3 casing)
 			expect(aiReview?.actionTypeId?.category).toBe("Invoke");
 			expect(aiReview?.actionTypeId?.provider).toBe("Lambda");
-			// Durable Lambda functions must use a qualified ARN with $LATEST
+			// The action targets the ordinary bridge by function name. The bridge
+			// coordinates the durable reviewer through persisted outcomes.
 			const fnName = aiReview?.configuration?.FunctionName ?? "";
-			expect(fnName).toContain(":$LATEST");
+			expect(fnName).toContain("Bridge-lambda");
+			expect(fnName.startsWith("arn:")).toBeFalse();
+			expect(fnName).not.toContain("$LATEST");
+			expect(aiReview?.configuration?.UserParameters).toContain(
+				"PAWL_SOURCE_REVISION",
+			);
 		});
 
 		// ── CodeCommit repository ────────────────────────────────

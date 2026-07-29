@@ -130,12 +130,13 @@ export class ReviewerWorkflow {
 			});
 
 			// Termination: a merged/closed PR ends the execution without re-reviewing.
-			if (ctx.reviewRequest.status !== "open") {
+			const requestStatus = ctx.reviewRequest.status;
+			if (requestStatus !== "open") {
 				await context.step("record-terminal-request", async () => {
 					await this.#deps.cycleObserver?.recordTerminalRequest({
 						request,
 						generation,
-						status: ctx.reviewRequest.status,
+						status: requestStatus,
 					});
 				});
 				logger.info("reviewer terminating: request not open", {

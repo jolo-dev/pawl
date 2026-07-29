@@ -20,9 +20,9 @@ Write a blog post explaining what pawl is, why it exists, and the infrastructure
 3. **What pawl is:** a TypeScript monorepo containing opinionated AWS CDK constructs, Lambda handler wrappers, and an AI-powered infrastructure CLI.
 4. **Core principles:** useful opinions, batteries included, type and runtime safety, composability rather than hiding AWS, and local/integration-testable infrastructure.
 5. **Package tour:**
-   - `@pawl/cdk`: constructs, tags, IAM, alarms, cdk-nag-oriented compliance, durable Lambda support, and CodeCommit/CodePipeline workflows.
+   - `@pawl/cdk`: constructs, tags, IAM, alarms, cdk-nag-oriented compliance, and durable Lambda support.
    - `@pawl/lambda`: typed event handlers with AWS Lambda Powertools and durable execution support.
-   - `@pawl/cli`: project scaffolding, CodeCommit/CodePipeline initialization, and Bedrock-backed infrastructure assistance.
+   - `@pawl/cli`: project scaffolding and Bedrock-backed infrastructure assistance.
 6. **Concrete example:** a small Lambda-backed service, showing how a CDK construct and a typed handler fit together without hiding AWS concepts.
 7. **Series boundary:** briefly name CodeCommit and CodePipeline automation as follow-up use cases; defer their detailed workflows and auto-reviewer architecture to separate posts.
 8. **What pawl is and is not:** an opinionated foundation that keeps AWS visible and composable; not a replacement for AWS, CDK, or application-specific design decisions.
@@ -34,7 +34,7 @@ Include concise examples grounded in the repository:
 
 - A TypeScript CDK example importing `LambdaFunction`/`ApiGateway` from `@pawl/cdk`.
 - A TypeScript Lambda example creating a Powertools-backed handler with `useApiHandler` from `@pawl/lambda`.
-- A short shell example showing `pawl init` or `pawl init codepipeline` as a preview of the CLI surface; do not include CodeCommit or CodePipeline implementation details in this post.
+- A short shell example showing `pawl init` as a preview of the CLI surface; do not include CodeCommit or CodePipeline implementation details in this post.
 
 Before drafting examples, verify each API against the current exports and source files (`packages/cdk/index.ts`, `packages/cdk/src/apigateway.ts`, `packages/cdk/src/lambda-function.ts`, `packages/lambda/index.ts`, `packages/lambda/src/api-handler.ts`, and `packages/cli/index.ts`). Verify package boundaries and the CLI capabilities against `README.md`, package metadata, and the current source before making claims. Keep examples illustrative and avoid implying that every construct has identical behavior.
 

@@ -331,7 +331,7 @@ export class DynamoDbPipelineCoordinationStore
 				UpdateExpression:
 					"SET callbackCandidate = :candidate, nextActionAt = :now, gsi1sk = :gsi1sk",
 				ConditionExpression:
-					"#state = :pending AND attribute_not_exists(terminalIntent)",
+					"#state = :pending AND attribute_not_exists(terminalIntent) AND attribute_not_exists(callbackCandidate)",
 				ExpressionAttributeNames: { "#state": "state" },
 				ExpressionAttributeValues: {
 					":candidate": candidate,

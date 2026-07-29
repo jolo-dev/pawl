@@ -1,45 +1,53 @@
-import { useDurableHandler } from "@pawl/lambda";
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import { DynamoDBDocumentClient } from "@aws-sdk/lib-dynamodb";
-import { CodeCommitProvider } from "../adapters/codecommit-provider";
-import { BedrockReviewModel, BedrockRuntimeTransport } from "../adapters/bedrock-review-model";
+import { useDurableHandler } from "@pawl/lambda";
 import {
-  CodeBuildCheckRunner,
-  CodeBuildRuntimeTransport,
-  projectEnvVar,
+	BedrockReviewModel,
+	BedrockRuntimeTransport,
+} from "../adapters/bedrock-review-model";
+import {
+	CodeBuildCheckRunner,
+	CodeBuildRuntimeTransport,
+	projectEnvVar,
 } from "../adapters/codebuild-check-runner";
+import { CodeCommitProvider } from "../adapters/codecommit-provider";
+import { DynamoDbPipelineCoordinationStore } from "../adapters/dynamodb-pipeline-coordination-store";
 import { DynamoDbStateStore } from "../adapters/dynamodb-state-store";
+import { PipelineReviewCycleObserver } from "../adapters/pipeline-review-cycle-observer";
+import type { CheckRunner } from "../ports/check-runner";
+import type { ReviewCycleObserver } from "../ports/review-cycle-observer";
+import type { ReviewModel } from "../ports/review-model";
 import type { SourceControlProvider } from "../ports/source-control-provider";
 import type { ReviewStateStore } from "../ports/state-store";
-import type { CheckRunner } from "../ports/check-runner";
-import type { ReviewModel } from "../ports/review-model";
+import {
+	type FindingReconciler,
+	IdempotentFindingReconciler,
+	NoopFindingReconciler,
+} from "../services/finding-reconciler";
 import { NoopCheckRunner } from "../services/noop-check-runner";
 import { NoopReviewModel } from "../services/noop-review-model";
 import {
-  IdempotentFindingReconciler,
-  NoopFindingReconciler,
-  type FindingReconciler,
-} from "../services/finding-reconciler";
-import {
-  NoopRepositoryConfigLoader,
-  ProviderRepositoryConfigLoader,
+	NoopRepositoryConfigLoader,
+	ProviderRepositoryConfigLoader,
 } from "../services/repository-config-loader";
 import { ReviewEngine } from "../services/review-engine";
 import {
-  ReviewerWorkflow,
-  type ReviewerEvent,
-  type ReviewerLogger,
+	type ReviewerEvent,
+	type ReviewerLogger,
+	ReviewerWorkflow,
 } from "../workflows/reviewer-workflow";
+import { LambdaReconcilerKick } from "./pipeline-bridge";
 
 export type { ReviewerEvent } from "../workflows/reviewer-workflow";
 
 export interface ReviewerWorkflowOverrides {
-  readonly stateStore?: ReviewStateStore;
-  readonly provider?: SourceControlProvider;
-  readonly checkRunner?: CheckRunner;
-  readonly reviewModel?: ReviewModel;
-  readonly reconciler?: FindingReconciler;
-  readonly clock?: () => Date;
+	readonly stateStore?: ReviewStateStore;
+	readonly provider?: SourceControlProvider;
+	readonly checkRunner?: CheckRunner;
+	readonly reviewModel?: ReviewModel;
+	readonly reconciler?: FindingReconciler;
+	readonly cycleObserver?: ReviewCycleObserver;
+	readonly clock?: () => Date;
 }
 
 /**
@@ -57,46 +65,51 @@ export interface ReviewerWorkflowOverrides {
  * inference-profile ID (e.g. "eu.anthropic.claude-sonnet-4-6" -> "Claude Sonnet 4.6").
  */
 function modelDisplayName(modelId: string | undefined): string {
-  if (modelId === undefined || modelId === "") return "AI Reviewer";
-  // Strip any regional/system prefix (e.g. "eu.", "global.") and the
-  // "anthropic." provider prefix, then tidy the version suffix.
-  const base = modelId.replace(/^(eu|global|us|ap)\./, "").replace(/^anthropic\./, "");
-  return base
-    .replace(/-(\d+)-(\d+)/g, " $1.$2") // version: "4-6" -> " 4.6"
-    .replace(/-(\d+)$/g, " $1") // trailing version: "-5" -> " 5"
-    .replace(/-/g, " ")
-    .replace(/\bclaude\b/i, "Claude")
-    .replace(/\bsonnet\b/i, "Sonnet")
-    .replace(/\bopus\b/i, "Opus")
-    .replace(/\bhaiku\b/i, "Haiku")
-    .replace(/\bfable\b/i, "Fable")
-    .replace(/\s+v(\d)/i, " v$1")
-    .replace(/\s+/g, " ")
-    .trim();
+	if (modelId === undefined || modelId === "") return "AI Reviewer";
+	// Strip any regional/system prefix (e.g. "eu.", "global.") and the
+	// "anthropic." provider prefix, then tidy the version suffix.
+	const base = modelId
+		.replace(/^(eu|global|us|ap)\./, "")
+		.replace(/^anthropic\./, "");
+	return base
+		.replace(/-(\d+)-(\d+)/g, " $1.$2") // version: "4-6" -> " 4.6"
+		.replace(/-(\d+)$/g, " $1") // trailing version: "-5" -> " 5"
+		.replace(/-/g, " ")
+		.replace(/\bclaude\b/i, "Claude")
+		.replace(/\bsonnet\b/i, "Sonnet")
+		.replace(/\bopus\b/i, "Opus")
+		.replace(/\bhaiku\b/i, "Haiku")
+		.replace(/\bfable\b/i, "Fable")
+		.replace(/\s+v(\d)/i, " v$1")
+		.replace(/\s+/g, " ")
+		.trim();
 }
 
-export function buildReviewerWorkflow(options?: ReviewerWorkflowOverrides): ReviewerWorkflow {
-  if (options !== undefined && options.stateStore !== undefined) {
-    const reviewModel = options.reviewModel ?? new NoopReviewModel();
-    return new ReviewerWorkflow({
-      store: options.stateStore,
-      provider: options.provider ?? defaultProvider(),
-      checkRunner: options.checkRunner ?? new NoopCheckRunner(),
-      reviewEngine: new ReviewEngine({ model: reviewModel }),
-      reconciler: options.reconciler ?? new NoopFindingReconciler(),
-      configLoader: new NoopRepositoryConfigLoader(),
-      reviewerDisplayName: modelDisplayName(process.env.REVIEWER_MODEL_ID),
-      clock: options.clock ?? (() => new Date()),
-    });
-  }
-  return buildFromEnvironment();
+export function buildReviewerWorkflow(
+	options?: ReviewerWorkflowOverrides,
+): ReviewerWorkflow {
+	if (options !== undefined && options.stateStore !== undefined) {
+		const reviewModel = options.reviewModel ?? new NoopReviewModel();
+		return new ReviewerWorkflow({
+			store: options.stateStore,
+			provider: options.provider ?? defaultProvider(),
+			checkRunner: options.checkRunner ?? new NoopCheckRunner(),
+			reviewEngine: new ReviewEngine({ model: reviewModel }),
+			reconciler: options.reconciler ?? new NoopFindingReconciler(),
+			configLoader: new NoopRepositoryConfigLoader(),
+			reviewerDisplayName: modelDisplayName(process.env.REVIEWER_MODEL_ID),
+			cycleObserver: options.cycleObserver,
+			clock: options.clock ?? (() => new Date()),
+		});
+	}
+	return buildFromEnvironment();
 }
 
 function defaultProvider(): SourceControlProvider {
-  return new CodeCommitProvider({
-    reviewerArn: process.env.REVIEWER_FUNCTION_ARN,
-    reviewerDisplayName: modelDisplayName(process.env.REVIEWER_MODEL_ID),
-  });
+	return new CodeCommitProvider({
+		reviewerArn: process.env.REVIEWER_FUNCTION_ARN,
+		reviewerDisplayName: modelDisplayName(process.env.REVIEWER_MODEL_ID),
+	});
 }
 
 /**
@@ -107,79 +120,97 @@ function defaultProvider(): SourceControlProvider {
  * var suffixes (e.g. `my.repo` and `my_repo` would collide).
  */
 function codeBuildProjectsFromEnv(): Record<string, string> {
-  const repos = (process.env.CODEBUILD_REPOSITORIES ?? "")
-    .split(",")
-    .map((r) => r.trim())
-    .filter((r) => r !== "");
-  const map: Record<string, string> = {};
-  for (const repo of repos) {
-    const name = process.env[projectEnvVar(repo)];
-    if (name !== undefined && name !== "") map[repo] = name;
-  }
-  return map;
+	const repos = (process.env.CODEBUILD_REPOSITORIES ?? "")
+		.split(",")
+		.map((r) => r.trim())
+		.filter((r) => r !== "");
+	const map: Record<string, string> = {};
+	for (const repo of repos) {
+		const name = process.env[projectEnvVar(repo)];
+		if (name !== undefined && name !== "") map[repo] = name;
+	}
+	return map;
 }
 
 function buildFromEnvironment(): ReviewerWorkflow {
-  const tableName = process.env.STATE_TABLE_NAME;
-  if (tableName === undefined || tableName === "") {
-    throw new Error("buildReviewerWorkflow: STATE_TABLE_NAME environment variable is required");
-  }
-  const reviewerArn = process.env.REVIEWER_FUNCTION_ARN;
-  if (reviewerArn === undefined || reviewerArn === "") {
-    throw new Error(
-      "buildReviewerWorkflow: REVIEWER_FUNCTION_ARN environment variable is required",
-    );
-  }
-  const modelId = process.env.REVIEWER_MODEL_ID;
-  if (modelId === undefined || modelId === "") {
-    throw new Error("buildReviewerWorkflow: REVIEWER_MODEL_ID environment variable is required");
-  }
-  const projectNames = codeBuildProjectsFromEnv();
-  if (Object.keys(projectNames).length === 0) {
-    throw new Error(
-      "buildReviewerWorkflow: no CODEBUILD_PROJECT_* environment variables found (set CODEBUILD_REPOSITORIES + CODEBUILD_PROJECT_<SAFE> per repository)",
-    );
-  }
-  const documentClient = DynamoDBDocumentClient.from(new DynamoDBClient({}));
-  const stateStore = new DynamoDbStateStore({ transport: documentClient, tableName });
-  const provider = new CodeCommitProvider({
-    reviewerArn,
-    reviewerDisplayName: modelDisplayName(modelId),
-  });
-  const reviewModel = new BedrockReviewModel({
-    transport: new BedrockRuntimeTransport(),
-    modelId,
-  });
-  return new ReviewerWorkflow({
-    store: stateStore,
-    provider,
-    checkRunner: new CodeBuildCheckRunner({
-      transport: new CodeBuildRuntimeTransport(),
-      projectNames,
-    }),
-    reviewEngine: new ReviewEngine({ model: reviewModel }),
-    reconciler: new IdempotentFindingReconciler({
-      store: stateStore,
-      provider,
-      clock: () => new Date(),
-    }),
-    configLoader: new ProviderRepositoryConfigLoader({ provider }),
-    reviewerDisplayName: modelDisplayName(modelId),
-    clock: () => new Date(),
-  });
+	const tableName = process.env.STATE_TABLE_NAME;
+	if (tableName === undefined || tableName === "") {
+		throw new Error(
+			"buildReviewerWorkflow: STATE_TABLE_NAME environment variable is required",
+		);
+	}
+	const reviewerArn = process.env.REVIEWER_FUNCTION_ARN;
+	if (reviewerArn === undefined || reviewerArn === "") {
+		throw new Error(
+			"buildReviewerWorkflow: REVIEWER_FUNCTION_ARN environment variable is required",
+		);
+	}
+	const modelId = process.env.REVIEWER_MODEL_ID;
+	if (modelId === undefined || modelId === "") {
+		throw new Error(
+			"buildReviewerWorkflow: REVIEWER_MODEL_ID environment variable is required",
+		);
+	}
+	const projectNames = codeBuildProjectsFromEnv();
+	if (Object.keys(projectNames).length === 0) {
+		throw new Error(
+			"buildReviewerWorkflow: no CODEBUILD_PROJECT_* environment variables found (set CODEBUILD_REPOSITORIES + CODEBUILD_PROJECT_<SAFE> per repository)",
+		);
+	}
+	const documentClient = DynamoDBDocumentClient.from(new DynamoDBClient({}));
+	const stateStore = new DynamoDbStateStore({
+		transport: documentClient,
+		tableName,
+	});
+	const reconcilerFunctionName = process.env.RECONCILER_FUNCTION_NAME;
+	const cycleObserver = reconcilerFunctionName
+		? new PipelineReviewCycleObserver({
+				store: new DynamoDbPipelineCoordinationStore({
+					transport: documentClient,
+					tableName,
+				}),
+				reconciler: new LambdaReconcilerKick(reconcilerFunctionName),
+			})
+		: undefined;
+	const provider = new CodeCommitProvider({
+		reviewerArn,
+		reviewerDisplayName: modelDisplayName(modelId),
+	});
+	const reviewModel = new BedrockReviewModel({
+		transport: new BedrockRuntimeTransport(),
+		modelId,
+	});
+	return new ReviewerWorkflow({
+		store: stateStore,
+		provider,
+		checkRunner: new CodeBuildCheckRunner({
+			transport: new CodeBuildRuntimeTransport(),
+			projectNames,
+		}),
+		reviewEngine: new ReviewEngine({ model: reviewModel }),
+		reconciler: new IdempotentFindingReconciler({
+			store: stateStore,
+			provider,
+			clock: () => new Date(),
+		}),
+		configLoader: new ProviderRepositoryConfigLoader({ provider }),
+		reviewerDisplayName: modelDisplayName(modelId),
+		cycleObserver,
+		clock: () => new Date(),
+	});
 }
 
 let cachedWorkflow: ReviewerWorkflow | undefined;
 
 function getWorkflow(): ReviewerWorkflow {
-  if (cachedWorkflow === undefined) cachedWorkflow = buildReviewerWorkflow();
-  return cachedWorkflow;
+	if (cachedWorkflow === undefined) cachedWorkflow = buildReviewerWorkflow();
+	return cachedWorkflow;
 }
 
 export const handler = useDurableHandler<ReviewerEvent, void>(
-  "durable-reviewer",
-  async (event, context, { logger }) => {
-    const workflow = getWorkflow();
-    await workflow.run(event, context, logger as unknown as ReviewerLogger);
-  },
+	"durable-reviewer",
+	async (event, context, { logger }) => {
+		const workflow = getWorkflow();
+		await workflow.run(event, context, logger as unknown as ReviewerLogger);
+	},
 );

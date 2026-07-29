@@ -106,7 +106,8 @@ export class FakePipelineCoordinationStore
 		candidate: CallbackIntent,
 	): Promise<void> {
 		const job = this.jobs.get(jobId);
-		if (job?.state !== "PENDING" || job.terminalIntent) return;
+		if (job?.state !== "PENDING" || job.terminalIntent || job.callbackCandidate)
+			return;
 		this.jobs.set(jobId, { ...job, callbackCandidate: candidate });
 	}
 	async claimCompletion(input: {

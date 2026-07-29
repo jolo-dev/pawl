@@ -82,7 +82,7 @@ export const buildPipelineBridge =
 		await options.reconciler.invoke(registered.jobId);
 	};
 
-class LambdaReconcilerKick implements PipelineReconcilerKick {
+export class LambdaReconcilerKick implements PipelineReconcilerKick {
 	readonly #client = new LambdaClient({});
 	readonly #functionName: string;
 

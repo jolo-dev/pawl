@@ -1,3 +1,11 @@
+import type { StartReviewPipelineExecution } from "./adapters/codepipeline-transport";
+import type { RequestKey, ReviewRequest } from "./domain/review-request";
+import type { PipelineJobRecord } from "./pipeline/pipeline-coordination-store";
+import type {
+	PipelineCoordinationStore,
+	PipelineExecutionMapping,
+} from "./ports/pipeline-coordination-store";
+
 /**
  * Runtime-only module for pipeline review coordination.
  *
@@ -66,6 +74,7 @@ export interface PrCommentPoster {
 		readonly repositoryName: string;
 		readonly pullRequestId: string;
 		readonly content: string;
+		readonly idempotencyToken?: string;
 	}): Promise<void>;
 }
 
@@ -95,7 +104,10 @@ export async function startPipelineForPr(
 	params: StartPipelineForPrParams,
 	config: PipelineDispatchConfig,
 ): Promise<void> {
-	if (config.pipelineTransport === undefined || config.pipelineName === undefined) {
+	if (
+		config.pipelineTransport === undefined ||
+		config.pipelineName === undefined
+	) {
 		return;
 	}
 	const { executionId } = await config.pipelineTransport.startExecution({
@@ -132,7 +144,10 @@ export async function handlePipelineExecutionEvent(
 	if (mapping === undefined) {
 		return;
 	}
-	if (config.pipelineTransport === undefined || config.pipelineName === undefined) {
+	if (
+		config.pipelineTransport === undefined ||
+		config.pipelineName === undefined
+	) {
 		return;
 	}
 	const summary = await config.pipelineTransport.getExecution({
@@ -147,13 +162,18 @@ export async function handlePipelineExecutionEvent(
 		repositoryName: mapping.repositoryName,
 		pullRequestId: mapping.pullRequestId,
 		content,
+		idempotencyToken: `pipeline-${event.executionId}`,
 	});
 }
 
 /** Format a pipeline execution summary as a PR comment. */
 export function formatCiSummary(summary: PipelineExecutionSummary): string {
 	const statusEmoji =
-		summary.status === "Succeeded" ? "✅" : summary.status === "Superseded" ? "⏭️" : "❌";
+		summary.status === "Succeeded"
+			? "✅"
+			: summary.status === "Superseded"
+				? "⏭️"
+				: "❌";
 	const lines: string[] = [
 		`${statusEmoji} **CI Pipeline: ${summary.status}**`,
 		"",
@@ -167,4 +187,147 @@ export function formatCiSummary(summary: PipelineExecutionSummary): string {
 		lines.push(`| ${stage.stageName} | ${actionStatuses} |`);
 	}
 	return lines.join("\n");
+}
+
+export interface ExactPipelineTransport {
+	startExecution(
+		input: StartReviewPipelineExecution,
+	): Promise<{ readonly executionId: string }>;
+}
+
+export interface PipelineReconcilerInvoker {
+	invoke(jobId?: string): Promise<void>;
+}
+
+export interface PrPipelineDispatcher {
+	startReviewPipeline(input: {
+		readonly snapshot: ReviewRequest;
+		readonly generation: number;
+	}): Promise<void>;
+	completeTerminalRequest(input: {
+		readonly request: RequestKey;
+		readonly generation: number;
+		readonly status: "merged" | "closed";
+	}): Promise<void>;
+}
+
+const ignoreConditionalConflict = (error: unknown): boolean =>
+	typeof error === "object" &&
+	error !== null &&
+	(error as Record<string, unknown>).name === "ConditionalCheckFailedException";
+
+export class PipelineReviewDispatcher implements PrPipelineDispatcher {
+	readonly #pipelineName: string;
+	readonly #sourceActionName: string;
+	readonly #transport: ExactPipelineTransport;
+	readonly #store: PipelineCoordinationStore;
+	readonly #reconciler: PipelineReconcilerInvoker;
+	readonly #clock: () => Date;
+
+	constructor(options: {
+		readonly pipelineName: string;
+		readonly sourceActionName?: string;
+		readonly transport: ExactPipelineTransport;
+		readonly store: PipelineCoordinationStore;
+		readonly reconciler: PipelineReconcilerInvoker;
+		readonly clock?: () => Date;
+	}) {
+		this.#pipelineName = options.pipelineName;
+		this.#sourceActionName = options.sourceActionName ?? "Source";
+		this.#transport = options.transport;
+		this.#store = options.store;
+		this.#reconciler = options.reconciler;
+		this.#clock = options.clock ?? (() => new Date());
+	}
+
+	async startReviewPipeline(input: {
+		readonly snapshot: ReviewRequest;
+		readonly generation: number;
+	}): Promise<void> {
+		if (input.snapshot.status !== "open") return;
+		await this.#markOlderJobsSuperseded(
+			input.snapshot.key,
+			input.generation,
+			input.snapshot.sourceRevision,
+		);
+		const { executionId } = await this.#transport.startExecution({
+			pipelineName: this.#pipelineName,
+			sourceActionName: this.#sourceActionName,
+			sourceRevision: input.snapshot.sourceRevision,
+			destinationRevision: input.snapshot.destinationRevision,
+			request: input.snapshot.key,
+			generation: input.generation,
+		});
+		const mapping: PipelineExecutionMapping = {
+			executionId,
+			pipelineName: this.#pipelineName,
+			request: input.snapshot.key,
+			generation: input.generation,
+			sourceRevision: input.snapshot.sourceRevision,
+			destinationRevision: input.snapshot.destinationRevision,
+			createdAt: this.#clock().toISOString(),
+		};
+		await this.#store.putExecutionMapping(mapping);
+		await this.#reconciler.invoke();
+	}
+
+	async completeTerminalRequest(input: {
+		readonly request: RequestKey;
+		readonly generation: number;
+		readonly status: "merged" | "closed";
+	}): Promise<void> {
+		const candidate = {
+			status: "success",
+			category: input.status === "merged" ? "RequestMerged" : "RequestClosed",
+		} as const;
+		await this.#forEachRequestJob(
+			input.request,
+			input.generation,
+			async (job) => {
+				if (job.state !== "PENDING") return;
+				try {
+					await this.#store.setCallbackCandidate(job.jobId, candidate);
+				} catch (error) {
+					if (!ignoreConditionalConflict(error)) throw error;
+				}
+			},
+		);
+		await this.#reconciler.invoke();
+	}
+
+	async #markOlderJobsSuperseded(
+		request: RequestKey,
+		generation: number,
+		sourceRevision: string,
+	): Promise<void> {
+		await this.#forEachRequestJob(request, generation, async (job) => {
+			if (job.state !== "PENDING" || job.sourceRevision === sourceRevision)
+				return;
+			try {
+				await this.#store.setCallbackCandidate(job.jobId, {
+					status: "failure",
+					category: "Superseded",
+				});
+			} catch (error) {
+				if (!ignoreConditionalConflict(error)) throw error;
+			}
+		});
+	}
+
+	async #forEachRequestJob(
+		request: RequestKey,
+		generation: number,
+		visit: (job: PipelineJobRecord) => Promise<void>,
+	): Promise<void> {
+		let cursor: Readonly<Record<string, unknown>> | undefined;
+		do {
+			const page = await this.#store.listRequestJobs(
+				request,
+				generation,
+				cursor,
+			);
+			for (const job of page.jobs) await visit(job);
+			cursor = page.cursor;
+		} while (cursor !== undefined);
+	}
 }

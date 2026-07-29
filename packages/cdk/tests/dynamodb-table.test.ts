@@ -101,6 +101,94 @@ describe("DynamoDbTable", () => {
 		});
 	});
 
+	test("synthesizes global secondary indexes", () => {
+		const indexedTable = createTable(
+			{
+				partitionKey: { name: "tenantId", type: "STRING" },
+				sortKey: { name: "recordId", type: "STRING" },
+				globalSecondaryIndexes: [
+					{
+						indexName: "GSI1",
+						partitionKey: { name: "email", type: "STRING" },
+					},
+					{
+						indexName: "GSI2",
+						partitionKey: { name: "status", type: "STRING" },
+						sortKey: { name: "updatedAt", type: "NUMBER" },
+					},
+				],
+			},
+			"Indexed",
+		);
+
+		Template.fromStack(Stack.of(indexedTable) as Stack).hasResourceProperties(
+			"AWS::DynamoDB::GlobalTable",
+			{
+				AttributeDefinitions: Match.arrayWith([
+					{ AttributeName: "tenantId", AttributeType: "S" },
+					{ AttributeName: "recordId", AttributeType: "S" },
+					{ AttributeName: "email", AttributeType: "S" },
+					{ AttributeName: "status", AttributeType: "S" },
+					{ AttributeName: "updatedAt", AttributeType: "N" },
+				]),
+				GlobalSecondaryIndexes: Match.arrayWith([
+					Match.objectLike({
+						IndexName: "GSI1",
+						KeySchema: [{ AttributeName: "email", KeyType: "HASH" }],
+					}),
+					Match.objectLike({
+						IndexName: "GSI2",
+						KeySchema: [
+							{ AttributeName: "status", KeyType: "HASH" },
+							{ AttributeName: "updatedAt", KeyType: "RANGE" },
+						],
+					}),
+				]),
+			},
+		);
+	});
+
+	test("rejects duplicate GSI names and invalid GSI key definitions", () => {
+		expect(() =>
+			createTable({
+				partitionKey: { name: "id", type: "STRING" },
+				globalSecondaryIndexes: [
+					{
+						indexName: "GSI1",
+						partitionKey: { name: "email", type: "STRING" },
+					},
+					{
+						indexName: "GSI1",
+						partitionKey: { name: "status", type: "STRING" },
+					},
+				],
+			}),
+		).toThrow("Global secondary index names must be unique");
+		expect(() =>
+			createTable({
+				partitionKey: { name: "id", type: "STRING" },
+				globalSecondaryIndexes: [
+					{
+						indexName: "GSI1",
+						partitionKey: { name: "email", type: "STRING" },
+						sortKey: { name: "email", type: "STRING" },
+					},
+				],
+			}),
+		).toThrow("GSI partition and sort key names must be different");
+		expect(() =>
+			createTable({
+				partitionKey: { name: "id", type: "STRING" },
+				globalSecondaryIndexes: [
+					{
+						indexName: "GSI1",
+						partitionKey: { name: "", type: "STRING" },
+					},
+				],
+			}),
+		).toThrow();
+	});
+
 	test("rejects a final table name containing a slash from the prefix", () => {
 		expect(() => createTableWithTeam("foo/bar")).toThrow(
 			"DynamoDB table name must be 3-255 characters and contain only letters, numbers, underscores, periods, and hyphens",

@@ -1,7 +1,9 @@
 import { RemovalPolicy } from "aws-cdk-lib";
 import {
+	type Attribute,
 	AttributeType,
 	Billing,
+	type GlobalSecondaryIndexPropsV2,
 	TableEncryptionV2,
 	TableV2,
 } from "aws-cdk-lib/aws-dynamodb";
@@ -28,6 +30,21 @@ export const KeySchema = z.object({
 
 export type Key = z.infer<typeof KeySchema>;
 
+const GlobalSecondaryIndexSchema = z
+	.object({
+		indexName: z.string().min(1),
+		partitionKey: KeySchema,
+		sortKey: KeySchema.optional(),
+	})
+	.refine(
+		({ partitionKey, sortKey }) =>
+			sortKey === undefined || partitionKey.name !== sortKey.name,
+		{
+			message: "GSI partition and sort key names must be different",
+			path: ["sortKey", "name"],
+		},
+	);
+
 const DynamoDbTableNameSchema = z
 	.string()
 	.refine(
@@ -47,6 +64,10 @@ export const DynamoDbTablePropsSchema = z
 		timeToLiveAttribute: z.string().min(1).optional(),
 		pointInTimeRecovery: z.boolean().default(true),
 		retain: z.boolean().default(true),
+		globalSecondaryIndexes: z
+			.array(GlobalSecondaryIndexSchema)
+			.max(20)
+			.optional(),
 	})
 	.refine(
 		({ partitionKey, sortKey }) =>
@@ -55,11 +76,50 @@ export const DynamoDbTablePropsSchema = z
 			message: "Partition and sort key names must be different",
 			path: ["sortKey", "name"],
 		},
-	);
+	)
+	.superRefine(({ globalSecondaryIndexes }, ctx) => {
+		if (globalSecondaryIndexes === undefined) {
+			return;
+		}
+
+		const indexNames = new Set<string>();
+		for (const [
+			index,
+			globalSecondaryIndex,
+		] of globalSecondaryIndexes.entries()) {
+			if (indexNames.has(globalSecondaryIndex.indexName)) {
+				ctx.addIssue({
+					code: z.ZodIssueCode.custom,
+					message: "Global secondary index names must be unique",
+					path: ["globalSecondaryIndexes", index, "indexName"],
+				});
+			}
+			indexNames.add(globalSecondaryIndex.indexName);
+		}
+	});
 
 export type DynamoDbTableConfig = z.infer<typeof DynamoDbTablePropsSchema>;
 export type DynamoDbTableProps = z.input<typeof DynamoDbTablePropsSchema> &
 	BasicConstructProps;
+
+function toDynamoDbAttribute(key: Key): Attribute {
+	return {
+		name: key.name,
+		type: AttributeType[key.type],
+	};
+}
+
+function toGlobalSecondaryIndex(
+	globalSecondaryIndex: z.infer<typeof GlobalSecondaryIndexSchema>,
+): GlobalSecondaryIndexPropsV2 {
+	return {
+		indexName: globalSecondaryIndex.indexName,
+		partitionKey: toDynamoDbAttribute(globalSecondaryIndex.partitionKey),
+		sortKey: globalSecondaryIndex.sortKey
+			? toDynamoDbAttribute(globalSecondaryIndex.sortKey)
+			: undefined,
+	};
+}
 
 /** An on-demand DynamoDB table for durable application state. */
 export class DynamoDbTable extends BasicConstruct {
@@ -76,16 +136,8 @@ export class DynamoDbTable extends BasicConstruct {
 		);
 
 		this.table = new TableV2(this, "DynamoDbTable", {
-			partitionKey: {
-				name: config.partitionKey.name,
-				type: AttributeType[config.partitionKey.type],
-			},
-			sortKey: config.sortKey
-				? {
-						name: config.sortKey.name,
-						type: AttributeType[config.sortKey.type],
-					}
-				: undefined,
+			partitionKey: toDynamoDbAttribute(config.partitionKey),
+			sortKey: config.sortKey ? toDynamoDbAttribute(config.sortKey) : undefined,
 			tableName,
 			timeToLiveAttribute: config.timeToLiveAttribute,
 			billing: Billing.onDemand(),
@@ -97,6 +149,9 @@ export class DynamoDbTable extends BasicConstruct {
 			removalPolicy: config.retain
 				? RemovalPolicy.RETAIN
 				: RemovalPolicy.DESTROY,
+			globalSecondaryIndexes: config.globalSecondaryIndexes?.map(
+				toGlobalSecondaryIndex,
+			),
 		});
 		this.tableArn = this.table.tableArn;
 		this.tableName = this.table.tableName;

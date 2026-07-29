@@ -26,3 +26,6 @@ public
 
 # AI agent personal overrides
 AGENTS.override.md.worktrees/
+
+# Agent worktrees
+.worktrees/

@@ -23,21 +23,22 @@ Write a blog post explaining what pawl is, why it exists, and the infrastructure
    - `@pawl/cdk`: constructs, tags, IAM, alarms, cdk-nag-oriented compliance, durable Lambda support, and CodeCommit/CodePipeline workflows.
    - `@pawl/lambda`: typed event handlers with AWS Lambda Powertools and durable execution support.
    - `@pawl/cli`: project scaffolding, CodeCommit/CodePipeline initialization, and Bedrock-backed infrastructure assistance.
-6. **Concrete example:** the CodeCommit auto-reviewer, showing EventBridge → router Lambda → durable reviewer Lambda, with DynamoDB, CodeBuild, Bedrock, and CodeCommit integrations.
-7. **What pawl is and is not:** an opinionated foundation that keeps AWS visible and composable; not a replacement for AWS, CDK, or application-specific design decisions.
-8. **Closing:** the intended outcome is reducing repeated plumbing so teams can spend more time designing services.
+6. **Concrete example:** a small Lambda-backed service, showing how a CDK construct and a typed handler fit together without hiding AWS concepts.
+7. **Series boundary:** briefly name CodeCommit and CodePipeline automation as follow-up use cases; defer their detailed workflows and auto-reviewer architecture to separate posts.
+8. **What pawl is and is not:** an opinionated foundation that keeps AWS visible and composable; not a replacement for AWS, CDK, or application-specific design decisions.
+9. **Closing:** the intended outcome is reducing repeated plumbing so teams can spend more time designing services.
 
 ## Technical examples
 
-Include concise TypeScript examples grounded in the repository, such as:
+Include concise examples grounded in the repository:
 
-- Importing `LambdaFunction`/`ApiGateway` from `@pawl/cdk`.
-- Creating a Powertools-backed handler with `useApiHandler` from `@pawl/lambda`.
-- Configuring `CodeCommit` with `autoReview` to demonstrate the higher-level workflow.
+- A TypeScript CDK example importing `LambdaFunction`/`ApiGateway` from `@pawl/cdk`.
+- A TypeScript Lambda example creating a Powertools-backed handler with `useApiHandler` from `@pawl/lambda`.
+- A short shell example showing `pawl init` or `pawl init codepipeline` as a preview of the CLI surface; do not include CodeCommit or CodePipeline implementation details in this post.
 
-Before drafting examples, verify each API against the current exports and source files (`packages/cdk/index.ts`, `packages/cdk/src/codecommit.ts`, `packages/cdk/src/codecommit-auto-reviewer.ts`, `packages/cdk/src/codepipeline.ts`, `packages/cdk/src/durable-lambda-function.ts`, `packages/lambda/index.ts`, and the relevant handler files). Verify the package boundaries, CLI capabilities, and CodeCommit auto-reviewer flow against `README.md`, `packages/cli/index.ts`, and the current source before making claims. Keep examples illustrative and avoid implying that every construct has identical behavior.
+Before drafting examples, verify each API against the current exports and source files (`packages/cdk/index.ts`, `packages/cdk/src/apigateway.ts`, `packages/cdk/src/lambda-function.ts`, `packages/lambda/index.ts`, `packages/lambda/src/api-handler.ts`, and `packages/cli/index.ts`). Verify package boundaries and the CLI capabilities against `README.md`, package metadata, and the current source before making claims. Keep examples illustrative and avoid implying that every construct has identical behavior.
 
-Include one Mermaid architecture diagram. Draw the pawl packages as the developer-facing layer and AWS resources as the runtime/deployment layer; show only the relationships supported by the repository. In particular, do not imply that `@pawl/lambda` directly creates AWS resources or that every package participates in the CodeCommit auto-reviewer.
+Include one Mermaid architecture diagram. Draw the pawl packages as the developer-facing layer and AWS resources as the runtime/deployment layer; show only the relationships supported by the repository. Do not imply that `@pawl/lambda` directly creates AWS resources. Label CodeCommit and CodePipeline as future use-case topics rather than expanding their runtime architecture here.
 
 ## Accuracy constraints
 
@@ -45,12 +46,12 @@ Include one Mermaid architecture diagram. Draw the pawl packages as the develope
 - Describe pawl as a TypeScript monorepo targeting Node.js 22+, with Bun used for repository tooling/package management/testing; do not describe Bun as the Lambda runtime. Mention AWS CDK, Zod, and Powertools where relevant.
 - Do not claim pawl eliminates all infrastructure decisions, guarantees compliance, or replaces AWS expertise.
 - Distinguish `@pawl/cli` from the reusable libraries.
-- Mention the CodeCommit auto-reviewer and durable Lambda support as concrete current capabilities, not as the only purpose of pawl.
+- Mention durable Lambda support as a concrete current capability, and mention CodeCommit/CodePipeline support only as subjects for separate use-case posts.
 - Preserve a practical, non-marketing explanation of trade-offs.
 
 ## Length and detail budget
 
-Target approximately 1,500–2,200 words. Include no more than three short TypeScript examples and one Mermaid diagram so the post remains a blog article rather than becoming package documentation.
+Target approximately 1,500–2,200 words. Include no more than two short TypeScript examples, one short CLI shell example, and one Mermaid diagram so the post remains a blog article rather than becoming package documentation.
 
 ## Deliverable
 

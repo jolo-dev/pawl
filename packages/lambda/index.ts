@@ -1,6 +1,18 @@
 export { useApiHandler } from "./src/api-handler";
 export { authorizer, useAuthorizerHandler } from "./src/authorizer-handler";
 export {
+	type CodePipelineActionConfiguration,
+	type CodePipelineActionTypeId,
+	type CodePipelineArtifact,
+	type CodePipelineArtifactCredentials,
+	type CodePipelineArtifactLocation,
+	type CodePipelineHandler,
+	type CodePipelineJob,
+	type CodePipelineJobData,
+	type CodePipelineJobEvent,
+	useCodePipelineHandler,
+} from "./src/codepipeline-handler";
+export {
 	type DurableRequestHandler,
 	useDurableHandler,
 } from "./src/durable-handler";

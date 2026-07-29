@@ -220,14 +220,9 @@ export class CodeBuildProject extends BasicConstruct {
   constructor(scope: Stack, id: string, props: CodeBuildProjectProps) {
     super(scope, id);
 
-    const { permissions, pipelineMode, buildSpec: pipelineBuildSpec, ...configInput } = props as Record<
-      string,
-      unknown
-    > & {
-      permissions?: unknown;
-      pipelineMode?: boolean;
-      buildSpec?: BuildSpec;
-    };
+    const pipelineBuildSpec =
+      "buildSpec" in props ? props.buildSpec : undefined;
+    const { permissions, pipelineMode, ...configInput } = props;
     const isPipelineMode = pipelineMode === true;
 
     if (!isPipelineMode) {

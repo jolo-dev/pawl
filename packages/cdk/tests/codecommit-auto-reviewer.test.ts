@@ -172,12 +172,15 @@ describe("CodeCommitAutoReviewer", () => {
 	});
 
 	test.each([
+		"amazon.nova-2-lite-v1:0",
+		"anthropic.claude-sonnet-4-6",
+		"meta.llama3-3-70b-instruct-v1:0",
 		"eu.amazon.nova-2-lite-v1:0",
 		"eu.anthropic.claude-sonnet-4-6",
 		"us.meta.llama3-3-70b-instruct-v1:0",
 		"apac.mistral.mistral-large-2407-v1:0",
 		"global.cohere.command-r-plus-v1:0",
-	])("accepts supported system inference profile ID %s", (reviewerModelId) => {
+	])("accepts safe Bedrock model identifier %s", (reviewerModelId) => {
 		const result = CodeCommitAutoReviewerConfigSchema.safeParse({
 			repositories: ["repo"],
 			reviewerModelId,
@@ -187,8 +190,6 @@ describe("CodeCommitAutoReviewer", () => {
 
 	test.each([
 		"",
-		"anthropic.claude-sonnet-4-6",
-		"amazon.nova-2-lite-v1:0",
 		"moon.amazon.nova-2-lite-v1:0",
 		"eu.global.anthropic.claude-sonnet-4-6",
 		"arn:aws:bedrock:eu-west-1:123456789012:inference-profile/eu.amazon.nova-2-lite-v1:0",
@@ -200,13 +201,34 @@ describe("CodeCommitAutoReviewer", () => {
 		"eu..amazon.nova-2-lite-v1:0",
 		"eu.amazon.",
 		"eu.amazon.nova-2-lite-v1:0:1",
+		"anthropic.claude-sonnet-4-6:0:1",
+		"anthropic..claude-sonnet-4-6",
+		"anthropic/claude-sonnet-4-6",
+		"anthropic.claude_*",
 		`eu.amazon.${"a".repeat(55)}`,
-	])("rejects unsafe system inference profile ID %p", (reviewerModelId) => {
+		`anthropic.${"a".repeat(60)}`,
+	])("rejects unsafe Bedrock model identifier %p", (reviewerModelId) => {
 		const result = CodeCommitAutoReviewerConfigSchema.safeParse({
 			repositories: ["repo"],
 			reviewerModelId,
 		});
 		expect(result.success).toBe(false);
+	});
+
+	test("only grants direct foundation-model invocation in the stack region", () => {
+		const stack = createStack("DirectBedrockPolicyStack");
+		createReviewer(stack, {
+			reviewerModelId: "anthropic.claude-sonnet-4-6",
+		});
+
+		expect(bedrockPolicyStatements(stack)).toEqual([
+			{
+				Action: "bedrock:InvokeModel",
+				Effect: "Allow",
+				Resource:
+					"arn:aws:bedrock:eu-west-1::foundation-model/anthropic.claude-sonnet-4-6",
+			},
+		]);
 	});
 
 	test("only grants Nova foundation-model invocation through the configured profile", () => {

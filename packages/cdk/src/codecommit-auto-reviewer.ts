@@ -26,6 +26,25 @@ const PAWL_LOCKFILE = path.join(PAWL_ROOT, "bun.lock");
 
 const nonEmptyString = z.string().trim().min(1);
 const systemInferenceProfilePrefix = /^(?:apac|eu|global|us)\./;
+const directFoundationModelIdPattern =
+	/^(?!(?:apac|eu|global|us)\.)[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?::[0-9]+)?$/;
+const systemInferenceProfileIdPattern =
+	/^(?:apac|eu|global|us)\.(?!(?:apac|eu|global|us)\.)[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*(?::[0-9]+)?$/;
+
+/**
+ * Direct Bedrock foundation-model ID without a routing prefix.
+ *
+ * Provider and model segments remain provider-agnostic. The exact grammar
+ * prevents unsafe fragments from being interpolated into Bedrock IAM ARNs.
+ */
+export const DirectFoundationModelIdSchema = z
+	.string()
+	.min(1)
+	.max(64)
+	.regex(
+		directFoundationModelIdPattern,
+		"must be a direct Bedrock foundation-model ID",
+	);
 
 /**
  * AWS system-defined cross-region inference profile ID.
@@ -39,9 +58,43 @@ export const SystemDefinedCrossRegionInferenceProfileIdSchema = z
 	.min(1)
 	.max(64)
 	.regex(
-		/^(?:apac|eu|global|us)\.(?!(?:apac|eu|global|us)\.)[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*(?::[0-9]+)?$/,
+		systemInferenceProfileIdPattern,
 		"must be an AWS system-defined cross-region inference profile ID",
 	);
+
+/**
+ * Safe model identifier accepted by Bedrock Converse: either a direct
+ * foundation-model ID or an AWS system-defined cross-region inference profile
+ * ID.
+ */
+export const BedrockModelIdSchema = z.union([
+	DirectFoundationModelIdSchema,
+	SystemDefinedCrossRegionInferenceProfileIdSchema,
+]);
+
+type ParsedBedrockModelId =
+	| {
+			readonly kind: "direct-foundation-model";
+			readonly foundationModelId: string;
+	  }
+	| {
+			readonly kind: "system-inference-profile";
+			readonly foundationModelId: string;
+			readonly inferenceProfileId: string;
+	  };
+
+function parseBedrockModelId(modelId: string): ParsedBedrockModelId {
+	if (
+		SystemDefinedCrossRegionInferenceProfileIdSchema.safeParse(modelId).success
+	) {
+		return {
+			kind: "system-inference-profile",
+			foundationModelId: modelId.replace(systemInferenceProfilePrefix, ""),
+			inferenceProfileId: modelId,
+		};
+	}
+	return { kind: "direct-foundation-model", foundationModelId: modelId };
+}
 
 const repositoryNameSchema = nonEmptyString.regex(
 	/^[A-Za-z0-9._-]+$/,
@@ -63,7 +116,7 @@ export const CodeCommitAutoReviewerConfigSchema = z.object({
 			(repositories) => new Set(repositories).size === repositories.length,
 			"duplicate repository names are not allowed",
 		),
-	reviewerModelId: SystemDefinedCrossRegionInferenceProfileIdSchema,
+	reviewerModelId: BedrockModelIdSchema,
 	reviewerAlias: z.string().trim().min(1).default("live"),
 	reviewerExecutionTimeoutSeconds: z
 		.number()
@@ -252,46 +305,54 @@ export class CodeCommitAutoReviewer {
 
 		stateTable.grantReadWrite(reviewer);
 
-		// 4. Bedrock InvokeModel IAM (inference-profile + routed foundation model).
-		//    System-defined cross-region profile IDs prefix the foundation model ID
-		//    with their routing scope (for example, eu.amazon.* -> amazon.*).
-		const foundationModelId = config.reviewerModelId.replace(
-			systemInferenceProfilePrefix,
-			"",
-		);
-		const inferenceProfileResource = `arn:aws:bedrock:${scope.region}:${scope.account}:inference-profile/${config.reviewerModelId}`;
-		const foundationModelResource = `arn:aws:bedrock:*::foundation-model/${foundationModelId}`;
-		reviewer.lambda.addToRolePolicy(
-			new PolicyStatement({
-				effect: Effect.ALLOW,
-				actions: ["bedrock:InvokeModel"],
-				resources: [inferenceProfileResource],
-			}),
-		);
-		reviewer.lambda.addToRolePolicy(
-			new PolicyStatement({
-				effect: Effect.ALLOW,
-				actions: ["bedrock:InvokeModel"],
-				resources: [foundationModelResource],
-				conditions: {
-					ArnEquals: {
-						"bedrock:InferenceProfileArn": inferenceProfileResource,
+		// 4. Bedrock InvokeModel IAM. Direct models stay scoped to this region;
+		//    system profiles additionally need their exact profile plus the exact
+		//    routed foundation model across regions, conditioned on that profile.
+		const parsedModelId = parseBedrockModelId(config.reviewerModelId);
+		if (parsedModelId.kind === "direct-foundation-model") {
+			const foundationModelResource = `arn:aws:bedrock:${scope.region}::foundation-model/${parsedModelId.foundationModelId}`;
+			reviewer.lambda.addToRolePolicy(
+				new PolicyStatement({
+					effect: Effect.ALLOW,
+					actions: ["bedrock:InvokeModel"],
+					resources: [foundationModelResource],
+				}),
+			);
+		} else {
+			const inferenceProfileResource = `arn:aws:bedrock:${scope.region}:${scope.account}:inference-profile/${parsedModelId.inferenceProfileId}`;
+			const foundationModelResource = `arn:aws:bedrock:*::foundation-model/${parsedModelId.foundationModelId}`;
+			reviewer.lambda.addToRolePolicy(
+				new PolicyStatement({
+					effect: Effect.ALLOW,
+					actions: ["bedrock:InvokeModel"],
+					resources: [inferenceProfileResource],
+				}),
+			);
+			reviewer.lambda.addToRolePolicy(
+				new PolicyStatement({
+					effect: Effect.ALLOW,
+					actions: ["bedrock:InvokeModel"],
+					resources: [foundationModelResource],
+					conditions: {
+						ArnEquals: {
+							"bedrock:InferenceProfileArn": inferenceProfileResource,
+						},
 					},
-				},
-			}),
-		);
-		NagSuppressions.addResourceSuppressions(
-			reviewer.lambda,
-			[
-				{
-					id: "AwsSolutions-IAM5",
-					reason:
-						"The configured system-defined inference profile can route to the exact foundation model in multiple regions, so only the ARN region is wildcarded and bedrock:InferenceProfileArn restricts invocation to that profile.",
-					appliesTo: [`Resource::${foundationModelResource}`],
-				},
-			],
-			true,
-		);
+				}),
+			);
+			NagSuppressions.addResourceSuppressions(
+				reviewer.lambda,
+				[
+					{
+						id: "AwsSolutions-IAM5",
+						reason:
+							"The configured system-defined inference profile can route to the exact foundation model in multiple regions, so only the ARN region is wildcarded and bedrock:InferenceProfileArn restricts invocation to that profile.",
+						appliesTo: [`Resource::${foundationModelResource}`],
+					},
+				],
+				true,
+			);
+		}
 
 		// 5. Router Lambda
 		const router = new LambdaFunction(scope, `${id}Router`, {

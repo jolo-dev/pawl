@@ -186,7 +186,7 @@ describe("CodeCommit review combinations", () => {
 		const construct = new CodeCommit(stack, "Code", {
 			repositoryName: "auto-review-repository",
 			create: {},
-			autoReview: { modelId: "eu.anthropic.claude-sonnet-4-6" },
+			autoReview: { modelId: "anthropic.claude-sonnet-4-6" },
 		});
 
 		expect(construct.autoReviewer).toBeDefined();

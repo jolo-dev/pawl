@@ -3,8 +3,8 @@ import { Code, type IRepository, Repository } from "aws-cdk-lib/aws-codecommit";
 import { Asset } from "aws-cdk-lib/aws-s3-assets";
 import { z } from "zod";
 import {
+	BedrockModelIdSchema,
 	CodeCommitAutoReviewer,
-	SystemDefinedCrossRegionInferenceProfileIdSchema,
 } from "./codecommit-auto-reviewer";
 import {
 	CodeCommitBranchNameSchema,
@@ -19,18 +19,18 @@ import type { LambdaFunction } from "./lambda-function";
 import type { Stack } from "./stack";
 
 /**
- * Zod schema validating an Anthropic system-defined cross-region inference
- * profile ID for the high-level `CodeCommit` and CLI contract.
+ * Zod schema validating either a direct Anthropic foundation-model ID or an
+ * Anthropic AWS system-defined cross-region inference profile ID for the
+ * high-level `CodeCommit` and CLI contract.
  *
- * This intentionally remains Anthropic-specific while refining the stricter
- * provider-agnostic profile contract used directly by `CodeCommitAutoReviewer`.
+ * This intentionally remains Anthropic-specific while refining the safe,
+ * provider-agnostic contract used directly by `CodeCommitAutoReviewer`.
  */
-export const AnthropicModelIdSchema =
-	SystemDefinedCrossRegionInferenceProfileIdSchema.refine(
-		(modelId) =>
-			modelId.replace(/^(?:apac|eu|global|us)\./, "").startsWith("anthropic."),
-		"modelId must be an Anthropic system-defined cross-region inference profile ID",
-	);
+export const AnthropicModelIdSchema = BedrockModelIdSchema.refine(
+	(modelId) =>
+		modelId.replace(/^(?:apac|eu|global|us)\./, "").startsWith("anthropic."),
+	"modelId must be a direct Anthropic foundation-model ID or Anthropic system-defined cross-region inference profile ID",
+);
 
 /**
  * Zod schema for the auto-reviewer configuration accepted by `CodeCommit`.

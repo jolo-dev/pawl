@@ -14,35 +14,20 @@ import {
  * seeded from this directory's source code and durable auto-review with
  * PR-gated triggering.
  *
- * The default deployment phase is **active**, which creates all review
- * coordination resources. For migration-safe index provisioning against an
- * existing DynamoDB table, set the `reviewCoordinationDeploymentPhase`
- * context to `prepareGsi1` → `prepareGsi2` → `active` in order.
- *
  * Flow:
  * 1. `CodeCommit` creates and seeds a repository from `sourcePath` (this
  *    directory). The initial commit includes all project files.
- * 2. `CodePipeline` creates a CI/CD pipeline using the created repository
- *    as its source. With `onPullRequest: true`, the pipeline only starts
- *    when a PR is opened — the router starts executions with the PR's
- *    source commit.
- * 3. `autoReview` deploys the durable reviewer infrastructure (reviewer
- *    Lambda, router Lambda, state table). The auto-reviewer runs in all
- *    phases.
- * 4. **Active phase only:** The router dispatches pipeline executions and
- *    the AIReview bridge action is injected into the first pipeline stage.
- *    In preparation phases (`prepareGsi1`, `prepareGsi2`), the router
- *    Lambda is deployed but pipeline dispatch/coordination is skipped —
- *    review comments still appear on PRs without gating the pipeline.
+ * 2. `CodePipeline` creates a CI/CD pipeline using the created repository as
+ *    its source. With `onPullRequest: true`, the pipeline only starts when a
+ *    PR is opened — the router starts executions with the PR's source commit.
+ * 3. `autoReview` deploys the durable reviewer infrastructure. On each PR
+ *    event, the router starts the pipeline (CI) and invokes the durable
+ *    reviewer (AI review) in parallel via `Promise.allSettled`.
  *
  * @example
  * ```bash
- * # Deploy (active phase — all resources)
+ * # Deploy
  * AWS_PROFILE=my-profile bunx cdk deploy CodePipelineReviewerStack
- *
- * # Deploy (preparation phase 1 — GSI1 only)
- * AWS_PROFILE=my-profile bunx cdk deploy CodePipelineReviewerStack \
- *   -c reviewCoordinationDeploymentPhase=prepareGsi1
  * ```
  */
 export class CodePipelineReviewerStack extends Stack {

@@ -35,7 +35,16 @@ import {
 import type { CodeBuildProject } from "./codebuild-project";
 import { CodeCommitAutoReviewer } from "./codecommit-auto-reviewer";
 import type { LambdaFunction } from "./lambda-function";
+import {
+	type ReviewCoordinationDeploymentPhase,
+	ReviewCoordinationDeploymentPhaseSchema,
+} from "./review-coordination-deployment";
 import type { Stack } from "./stack";
+
+export {
+	type ReviewCoordinationDeploymentPhase,
+	ReviewCoordinationDeploymentPhaseSchema,
+} from "./review-coordination-deployment";
 
 /**
  * Source configuration for a CodePipeline pipeline.
@@ -142,7 +151,12 @@ export interface CodePipelineProps {
 	/** Team/stage overrides (required when autoReview is set). */
 	readonly team?: string;
 	readonly stage?: string;
-	/** Deadline for the PR-gated AIReview action. Default: 60 minutes. */
+	/**
+	 * Safe deployment phase for PR-gated auto-review coordination. Defaults to
+	 * `active`; preparation phases provision indexes without runtime activation.
+	 */
+	readonly reviewCoordinationDeploymentPhase?: ReviewCoordinationDeploymentPhase;
+	/** Deadline for the active PR-gated AIReview action. Default: 60 minutes. */
 	readonly reviewActionTimeoutMinutes?: number;
 }
 
@@ -226,8 +240,23 @@ export class CodePipeline extends BasicConstruct {
 
 	constructor(scope: Stack, id: string, props: CodePipelineProps) {
 		super(scope, id);
-		const pipelineCoordination =
+		const prGatedAutoReview =
 			props.onPullRequest === true && props.autoReview !== undefined;
+		if (
+			props.reviewCoordinationDeploymentPhase !== undefined &&
+			!prGatedAutoReview
+		) {
+			throw new Error(
+				"reviewCoordinationDeploymentPhase requires PR-gated auto-review",
+			);
+		}
+		const reviewCoordinationDeploymentPhase = prGatedAutoReview
+			? ReviewCoordinationDeploymentPhaseSchema.parse(
+					props.reviewCoordinationDeploymentPhase ?? "active",
+				)
+			: undefined;
+		const reviewCoordinationActive =
+			reviewCoordinationDeploymentPhase === "active";
 		const pipelineNaming = CodePipelineNamingSchema.parse(
 			props.pipelineNaming ?? { mode: "pawl" },
 		);
@@ -243,23 +272,23 @@ export class CodePipeline extends BasicConstruct {
 			pipelineNaming.mode === "cloudFormation"
 				? pipelineNaming.coordinationName
 				: pipelinePhysicalName;
-		if (pipelineCoordination && pipelineCoordinationName === undefined) {
+		if (reviewCoordinationActive && pipelineCoordinationName === undefined) {
 			throw new Error(
 				"CloudFormation pipeline naming requires coordinationName for PR-gated auto-review",
 			);
 		}
 		if (
 			props.reviewActionTimeoutMinutes !== undefined &&
-			!pipelineCoordination
+			!reviewCoordinationActive
 		) {
 			throw new Error(
-				"reviewActionTimeoutMinutes requires PR-gated auto-review",
+				"reviewActionTimeoutMinutes requires active PR-gated auto-review coordination",
 			);
 		}
-		const reviewActionTimeoutMinutes = pipelineCoordination
+		const reviewActionTimeoutMinutes = reviewCoordinationActive
 			? reviewActionTimeoutSchema.parse(props.reviewActionTimeoutMinutes ?? 60)
 			: undefined;
-		const reviewVariables = pipelineCoordination
+		const reviewVariables = reviewCoordinationActive
 			? new Map(
 					PAWL_PIPELINE_VARIABLE_NAMES.map((name) => [
 						name,
@@ -326,10 +355,15 @@ export class CodePipeline extends BasicConstruct {
 				reviewerModelId: modelId,
 				team: props.team,
 				stage: props.stage,
-				pipelineCoordination:
-					reviewActionTimeoutMinutes === undefined
+				reviewCoordinationDeployment:
+					reviewCoordinationDeploymentPhase === undefined
 						? undefined
-						: { reviewActionTimeoutMinutes },
+						: reviewCoordinationDeploymentPhase === "active"
+							? {
+									phase: reviewCoordinationDeploymentPhase,
+									reviewActionTimeoutMinutes: reviewActionTimeoutMinutes ?? 60,
+								}
+							: { phase: reviewCoordinationDeploymentPhase },
 			});
 
 			// Wire the pipeline name to the router so it starts pipeline

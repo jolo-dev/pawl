@@ -12,6 +12,10 @@ import { CodeCommitReviewEvents } from "./codecommit-review-events";
 import { DurableLambdaFunction } from "./durable-lambda-function";
 import { DynamoDbTable } from "./dynamodb-table";
 import { LambdaFunction } from "./lambda-function";
+import {
+	type ReviewCoordinationDeployment,
+	ReviewCoordinationDeploymentSchema,
+} from "./review-coordination-deployment";
 import { projectEnvVar } from "./reviewer/adapters/codebuild-check-runner";
 import type { Stack } from "./stack";
 
@@ -163,10 +167,8 @@ export type CodeCommitAutoReviewerProps = z.input<
 	readonly team?: string;
 	/** Override the stage context value (defaults to CDK context `stage`). */
 	readonly stage?: string;
-	/** Enable the ordinary CodePipeline bridge and reconciler Lambdas. */
-	readonly pipelineCoordination?: {
-		readonly reviewActionTimeoutMinutes: number;
-	};
+	/** Prepare or activate the ordinary CodePipeline review coordination path. */
+	readonly reviewCoordinationDeployment?: ReviewCoordinationDeployment;
 };
 
 function configuredRepositoryName(repository: Repository): string {
@@ -211,10 +213,16 @@ export class CodeCommitAutoReviewer {
 			repositoryResources,
 			team: teamOverride,
 			stage: stageOverride,
-			pipelineCoordination,
+			reviewCoordinationDeployment: reviewCoordinationDeploymentInput,
 			...configInput
 		} = props;
 		const config = CodeCommitAutoReviewerConfigSchema.parse(configInput);
+		const reviewCoordinationDeployment =
+			reviewCoordinationDeploymentInput === undefined
+				? undefined
+				: ReviewCoordinationDeploymentSchema.parse(
+						reviewCoordinationDeploymentInput,
+					);
 		const configuredRepositories = new Set(config.repositories);
 		for (const [repositoryName, repository] of repositoryResources ?? []) {
 			if (!configuredRepositories.has(repositoryName)) {
@@ -250,7 +258,7 @@ export class CodeCommitAutoReviewer {
 			pointInTimeRecovery: true,
 			retain: true,
 			globalSecondaryIndexes:
-				pipelineCoordination === undefined
+				reviewCoordinationDeployment === undefined
 					? undefined
 					: [
 							{
@@ -258,11 +266,21 @@ export class CodeCommitAutoReviewer {
 								partitionKey: { name: "gsi1pk", type: "STRING" },
 								sortKey: { name: "gsi1sk", type: "STRING" },
 							},
-							{
-								indexName: "GSI2",
-								partitionKey: { name: "gsi2pk", type: "STRING" },
-								sortKey: { name: "gsi2sk", type: "STRING" },
-							},
+							...(reviewCoordinationDeployment.phase === "prepareGsi1"
+								? []
+								: [
+										{
+											indexName: "GSI2",
+											partitionKey: {
+												name: "gsi2pk",
+												type: "STRING" as const,
+											},
+											sortKey: {
+												name: "gsi2sk",
+												type: "STRING" as const,
+											},
+										},
+									]),
 						],
 		});
 
@@ -372,7 +390,7 @@ export class CodeCommitAutoReviewer {
 
 		let pipelineBridge: LambdaFunction | undefined;
 		let pipelineReconciler: LambdaFunction | undefined;
-		if (pipelineCoordination !== undefined) {
+		if (reviewCoordinationDeployment?.phase === "active") {
 			pipelineReconciler = new LambdaFunction(scope, `${id}Reconciler`, {
 				entry: path.resolve(
 					__dirname,
@@ -392,7 +410,7 @@ export class CodeCommitAutoReviewer {
 					STATE_TABLE_NAME: stateTable.tableName,
 					RECONCILER_FUNCTION_NAME: pipelineReconciler.lambda.functionName,
 					REVIEW_ACTION_TIMEOUT_MINUTES: String(
-						pipelineCoordination.reviewActionTimeoutMinutes,
+						reviewCoordinationDeployment.reviewActionTimeoutMinutes,
 					),
 				},
 			});

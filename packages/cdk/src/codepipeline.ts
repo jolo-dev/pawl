@@ -135,8 +135,8 @@ export interface CodePipelineProps {
 	readonly artifactEncryptionKey?: Key;
 	/** When true, pipeline only triggers on PR events (router starts executions). Default: false (push-triggered). */
 	readonly onPullRequest?: boolean;
-	/** Explicit physical pipeline name. Defaults to Pawl's generated name. */
-	readonly pipelineName?: string;
+	/** Physical-name ownership and reviewer coordination configuration. */
+	readonly pipelineNaming?: CodePipelineNaming;
 	/** When set, deploys the durable auto-reviewer and wires it to the pipeline. */
 	readonly autoReview?: import("./codecommit").AutoReviewConfig;
 	/** Team/stage overrides (required when autoReview is set). */
@@ -182,6 +182,34 @@ export const CodePipelineNameSchema = z
 	.max(100)
 	.regex(/^[A-Za-z0-9.@_-]+$/);
 
+/**
+ * Physical-name ownership for a CodePipeline.
+ *
+ * Pawl and explicit modes emit a concrete CloudFormation `Name`. CloudFormation
+ * mode leaves physical naming to CloudFormation; `coordinationName` is a
+ * concrete existing name used only by the in-pipeline review bridge, where a
+ * reference to the pipeline itself would create a cycle.
+ */
+export const CodePipelineNamingSchema = z.discriminatedUnion("mode", [
+	z.object({ mode: z.literal("pawl") }).strict(),
+	z
+		.object({
+			mode: z.literal("explicit"),
+			name: CodePipelineNameSchema,
+		})
+		.strict(),
+	z
+		.object({
+			mode: z.literal("cloudFormation"),
+			coordinationName: CodePipelineNameSchema.optional(),
+		})
+		.strict(),
+]);
+
+export type CodePipelineNaming = Readonly<
+	z.infer<typeof CodePipelineNamingSchema>
+>;
+
 const PAWL_PIPELINE_VARIABLE_NAMES = [
 	"PAWL_PROVIDER",
 	"PAWL_REPOSITORY",
@@ -200,6 +228,26 @@ export class CodePipeline extends BasicConstruct {
 		super(scope, id);
 		const pipelineCoordination =
 			props.onPullRequest === true && props.autoReview !== undefined;
+		const pipelineNaming = CodePipelineNamingSchema.parse(
+			props.pipelineNaming ?? { mode: "pawl" },
+		);
+		const pipelinePhysicalName =
+			pipelineNaming.mode === "cloudFormation"
+				? undefined
+				: CodePipelineNameSchema.parse(
+						pipelineNaming.mode === "explicit"
+							? pipelineNaming.name
+							: `${this.prefix}${id}-pipeline`,
+					);
+		const pipelineCoordinationName =
+			pipelineNaming.mode === "cloudFormation"
+				? pipelineNaming.coordinationName
+				: pipelinePhysicalName;
+		if (pipelineCoordination && pipelineCoordinationName === undefined) {
+			throw new Error(
+				"CloudFormation pipeline naming requires coordinationName for PR-gated auto-review",
+			);
+		}
 		if (
 			props.reviewActionTimeoutMinutes !== undefined &&
 			!pipelineCoordination
@@ -237,12 +285,11 @@ export class CodePipeline extends BasicConstruct {
 			artifactBucket: this.artifactBucket,
 			crossAccountKeys: false,
 		};
-		const pipelinePhysicalName = CodePipelineNameSchema.parse(
-			props.pipelineName ?? `${this.prefix}${id}-pipeline`,
-		);
 		this.pipeline = new Pipeline(this, "Pipeline", {
 			...pipelineProps,
-			pipelineName: pipelinePhysicalName,
+			...(pipelinePhysicalName === undefined
+				? {}
+				: { pipelineName: pipelinePhysicalName }),
 			pipelineType: PipelineType.V2,
 			variables: reviewVariables ? [...reviewVariables.values()] : undefined,
 		});
@@ -354,7 +401,11 @@ export class CodePipeline extends BasicConstruct {
 					inputs: { source: sourceArtifact.artifactName ?? "SourceOutput" },
 					userParameters: {
 						pipelineExecutionId: "#{codepipeline.PipelineExecutionId}",
-						pipelineName: pipelinePhysicalName,
+						pipelineName:
+							pipelineCoordinationName ??
+							(() => {
+								throw new Error("Missing pipeline coordination name");
+							})(),
 						stageName: firstStage.name,
 						actionName: "AIReview",
 						provider: variable("PAWL_PROVIDER"),

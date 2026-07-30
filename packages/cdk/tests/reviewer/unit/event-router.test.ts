@@ -201,6 +201,10 @@ test("recovers duplicate durable names by listing the base function then getting
     FunctionName: "reviewer",
     DurableExecutionName: "codecommit-hash-7-g1",
   });
+  expect(commandInput(commands[2])).toEqual({
+    DurableExecutionArn: "arn:execution",
+    IncludeExecutionData: false,
+  });
 });
 
 test("persists FAILED for permanent and exhausted start failures", async () => {
@@ -401,6 +405,10 @@ test("lists the deterministic durable name on the base function before stale STA
   expect(commandInput(commands[1])).toEqual({
     FunctionName: "reviewer",
     DurableExecutionName: "codecommit-hash-7-g1",
+  });
+  expect(commandInput(commands[2])).toEqual({
+    DurableExecutionArn: "arn:execution",
+    IncludeExecutionData: false,
   });
 });
 

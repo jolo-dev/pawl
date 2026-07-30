@@ -27,7 +27,10 @@ export type LambdaCommand =
     }
   | {
       readonly kind: "status";
-      readonly input: { readonly DurableExecutionArn: string };
+      readonly input: {
+        readonly DurableExecutionArn: string;
+        readonly IncludeExecutionData: false;
+      };
     }
   | {
       readonly kind: "callback";

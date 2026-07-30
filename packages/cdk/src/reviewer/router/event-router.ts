@@ -557,7 +557,10 @@ export class EventRouter {
 			result = await this.#retry.execute("status", () =>
 				this.#lambda.send({
 					kind: "status",
-					input: { DurableExecutionArn: arn },
+					input: {
+						DurableExecutionArn: arn,
+						IncludeExecutionData: false,
+					},
 				}),
 			);
 		} catch (error) {

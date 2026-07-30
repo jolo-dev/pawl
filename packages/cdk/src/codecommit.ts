@@ -2,7 +2,10 @@ import { RemovalPolicy, Stage } from "aws-cdk-lib";
 import { Code, type IRepository, Repository } from "aws-cdk-lib/aws-codecommit";
 import { Asset } from "aws-cdk-lib/aws-s3-assets";
 import { z } from "zod";
-import { CodeCommitAutoReviewer } from "./codecommit-auto-reviewer";
+import {
+	CodeCommitAutoReviewer,
+	SystemDefinedCrossRegionInferenceProfileIdSchema,
+} from "./codecommit-auto-reviewer";
 import {
 	CodeCommitBranchNameSchema,
 	CodeCommitRepositoryNameSchema,
@@ -16,21 +19,13 @@ import type { LambdaFunction } from "./lambda-function";
 import type { Stack } from "./stack";
 
 /**
- * Zod schema validating an Anthropic Bedrock model or inference-profile ID.
+ * Backward-compatible alias for the auto-review model ID schema.
  *
- * Accepts `anthropic.<model>` or `<scope>.anthropic.<model>` (e.g.
- * `eu.anthropic.claude-sonnet-4-6`). Rejects ARNs, non-Anthropic providers,
- * and malformed values. This matches the current `anthropic.*` foundation-model
- * IAM grant in `CodeCommitAutoReviewer`.
+ * @deprecated Use {@link SystemDefinedCrossRegionInferenceProfileIdSchema};
+ * the historical name is provider-specific, but the accepted contract is not.
  */
-export const AnthropicModelIdSchema = z
-	.string()
-	.min(2)
-	.max(256)
-	.regex(
-		/^(?:[A-Za-z0-9-]+\.)?anthropic\.[A-Za-z0-9][A-Za-z0-9._:-]*$/,
-		"modelId must be an Anthropic Bedrock model ID or inference-profile ID",
-	);
+export const AnthropicModelIdSchema =
+	SystemDefinedCrossRegionInferenceProfileIdSchema;
 
 /**
  * Zod schema for the auto-reviewer configuration accepted by `CodeCommit`.
@@ -40,7 +35,7 @@ export const AnthropicModelIdSchema = z
  * `CodeCommit` is used internally.
  */
 const autoReviewConfigSchema = z.object({
-	modelId: AnthropicModelIdSchema,
+	modelId: SystemDefinedCrossRegionInferenceProfileIdSchema,
 	reviewerAlias: z.string().trim().min(1).default("live"),
 	reviewerExecutionTimeoutSeconds: z
 		.number()

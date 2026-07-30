@@ -27,6 +27,22 @@ const PAWL_LOCKFILE = path.join(PAWL_ROOT, "bun.lock");
 const nonEmptyString = z.string().trim().min(1);
 const systemInferenceProfilePrefix = /^(?:apac|eu|global|us)\./;
 
+/**
+ * AWS system-defined cross-region inference profile ID.
+ *
+ * The routing prefix is restricted to AWS-supported scopes, while provider and
+ * model segments remain provider-agnostic. The exact grammar prevents unsafe
+ * fragments from being interpolated into Bedrock IAM resource ARNs.
+ */
+export const SystemDefinedCrossRegionInferenceProfileIdSchema = z
+	.string()
+	.min(1)
+	.max(64)
+	.regex(
+		/^(?:apac|eu|global|us)\.(?!(?:apac|eu|global|us)\.)[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*(?::[0-9]+)?$/,
+		"must be an AWS system-defined cross-region inference profile ID",
+	);
+
 const repositoryNameSchema = nonEmptyString.regex(
 	/^[A-Za-z0-9._-]+$/,
 	"repository names may contain letters, digits, . _ -",
@@ -47,7 +63,7 @@ export const CodeCommitAutoReviewerConfigSchema = z.object({
 			(repositories) => new Set(repositories).size === repositories.length,
 			"duplicate repository names are not allowed",
 		),
-	reviewerModelId: nonEmptyString,
+	reviewerModelId: SystemDefinedCrossRegionInferenceProfileIdSchema,
 	reviewerAlias: z.string().trim().min(1).default("live"),
 	reviewerExecutionTimeoutSeconds: z
 		.number()
@@ -243,15 +259,25 @@ export class CodeCommitAutoReviewer {
 			systemInferenceProfilePrefix,
 			"",
 		);
+		const inferenceProfileResource = `arn:aws:bedrock:${scope.region}:${scope.account}:inference-profile/${config.reviewerModelId}`;
 		const foundationModelResource = `arn:aws:bedrock:*::foundation-model/${foundationModelId}`;
 		reviewer.lambda.addToRolePolicy(
 			new PolicyStatement({
 				effect: Effect.ALLOW,
 				actions: ["bedrock:InvokeModel"],
-				resources: [
-					`arn:aws:bedrock:${scope.region}:${scope.account}:inference-profile/${config.reviewerModelId}`,
-					foundationModelResource,
-				],
+				resources: [inferenceProfileResource],
+			}),
+		);
+		reviewer.lambda.addToRolePolicy(
+			new PolicyStatement({
+				effect: Effect.ALLOW,
+				actions: ["bedrock:InvokeModel"],
+				resources: [foundationModelResource],
+				conditions: {
+					ArnEquals: {
+						"bedrock:InferenceProfileArn": inferenceProfileResource,
+					},
+				},
 			}),
 		);
 		NagSuppressions.addResourceSuppressions(
@@ -260,7 +286,7 @@ export class CodeCommitAutoReviewer {
 				{
 					id: "AwsSolutions-IAM5",
 					reason:
-						"The configured system-defined inference profile can route to the exact foundation model in multiple regions, so only the ARN region is wildcarded.",
+						"The configured system-defined inference profile can route to the exact foundation model in multiple regions, so only the ARN region is wildcarded and bedrock:InferenceProfileArn restricts invocation to that profile.",
 					appliesTo: [`Resource::${foundationModelResource}`],
 				},
 			],

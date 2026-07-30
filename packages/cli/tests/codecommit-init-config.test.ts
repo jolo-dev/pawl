@@ -10,7 +10,7 @@ const completeFlags = {
 	repositoryName: "repo",
 	syncPath: ".",
 	autoReviewer: true,
-	modelId: "anthropic.claude-3-5-sonnet-20241022-v2:0",
+	modelId: "eu.anthropic.claude-3-5-sonnet-20241022-v2:0",
 	team: "platform",
 	install: true,
 	deploy: true,
@@ -25,7 +25,7 @@ describe("validateCodeCommitInitConfig", () => {
 			syncPath: ".",
 			branchName: "main",
 			autoReviewer: true,
-			modelId: "anthropic.claude-3-5-sonnet-20241022-v2:0",
+			modelId: "eu.anthropic.claude-3-5-sonnet-20241022-v2:0",
 			team: "platform",
 			stage: "dev",
 			install: true,
@@ -101,9 +101,9 @@ describe("validateCodeCommitInitConfig", () => {
 	});
 
 	test.each([
-		"anthropic.claude-3-haiku",
 		"eu.anthropic.claude-sonnet-4-6",
-	])("accepts Anthropic model ID %s", (modelId) => {
+		"eu.amazon.nova-2-lite-v1:0",
+	])("accepts system inference profile ID %s", (modelId) => {
 		expect(
 			validateCodeCommitInitConfig({ ...completeFlags, modelId }).modelId,
 		).toBe(modelId);
@@ -111,13 +111,14 @@ describe("validateCodeCommitInitConfig", () => {
 
 	test.each([
 		"amazon.nova-pro-v1:0",
+		"anthropic.claude-3-haiku",
 		"arn:aws:bedrock:eu-central-1:123456789012:inference-profile/example",
 		"eu.global.anthropic.claude-sonnet-4-6",
 		"anthropic",
 	])("rejects unsupported model ID %s", (modelId) => {
 		expect(() =>
 			validateCodeCommitInitConfig({ ...completeFlags, modelId }),
-		).toThrow(/Anthropic/i);
+		).toThrow(/inference profile|model/i);
 	});
 
 	test("requires install, profile, and region exactly when deploying", () => {

@@ -1,9 +1,9 @@
 import { confirm, isCancel, select, text } from "@clack/prompts";
 import { getModels } from "@earendil-works/pi-ai";
 import {
-	AnthropicModelIdSchema,
 	CodeCommitBranchNameSchema,
 	CodeCommitRepositoryNameSchema,
+	SystemDefinedCrossRegionInferenceProfileIdSchema,
 } from "@pawl/cdk";
 import type { ValidatedCodeCommitInitCoreConfig } from "./config";
 
@@ -153,32 +153,34 @@ export async function promptAutoReviewer(): Promise<boolean> {
 
 export async function promptModelId(): Promise<string> {
 	const allModels = getModels("amazon-bedrock");
-	const anthropicModels = allModels.filter(
-		(m) => AnthropicModelIdSchema.safeParse(m.id).success,
+	const inferenceProfileModels = allModels.filter(
+		(m) =>
+			SystemDefinedCrossRegionInferenceProfileIdSchema.safeParse(m.id).success,
 	);
 
-	if (anthropicModels.length === 0) {
+	if (inferenceProfileModels.length === 0) {
 		const value = await text({
 			message:
-				"Anthropic Bedrock model ID (e.g. eu.anthropic.claude-sonnet-4-6)",
+				"Bedrock cross-region inference profile ID (e.g. eu.amazon.nova-2-lite-v1:0)",
 			validate: (v) => {
-				const result = AnthropicModelIdSchema.safeParse(v.trim());
+				const result =
+					SystemDefinedCrossRegionInferenceProfileIdSchema.safeParse(v.trim());
 				return result.success ? undefined : result.error.issues[0]?.message;
 			},
 		});
 		return handleCancel(value).trim();
 	}
 
-	const grouped = new Map<string, typeof anthropicModels>();
-	for (const m of anthropicModels) {
-		const baseId = m.id.replace(/^(us|eu|global)\./, "");
+	const grouped = new Map<string, typeof inferenceProfileModels>();
+	for (const m of inferenceProfileModels) {
+		const baseId = m.id.replace(/^(apac|us|eu|global)\./, "");
 		const existing = grouped.get(baseId) ?? [];
 		existing.push(m);
 		grouped.set(baseId, existing);
 	}
 
 	const value = await select<string>({
-		message: "Select Anthropic Bedrock model",
+		message: "Select Bedrock cross-region inference profile",
 		options: [...grouped.entries()].map(([_baseId, variants]) => ({
 			value: variants[0]?.id,
 			label: `${variants[0]?.name} (${variants.map((v) => v.id).join(", ")})`,

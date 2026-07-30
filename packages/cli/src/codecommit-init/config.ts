@@ -1,8 +1,8 @@
 import {
-	AnthropicModelIdSchema,
 	BasicTags,
 	CodeCommitBranchNameSchema,
 	CodeCommitRepositoryNameSchema,
+	SystemDefinedCrossRegionInferenceProfileIdSchema,
 } from "@pawl/cdk";
 import { type ZodIssue, type ZodType, z } from "zod";
 
@@ -74,7 +74,7 @@ const sharedShape = {
 	branchName: CodeCommitBranchNameSchema.default("main"),
 	autoReviewer: z.literal(true).optional(),
 	noAutoReviewer: z.literal(true).optional(),
-	modelId: AnthropicModelIdSchema.optional(),
+	modelId: SystemDefinedCrossRegionInferenceProfileIdSchema.optional(),
 	team: optionalText,
 	stage: BasicTags.shape.stage.default("dev"),
 	install: z.literal(true).optional(),

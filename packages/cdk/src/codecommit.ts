@@ -1,6 +1,18 @@
-import { RemovalPolicy, Stage } from "aws-cdk-lib";
-import { Code, type IRepository, Repository } from "aws-cdk-lib/aws-codecommit";
+import {
+	AssetStaging,
+	Stack as CdkStack,
+	FileAssetPackaging,
+	RemovalPolicy,
+	Stage,
+} from "aws-cdk-lib";
+import {
+	Code,
+	type CodeConfig,
+	type IRepository,
+	Repository,
+} from "aws-cdk-lib/aws-codecommit";
 import { Asset } from "aws-cdk-lib/aws-s3-assets";
+import type { Construct } from "constructs";
 import { z } from "zod";
 import {
 	BedrockModelIdSchema,
@@ -99,16 +111,28 @@ const sourcePathSchema = z
 		"sourcePath is required",
 	);
 
+const sourceAssetHashSchema = z
+	.string()
+	.regex(
+		/^[0-9a-f]{64}$/,
+		"sourceAssetHash must be a 64-character lowercase hex CDK asset hash",
+	);
+
 const codeCommitCreateSchema = z
 	.object({
 		sourcePath: sourcePathSchema.optional(),
 		branchName: CodeCommitBranchNameSchema.optional(),
 		description: z.string().max(1_000).optional(),
 		forceIncludePath: forceIncludePathSchema.optional(),
+		sourceAssetHash: sourceAssetHashSchema.optional(),
 	})
 	.superRefine((create, context) => {
 		if (create.sourcePath !== undefined) return;
-		for (const property of ["branchName", "forceIncludePath"] as const) {
+		for (const property of [
+			"branchName",
+			"forceIncludePath",
+			"sourceAssetHash",
+		] as const) {
 			if (create[property] !== undefined) {
 				context.addIssue({
 					code: "custom",
@@ -124,8 +148,8 @@ const codeCommitCreateSchema = z
  *
  * When `sourcePath` is supplied, the directory is analyzed, packaged into a
  * deterministic ZIP, and used to seed the repository's initial commit via
- * CloudFormation's `Code` property. `branchName` and `forceIncludePath` are
- * only valid when `sourcePath` is set.
+ * CloudFormation's `Code` property. `branchName`, `forceIncludePath`, and
+ * `sourceAssetHash` are only valid when `sourcePath` is set.
  */
 export interface CodeCommitCreateProps {
 	/** Local directory path to analyze and seed as the repository's initial commit. */
@@ -140,6 +164,17 @@ export interface CodeCommitCreateProps {
 	 * Only valid with `sourcePath`.
 	 */
 	readonly forceIncludePath?: string;
+	/**
+	 * Advanced migration override for reusing an existing immutable seed ZIP
+	 * asset identity. Must be its exact 64-character lowercase hex CDK asset hash
+	 * and is only valid with `sourcePath`.
+	 *
+	 * This does not change source filtering or archive contents. The caller must
+	 * ensure the asset already exists and matches the intended repository creation
+	 * seed; CDK will publish the locally generated ZIP under this identity if a
+	 * deployment attempts asset publication.
+	 */
+	readonly sourceAssetHash?: string;
 }
 
 /**
@@ -219,6 +254,43 @@ export interface CodeCommitProps {
  * });
  * ```
  */
+class ExistingSourceAssetCode extends Code {
+	constructor(
+		private readonly archivePath: string,
+		private readonly branchName: string,
+		private readonly sourceAssetHash: string,
+	) {
+		super();
+	}
+
+	bind(scope: Construct): CodeConfig {
+		const stack = CdkStack.of(scope);
+		const staging = new AssetStaging(scope, "ExistingSourceAsset", {
+			sourcePath: this.archivePath,
+		});
+		if (!staging.isArchive) {
+			throw new Error("CodeCommit source asset must be a ZIP archive");
+		}
+		// AssetHashType.CUSTOM hashes its input again. Registering the supported
+		// FileAssetSource directly preserves the already-resolved CDK identity.
+		const location = stack.synthesizer.addFileAsset({
+			sourceHash: this.sourceAssetHash,
+			fileName: staging.relativeStagedPath(stack),
+			packaging: FileAssetPackaging.FILE,
+			displayName: `${stack.stackName}/CodeCommitSeed`,
+		});
+		return {
+			code: {
+				branchName: this.branchName,
+				s3: {
+					bucket: location.bucketName,
+					key: location.objectKey,
+				},
+			},
+		};
+	}
+}
+
 export class CodeCommit {
 	/** The created or imported CodeCommit repository. */
 	readonly repository: IRepository;
@@ -266,13 +338,22 @@ export class CodeCommit {
 					analysis,
 					outputDirectory: stage.assetOutdir,
 				});
-				const asset = new Asset(scope, `${id}SourceAsset`, {
-					path: archive.archivePath,
-				});
-				if (!asset.isZipArchive) {
-					throw new Error("CodeCommit source asset must be a ZIP archive");
+				const branchName = create.branchName ?? "main";
+				if (create.sourceAssetHash === undefined) {
+					const asset = new Asset(scope, `${id}SourceAsset`, {
+						path: archive.archivePath,
+					});
+					if (!asset.isZipArchive) {
+						throw new Error("CodeCommit source asset must be a ZIP archive");
+					}
+					code = Code.fromAsset(asset, branchName);
+				} else {
+					code = new ExistingSourceAssetCode(
+						archive.archivePath,
+						branchName,
+						create.sourceAssetHash,
+					);
 				}
-				code = Code.fromAsset(asset, create.branchName ?? "main");
 			}
 			createdRepository = new Repository(scope, `${id}Repository`, {
 				repositoryName,

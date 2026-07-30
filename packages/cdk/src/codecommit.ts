@@ -19,13 +19,18 @@ import type { LambdaFunction } from "./lambda-function";
 import type { Stack } from "./stack";
 
 /**
- * Backward-compatible alias for the auto-review model ID schema.
+ * Zod schema validating an Anthropic system-defined cross-region inference
+ * profile ID for the high-level `CodeCommit` and CLI contract.
  *
- * @deprecated Use {@link SystemDefinedCrossRegionInferenceProfileIdSchema};
- * the historical name is provider-specific, but the accepted contract is not.
+ * This intentionally remains Anthropic-specific while refining the stricter
+ * provider-agnostic profile contract used directly by `CodeCommitAutoReviewer`.
  */
 export const AnthropicModelIdSchema =
-	SystemDefinedCrossRegionInferenceProfileIdSchema;
+	SystemDefinedCrossRegionInferenceProfileIdSchema.refine(
+		(modelId) =>
+			modelId.replace(/^(?:apac|eu|global|us)\./, "").startsWith("anthropic."),
+		"modelId must be an Anthropic system-defined cross-region inference profile ID",
+	);
 
 /**
  * Zod schema for the auto-reviewer configuration accepted by `CodeCommit`.
@@ -35,7 +40,7 @@ export const AnthropicModelIdSchema =
  * `CodeCommit` is used internally.
  */
 const autoReviewConfigSchema = z.object({
-	modelId: SystemDefinedCrossRegionInferenceProfileIdSchema,
+	modelId: AnthropicModelIdSchema,
 	reviewerAlias: z.string().trim().min(1).default("live"),
 	reviewerExecutionTimeoutSeconds: z
 		.number()

@@ -181,12 +181,12 @@ describe("CodeCommit review combinations", () => {
 		Template.fromStack(stack).resourceCountIs("AWS::Events::Rule", 2);
 	});
 
-	test("auto-review mode passes a provider-agnostic model and concrete repository through every consumer", () => {
+	test("auto-review mode passes a concrete created repository through every consumer", () => {
 		const stack = createStack("AutoReviewRepositoryStack");
 		const construct = new CodeCommit(stack, "Code", {
 			repositoryName: "auto-review-repository",
 			create: {},
-			autoReview: { modelId: "eu.amazon.nova-2-lite-v1:0" },
+			autoReview: { modelId: "eu.anthropic.claude-sonnet-4-6" },
 		});
 
 		expect(construct.autoReviewer).toBeDefined();
@@ -303,7 +303,7 @@ describe("CodeCommit validation", () => {
 		"",
 		"arn:aws:bedrock:eu-west-1:123456789012:foundation-model/anthropic.claude",
 		"amazon.titan-text",
-		"moon.amazon.titan-text",
+		"eu.amazon.titan-text",
 		"anthropic.",
 		"eu..anthropic.claude",
 		"eu.anthropic./claude",

@@ -95,30 +95,30 @@ describe("validateCodeCommitInitConfig", () => {
 				...completeFlags,
 				autoReviewer: undefined,
 				noAutoReviewer: true,
-				modelId: "anthropic.claude-3-haiku",
+				modelId: "eu.anthropic.claude-3-haiku",
 			}),
 		).toThrow(/model/i);
 	});
 
 	test.each([
+		"us.anthropic.claude-3-haiku",
 		"eu.anthropic.claude-sonnet-4-6",
-		"eu.amazon.nova-2-lite-v1:0",
-	])("accepts system inference profile ID %s", (modelId) => {
+	])("accepts Anthropic inference profile ID %s", (modelId) => {
 		expect(
 			validateCodeCommitInitConfig({ ...completeFlags, modelId }).modelId,
 		).toBe(modelId);
 	});
 
 	test.each([
-		"amazon.nova-pro-v1:0",
 		"anthropic.claude-3-haiku",
+		"amazon.nova-pro-v1:0",
 		"arn:aws:bedrock:eu-central-1:123456789012:inference-profile/example",
 		"eu.global.anthropic.claude-sonnet-4-6",
 		"anthropic",
 	])("rejects unsupported model ID %s", (modelId) => {
 		expect(() =>
 			validateCodeCommitInitConfig({ ...completeFlags, modelId }),
-		).toThrow(/inference profile|model/i);
+		).toThrow(/Anthropic|inference profile/i);
 	});
 
 	test("requires install, profile, and region exactly when deploying", () => {

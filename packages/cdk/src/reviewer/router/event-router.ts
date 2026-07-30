@@ -331,75 +331,95 @@ export class EventRouter {
 
 	async recover(input: RecoveryInput): Promise<RouteResult | undefined> {
 		const { executionArn: providedExecutionArn, ...leaseRecovery } = input;
-		let remote: RemoteExecutionStatus;
-		try {
-			const executionArn =
-				providedExecutionArn ??
-				(await this.#lookupExecution(input.request, input.generation));
-			remote =
-				executionArn === undefined
-					? "NOT_FOUND"
-					: await this.#executionStatus(executionArn);
-		} catch (error) {
-			if (!isRetryExhaustedFailure(error)) {
-				await this.#completeFailed(
-					input.request,
-					input.generation,
-					error,
-					"status",
-					{
-						kind: "lease",
-						leaseVersion: input.leaseVersion,
-					},
-				);
-			}
-			return undefined;
-		}
-		const recovery = await this.#store.recoverLease({
-			...leaseRecovery,
-			remoteStatus: remote,
-		});
-		if (!recovery.recovered) {
-			return recovery.reason === "changed" && recovery.generation !== undefined
-				? {
+		let remote: RemoteExecutionStatus | undefined;
+		let remoteUnavailable = false;
+		for (let attempt = 0; attempt < 4; attempt += 1) {
+			const recovery = await this.#store.recoverLease({
+				...leaseRecovery,
+				...(remote === undefined ? {} : { remoteStatus: remote }),
+			});
+			if (!recovery.recovered) {
+				if (recovery.reason === "remote-status-required") {
+					if (remoteUnavailable) return undefined;
+					try {
+						const executionArn =
+							providedExecutionArn ??
+							(await this.#lookupExecution(input.request, input.generation));
+						remote =
+							executionArn === undefined
+								? "NOT_FOUND"
+								: await this.#executionStatus(executionArn);
+					} catch (error) {
+						if (isRetryExhaustedFailure(error)) {
+							remoteUnavailable = true;
+							continue;
+						}
+						await this.#completeFailed(
+							input.request,
+							input.generation,
+							error,
+							"status",
+							{
+								kind: "lease",
+								leaseVersion: input.leaseVersion,
+							},
+						);
+						return undefined;
+					}
+					continue;
+				}
+				if (
+					recovery.reason !== "changed" ||
+					recovery.generation === undefined
+				) {
+					return undefined;
+				}
+				if (
+					recovery.generation !== input.generation ||
+					recovery.leaseVersion !== input.leaseVersion
+				) {
+					return {
 						appended: false,
 						started: false,
 						generation: recovery.generation,
-					}
-				: undefined;
-		}
-		if (!recovery.shouldStart) return undefined;
-		let started: string | undefined;
-		try {
-			started = await this.#start(
-				input.request,
-				recovery.generation,
-				recovery.leaseVersion,
-			);
-		} catch (error) {
-			await this.#completeFailed(
-				input.request,
-				recovery.generation,
-				error,
-				"recovery-start",
-				{
-					kind: "lease",
-					leaseVersion: recovery.leaseVersion,
-					lifecycleState: "STARTING",
-				},
-			);
+					};
+				}
+				continue;
+			}
+			if (!recovery.shouldStart) return undefined;
+			let started: string | undefined;
+			try {
+				started = await this.#start(
+					input.request,
+					recovery.generation,
+					recovery.leaseVersion,
+				);
+			} catch (error) {
+				await this.#completeFailed(
+					input.request,
+					recovery.generation,
+					error,
+					"recovery-start",
+					{
+						kind: "lease",
+						leaseVersion: recovery.leaseVersion,
+						lifecycleState: "STARTING",
+					},
+				);
+				return {
+					appended: false,
+					started: false,
+					generation: recovery.generation,
+				};
+			}
 			return {
 				appended: false,
-				started: false,
+				started: started !== undefined,
 				generation: recovery.generation,
+				...(started === undefined ? {} : { durableExecutionArn: started }),
 			};
 		}
-		return {
-			appended: false,
-			started: started !== undefined,
-			generation: recovery.generation,
-			...(started === undefined ? {} : { durableExecutionArn: started }),
-		};
+		return undefined;
 	}
 
 	async #retrySnapshot(

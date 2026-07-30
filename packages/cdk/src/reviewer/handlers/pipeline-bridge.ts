@@ -114,7 +114,9 @@ export class LambdaReconcilerKick implements PipelineReconcilerKick {
 	}
 }
 
-export const parsePipelineBridgeTimeout = (value: string | undefined): number => {
+export const parsePipelineBridgeTimeout = (
+	value: string | undefined,
+): number => {
 	const timeout = Number(value ?? "15");
 	if (!Number.isInteger(timeout) || timeout < 5 || timeout > 15) {
 		throw new Error("pipeline bridge timeout must be an integer from 5 to 15");

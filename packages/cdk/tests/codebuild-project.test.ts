@@ -900,90 +900,96 @@ describe("CodeBuildProject", () => {
 });
 
 describe("CodeBuildProject pipeline mode", () => {
-  test("uses Source.s3 placeholder instead of Source.codeCommit", () => {
-    const stack = new Stack(createTestApp(), "PipelineModeStack");
-    const construct = new CodeBuildProject(stack, "PipelineBuild", {
-      pipelineMode: true,
-      networkPolicy: publicTestPolicy,
-    });
-    const template = Template.fromStack(stack);
+	test("uses Source.s3 placeholder instead of Source.codeCommit", () => {
+		const stack = new Stack(createTestApp(), "PipelineModeStack");
+		const construct = new CodeBuildProject(stack, "PipelineBuild", {
+			pipelineMode: true,
+			networkPolicy: publicTestPolicy,
+		});
+		const template = Template.fromStack(stack);
 
-    // Assert the project source is S3, not CodeCommit
-    template.hasResourceProperties("AWS::CodeBuild::Project", {
-      Source: {
-        Type: "S3",
-        Location: Match.anyValue(),
-      },
-    });
-    // Should NOT have CodeCommit source
-    const projects = Object.values(template.findResources("AWS::CodeBuild::Project"));
-    for (const project of projects) {
-      expect((project.Properties.Source as { Type: string }).Type).not.toBe("CODECOMMIT");
-    }
-    expect(construct.repository).toBeUndefined();
-  });
+		// Assert the project source is S3, not CodeCommit
+		template.hasResourceProperties("AWS::CodeBuild::Project", {
+			Source: {
+				Type: "S3",
+				Location: Match.anyValue(),
+			},
+		});
+		// Should NOT have CodeCommit source
+		const projects = Object.values(
+			template.findResources("AWS::CodeBuild::Project"),
+		);
+		for (const project of projects) {
+			expect((project.Properties.Source as { Type: string }).Type).not.toBe(
+				"CODECOMMIT",
+			);
+		}
+		expect(construct.repository).toBeUndefined();
+	});
 
-  test("uses a default inline buildspec in pipeline mode", () => {
-    const stack = new Stack(createTestApp(), "NoBuildSpecStack");
-    new CodeBuildProject(stack, "PipelineBuild", {
-      pipelineMode: true,
-      networkPolicy: publicTestPolicy,
-    });
-    const template = Template.fromStack(stack);
+	test("uses a default inline buildspec in pipeline mode", () => {
+		const stack = new Stack(createTestApp(), "NoBuildSpecStack");
+		new CodeBuildProject(stack, "PipelineBuild", {
+			pipelineMode: true,
+			networkPolicy: publicTestPolicy,
+		});
+		const template = Template.fromStack(stack);
 
-    const projects = Object.values(
-      template.findResources("AWS::CodeBuild::Project"),
-    );
-    for (const project of projects) {
-      const source = project.Properties.Source as { BuildSpec?: string };
-      expect(source.BuildSpec).toEqual(
-        expect.stringContaining(
-          "No buildspec supplied for pipeline mode; exiting safely.",
-        ),
-      );
-    }
-  });
+		const projects = Object.values(
+			template.findResources("AWS::CodeBuild::Project"),
+		);
+		for (const project of projects) {
+			const source = project.Properties.Source as { BuildSpec?: string };
+			expect(source.BuildSpec).toEqual(
+				expect.stringContaining(
+					"No buildspec supplied for pipeline mode; exiting safely.",
+				),
+			);
+		}
+	});
 
-  test("accepts an explicit buildspec from the Pawl root export", () => {
-    const stack = new Stack(createTestApp(), "ExplicitBuildSpecStack");
-    new CodeBuildProject(stack, "PipelineBuild", {
-      pipelineMode: true,
-      buildSpec: BuildSpec.fromObject({
-        version: "0.2",
-        phases: { build: { commands: ["node --check src/index.ts"] } },
-      }),
-      networkPolicy: publicTestPolicy,
-    });
-    const template = Template.fromStack(stack);
-    const projects = Object.values(template.findResources("AWS::CodeBuild::Project"));
+	test("accepts an explicit buildspec from the Pawl root export", () => {
+		const stack = new Stack(createTestApp(), "ExplicitBuildSpecStack");
+		new CodeBuildProject(stack, "PipelineBuild", {
+			pipelineMode: true,
+			buildSpec: BuildSpec.fromObject({
+				version: "0.2",
+				phases: { build: { commands: ["node --check src/index.ts"] } },
+			}),
+			networkPolicy: publicTestPolicy,
+		});
+		const template = Template.fromStack(stack);
+		const projects = Object.values(
+			template.findResources("AWS::CodeBuild::Project"),
+		);
 
-    expect(
-      projects.every((project) =>
-        (project.Properties.Source as { BuildSpec?: string }).BuildSpec?.includes(
-          "node --check src/index.ts",
-        ),
-      ),
-    ).toBeTrue();
-  });
+		expect(
+			projects.every((project) =>
+				(
+					project.Properties.Source as { BuildSpec?: string }
+				).BuildSpec?.includes("node --check src/index.ts"),
+			),
+		).toBeTrue();
+	});
 
-  test("does not require a repository target in pipeline mode", () => {
-    const stack = new Stack(createTestApp(), "NoRepoStack");
-    expect(
-      () =>
-        new CodeBuildProject(stack, "PipelineBuild", {
-          pipelineMode: true,
-          networkPolicy: publicTestPolicy,
-        }),
-    ).not.toThrow();
-  });
+	test("does not require a repository target in pipeline mode", () => {
+		const stack = new Stack(createTestApp(), "NoRepoStack");
+		expect(
+			() =>
+				new CodeBuildProject(stack, "PipelineBuild", {
+					pipelineMode: true,
+					networkPolicy: publicTestPolicy,
+				}),
+		).not.toThrow();
+	});
 
-  test("existing review mode is unchanged with Source.codeCommit", () => {
-    const { template } = createProject("ReviewMode");
-    template.hasResourceProperties("AWS::CodeBuild::Project", {
-      Source: {
-        Type: "CODECOMMIT",
-        Location: Match.anyValue(),
-      },
-    });
-  });
+	test("existing review mode is unchanged with Source.codeCommit", () => {
+		const { template } = createProject("ReviewMode");
+		template.hasResourceProperties("AWS::CodeBuild::Project", {
+			Source: {
+				Type: "CODECOMMIT",
+				Location: Match.anyValue(),
+			},
+		});
+	});
 });

@@ -135,6 +135,8 @@ export interface CodePipelineProps {
 	readonly artifactEncryptionKey?: Key;
 	/** When true, pipeline only triggers on PR events (router starts executions). Default: false (push-triggered). */
 	readonly onPullRequest?: boolean;
+	/** Explicit physical pipeline name. Defaults to Pawl's generated name. */
+	readonly pipelineName?: string;
 	/** When set, deploys the durable auto-reviewer and wires it to the pipeline. */
 	readonly autoReview?: import("./codecommit").AutoReviewConfig;
 	/** Team/stage overrides (required when autoReview is set). */
@@ -172,6 +174,14 @@ export interface CodePipelineProps {
  * ```
  */
 const reviewActionTimeoutSchema = z.number().int().min(5).max(1_380);
+
+/** Zod schema validating an AWS CodePipeline pipeline name. */
+export const CodePipelineNameSchema = z
+	.string()
+	.min(1)
+	.max(100)
+	.regex(/^[A-Za-z0-9.@_-]+$/);
+
 const PAWL_PIPELINE_VARIABLE_NAMES = [
 	"PAWL_PROVIDER",
 	"PAWL_REPOSITORY",
@@ -227,7 +237,9 @@ export class CodePipeline extends BasicConstruct {
 			artifactBucket: this.artifactBucket,
 			crossAccountKeys: false,
 		};
-		const pipelinePhysicalName = `${this.prefix}${id}-pipeline`;
+		const pipelinePhysicalName = CodePipelineNameSchema.parse(
+			props.pipelineName ?? `${this.prefix}${id}-pipeline`,
+		);
 		this.pipeline = new Pipeline(this, "Pipeline", {
 			...pipelineProps,
 			pipelineName: pipelinePhysicalName,

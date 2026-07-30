@@ -150,9 +150,9 @@ test("callback wake sends UTF-8 JSON and stale callbacks are no-op", async () =>
   );
 });
 
-test("recovers duplicate durable names by listing then getting the matching execution", async () => {
+test("recovers duplicate durable names by listing the base function then getting the matching execution", async () => {
   const store = new InMemoryStateStore();
-  const calls: string[] = [];
+  const commands: unknown[] = [];
   const router = new EventRouter({
     stateStore: store,
     provider: {} as never,
@@ -162,8 +162,8 @@ test("recovers duplicate durable names by listing then getting the matching exec
     repositoryHash: () => "hash",
     lambda: {
       send: async (command: unknown) => {
+        commands.push(command);
         const name = (command as { kind?: string }).kind ?? "unknown";
-        calls.push(name);
         if (name === "invoke")
           throw Object.assign(new Error("duplicate"), {
             name: "DurableExecutionAlreadyStartedException",
@@ -187,7 +187,20 @@ test("recovers duplicate durable names by listing then getting the matching exec
   });
   const result = await router.route(event);
   expect(result.durableExecutionArn).toBe("arn:execution");
-  expect(calls).toEqual(["invoke", "list", "status"]);
+  expect(commands.map((command) => (command as { kind: string }).kind)).toEqual([
+    "invoke",
+    "list",
+    "status",
+  ]);
+  expect(commandInput(commands[0])).toMatchObject({
+    FunctionName: "reviewer",
+    Qualifier: "live",
+    DurableExecutionName: "codecommit-hash-7-g1",
+  });
+  expect(commandInput(commands[1])).toEqual({
+    FunctionName: "reviewer",
+    DurableExecutionName: "codecommit-hash-7-g1",
+  });
 });
 
 test("persists FAILED for permanent and exhausted start failures", async () => {
@@ -336,23 +349,24 @@ test("persists FAILED when callback retries are exhausted", async () => {
   expect(store.inspectRequest(request)?.lifecycleState).toBe("FAILED");
 });
 
-test("lists deterministic durable name before stale STARTING recovery", async () => {
+test("lists the deterministic durable name on the base function before stale STARTING recovery", async () => {
   let now = new Date("2026-01-01T00:00:00.000Z");
   const store = new InMemoryStateStore({
     clock: () => now,
     leaseDurationSeconds: 1,
   });
-  const calls: string[] = [];
+  const commands: unknown[] = [];
   const router = new EventRouter({
     stateStore: store,
     provider: {} as never,
     reviewerFunctionName: "reviewer",
+    reviewerAlias: "live",
     reviewerArn: "arn:reviewer",
     repositoryHash: () => "hash",
     lambda: {
       send: async (command: unknown) => {
+        commands.push(command);
         const name = (command as { kind?: string }).kind ?? "unknown";
-        calls.push(name);
         if (name === "invoke") return { DurableExecutionArn: "arn:execution" };
         if (name === "list")
           return {
@@ -375,7 +389,19 @@ test("lists deterministic durable name before stale STARTING recovery", async ()
     leaseVersion: 1,
     recoveredAt: now.toISOString(),
   });
-  expect(calls.slice(-2)).toEqual(["list", "status"]);
+  expect(commands.map((command) => (command as { kind: string }).kind).slice(-2)).toEqual([
+    "list",
+    "status",
+  ]);
+  expect(commandInput(commands[0])).toMatchObject({
+    FunctionName: "reviewer",
+    Qualifier: "live",
+    DurableExecutionName: "codecommit-hash-7-g1",
+  });
+  expect(commandInput(commands[1])).toEqual({
+    FunctionName: "reviewer",
+    DurableExecutionName: "codecommit-hash-7-g1",
+  });
 });
 
 test("automatically recovers an expired lease when the remote execution failed", async () => {

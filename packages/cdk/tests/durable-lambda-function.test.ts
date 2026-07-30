@@ -158,11 +158,18 @@ describe("DurableLambdaFunction", () => {
 		const aliasId = stack.getLogicalId(
 			stack.durable.alias.node.defaultChild as CfnResource,
 		);
+		const functionId = stack.getLogicalId(
+			stack.durable.lambda.node.defaultChild as CfnResource,
+		);
+		const functionArn = { "Fn::GetAtt": [functionId, "Arn"] };
 		const [versionId] = Object.keys(
 			template.findResources("AWS::Lambda::Version"),
 		);
-		const executionResource = {
+		const currentExecutionResource = {
 			"Fn::Join": ["", [{ Ref: versionId }, "/durable-execution/*/*"]],
+		};
+		const historicalExecutionResource = {
+			"Fn::Join": ["", [functionArn, ":*/durable-execution/*/*"]],
 		};
 
 		template.resourceCountIs("AWS::IAM::Policy", 2);
@@ -177,7 +184,7 @@ describe("DurableLambdaFunction", () => {
 					{
 						Action: "lambda:ListDurableExecutionsByFunction",
 						Effect: "Allow",
-						Resource: { Ref: aliasId },
+						Resource: functionArn,
 					},
 					{
 						Action: [
@@ -185,12 +192,12 @@ describe("DurableLambdaFunction", () => {
 							"lambda:GetDurableExecutionHistory",
 						],
 						Effect: "Allow",
-						Resource: executionResource,
+						Resource: historicalExecutionResource,
 					},
 					{
 						Action: "lambda:StopDurableExecution",
 						Effect: "Allow",
-						Resource: executionResource,
+						Resource: currentExecutionResource,
 					},
 				],
 				Version: "2012-10-17",
@@ -231,7 +238,11 @@ describe("DurableLambdaFunction", () => {
 		expect(callbackPolicies).toHaveLength(1);
 		expect(defaultPolicies).toHaveLength(1);
 		expect(JSON.stringify(callbackPolicies[0])).toContain("Resource::*");
-		expect(JSON.stringify(defaultPolicies[0])).not.toContain("Resource::*");
+		const defaultPolicy = JSON.stringify(defaultPolicies[0]);
+		expect(defaultPolicy).not.toContain("Resource::*");
+		expect(defaultPolicy).not.toContain(":function:*");
+		expect(defaultPolicy).not.toContain(":function/DurableLambdaTestStack*");
+		expect(defaultPolicy).toContain(":*/durable-execution/*/*");
 		expect(durablePolicies).toEqual([]);
 	});
 

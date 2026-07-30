@@ -495,7 +495,6 @@ export class EventRouter {
 					kind: "list",
 					input: {
 						FunctionName: this.#functionName,
-						...(this.#alias === undefined ? {} : { Qualifier: this.#alias }),
 						DurableExecutionName: name,
 					},
 				}),
@@ -538,7 +537,6 @@ export class EventRouter {
 				kind: "list",
 				input: {
 					FunctionName: this.#functionName,
-					...(this.#alias === undefined ? {} : { Qualifier: this.#alias }),
 					DurableExecutionName: name,
 				},
 			}),

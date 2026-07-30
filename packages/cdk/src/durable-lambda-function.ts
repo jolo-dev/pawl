@@ -99,7 +99,7 @@ export class DurableLambdaFunction extends LambdaFunction {
 			new PolicyStatement({
 				effect: Effect.ALLOW,
 				actions: ["lambda:ListDurableExecutionsByFunction"],
-				resources: [this.alias.functionArn],
+				resources: [this.lambda.functionArn],
 			}),
 		);
 		this.addToGranteeRole(
@@ -110,10 +110,10 @@ export class DurableLambdaFunction extends LambdaFunction {
 					"lambda:GetDurableExecution",
 					"lambda:GetDurableExecutionHistory",
 				],
-				resources: [this.durableExecutionResourceArn()],
+				resources: [this.historicalDurableExecutionResourceArn()],
 			}),
 		);
-		this.suppressExecutionResourceWildcard(grantee);
+		this.suppressHistoricalExecutionResourceWildcard(grantee);
 		return this;
 	}
 
@@ -176,6 +176,28 @@ export class DurableLambdaFunction extends LambdaFunction {
 		grantee.lambda.addToRolePolicy(statement);
 	}
 
+	private suppressHistoricalExecutionResourceWildcard(
+		grantee: LambdaFunction,
+	): void {
+		const granteePolicy =
+			grantee.lambda.role?.node.tryFindChild("DefaultPolicy");
+		if (granteePolicy) {
+			NagSuppressions.addResourceSuppressions(granteePolicy, [
+				{
+					id: "AwsSolutions-IAM5",
+					reason:
+						"Published versions and durable execution names and IDs are not known at synthesis; the three wildcards remain bounded to those segments of this exact named function ARN.",
+					appliesTo: [
+						{
+							regex:
+								"/^Resource::<.+LambdaFunction[^>]*\\.Arn>:\\*\\/durable-execution\\/\\*\\/\\*$/",
+						},
+					],
+				},
+			]);
+		}
+	}
+
 	private suppressExecutionResourceWildcard(grantee: LambdaFunction): void {
 		const granteePolicy =
 			grantee.lambda.role?.node.tryFindChild("DefaultPolicy");
@@ -184,7 +206,7 @@ export class DurableLambdaFunction extends LambdaFunction {
 				{
 					id: "AwsSolutions-IAM5",
 					reason:
-						"Durable execution names and IDs are not known at synthesis; access remains scoped to executions of this published function version.",
+						"Durable execution names and IDs are not known at synthesis; both wildcards remain bounded to those segments of this exact published function version ARN.",
 					appliesTo: [
 						{
 							regex:
@@ -198,5 +220,9 @@ export class DurableLambdaFunction extends LambdaFunction {
 
 	private durableExecutionResourceArn(): string {
 		return `${this.alias.version.functionArn}/durable-execution/*/*`;
+	}
+
+	private historicalDurableExecutionResourceArn(): string {
+		return `${this.lambda.functionArn}:*/durable-execution/*/*`;
 	}
 }

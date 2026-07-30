@@ -259,6 +259,54 @@ describe("CodeCommitAutoReviewer", () => {
 	});
 });
 
+describe("CodeCommitAutoReviewer deprecated pipelineCoordination alias", () => {
+	test("pipelineCoordination alone maps to active phase resources", () => {
+		const stack = createStack("PipelineCoordinationAliasStack");
+		createReviewer(stack, {
+			pipelineCoordination: { reviewActionTimeoutMinutes: 60 },
+		});
+		const template = Template.fromStack(stack);
+		const serialized = JSON.stringify(template.toJSON());
+		expect(serialized).toContain("codepipeline:PutJobSuccessResult");
+		expect(serialized).toContain("Bridge-lambda");
+		expect(serialized).toContain("Reconciler-lambda");
+		// Verify GSIs are present (both GSI1 and GSI2 for active phase)
+		const tables = template.findResources("AWS::DynamoDB::GlobalTable");
+		const tableResource = Object.values(tables)[0] as {
+			Properties?: {
+				GlobalSecondaryIndexes?: readonly { IndexName: string }[];
+			};
+		};
+		const indexes =
+			tableResource?.Properties?.GlobalSecondaryIndexes?.map(
+				({ IndexName }) => IndexName,
+			) ?? [];
+		expect(indexes).toContain("GSI1");
+		expect(indexes).toContain("GSI2");
+	});
+
+	test("pipelineCoordination with reviewCoordinationDeployment throws conflict", () => {
+		const stack = createStack("PipelineCoordinationConflictStack");
+		expect(() =>
+			createReviewer(stack, {
+				pipelineCoordination: { reviewActionTimeoutMinutes: 60 },
+				reviewCoordinationDeployment: {
+					phase: "prepareGsi1",
+				},
+			}),
+		).toThrow(/do not specify both/i);
+	});
+
+	test("pipelineCoordination with invalid timeout throws Zod validation", () => {
+		const stack = createStack("PipelineCoordinationInvalidStack");
+		expect(() =>
+			createReviewer(stack, {
+				pipelineCoordination: { reviewActionTimeoutMinutes: 0 },
+			}),
+		).toThrow();
+	});
+});
+
 describe("CodeCommitAutoReviewer pipeline regression", () => {
 	test("does not create codepipeline IAM grants", () => {
 		const stack = createStack("RegressionNoPipeline");

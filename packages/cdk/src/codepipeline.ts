@@ -405,58 +405,38 @@ export class CodePipeline extends BasicConstruct {
 			});
 		}
 
-		// 5. User stages or default Build + ManualApproval.
+		// 5. User stages or default Approve + optional AIReview.
 		//    PR-gated auto-review injects an ordinary bridge Lambda action. The
 		//    bridge leaves the job pending until the durable reviewer outcome is
 		//    reconciled through PutJobSuccessResult/PutJobFailureResult.
+		//
+		//    Active phase: inject AIReview into the first stage.
+		//    Preparation phases (prepareGsi1, prepareGsi2): omit AIReview.
 		if (props.stages !== undefined) {
 			const stageActions = props.stages.map((stage) => ({
 				...stage,
 				actions: [...stage.actions],
 			}));
-			if (
-				autoReviewer?.pipelineBridge !== undefined &&
-				reviewVariables !== undefined &&
-				stageActions.length > 0
-			) {
-				const variable = (
-					name: (typeof PAWL_PIPELINE_VARIABLE_NAMES)[number],
-				) => {
-					const value = reviewVariables.get(name);
-					if (value === undefined)
-						throw new Error(`Missing pipeline variable ${name}`);
-					return value.reference();
-				};
-				const firstStage = stageActions[0];
-				firstStage.actions.push({
-					type: "lambda",
-					name: "AIReview",
-					handler: autoReviewer.pipelineBridge,
-					inputs: { source: sourceArtifact.artifactName ?? "SourceOutput" },
-					userParameters: {
-						pipelineExecutionId: "#{codepipeline.PipelineExecutionId}",
-						pipelineName:
-							pipelineCoordinationName ??
-							(() => {
-								throw new Error("Missing pipeline coordination name");
-							})(),
-						stageName: firstStage.name,
-						actionName: "AIReview",
-						provider: variable("PAWL_PROVIDER"),
-						repository: variable("PAWL_REPOSITORY"),
-						requestId: variable("PAWL_REQUEST_ID"),
-						generation: variable("PAWL_GENERATION"),
-						sourceRevision: variable("PAWL_SOURCE_REVISION"),
-						destinationRevision: variable("PAWL_DESTINATION_REVISION"),
-					},
-				});
+			if (reviewCoordinationActive) {
+				this.addAiReviewAction(
+					stageActions,
+					sourceArtifact,
+					autoReviewer,
+					reviewVariables,
+					pipelineCoordinationName,
+				);
 			}
 			for (const stage of stageActions) {
 				this.addStage(stage, sourceArtifact);
 			}
 		} else {
-			// Default stages — no auto-review injection for default mode.
-			this.addDefaultStages();
+			this.addDefaultStages({
+				reviewCoordinationActive,
+				autoReviewer,
+				reviewVariables,
+				pipelineCoordinationName,
+				sourceArtifact,
+			});
 		}
 	}
 
@@ -579,17 +559,82 @@ export class CodePipeline extends BasicConstruct {
 		return this.addAction(action, sourceArtifact);
 	}
 
-	private addDefaultStages(): void {
-		// Build stage — placeholder, user creates their own CodeBuildProject
-		// For now, just add a manual approval stage
-		this.pipeline.addStage({
-			stageName: "Approve",
-			actions: [
-				new ManualApprovalAction({
-					actionName: "Approve",
-				}),
-			],
+	private addAiReviewAction(
+		stageActions: { name: string; actions: PipelineAction[] }[],
+		sourceArtifact: Artifact,
+		autoReviewer: CodeCommitAutoReviewer | undefined,
+		reviewVariables: Map<string, Variable> | undefined,
+		pipelineCoordinationName: string | undefined,
+	): void {
+		if (
+			autoReviewer?.pipelineBridge === undefined ||
+			reviewVariables === undefined ||
+			stageActions.length === 0
+		) {
+			return;
+		}
+		const pipelineCoordinationNameResolved =
+			pipelineCoordinationName ??
+			(() => {
+				throw new Error("Missing pipeline coordination name");
+			})();
+		const variable = (name: (typeof PAWL_PIPELINE_VARIABLE_NAMES)[number]) => {
+			const value = reviewVariables.get(name);
+			if (value === undefined)
+				throw new Error(`Missing pipeline variable ${name}`);
+			return value.reference();
+		};
+		const firstStage = stageActions[0];
+		firstStage.actions.push({
+			type: "lambda",
+			name: "AIReview",
+			handler: autoReviewer.pipelineBridge,
+			inputs: { source: sourceArtifact.artifactName ?? "SourceOutput" },
+			userParameters: {
+				pipelineExecutionId: "#{codepipeline.PipelineExecutionId}",
+				pipelineName: pipelineCoordinationNameResolved,
+				stageName: firstStage.name,
+				actionName: "AIReview",
+				provider: variable("PAWL_PROVIDER"),
+				repository: variable("PAWL_REPOSITORY"),
+				requestId: variable("PAWL_REQUEST_ID"),
+				generation: variable("PAWL_GENERATION"),
+				sourceRevision: variable("PAWL_SOURCE_REVISION"),
+				destinationRevision: variable("PAWL_DESTINATION_REVISION"),
+			},
 		});
+	}
+
+	private addDefaultStages(options?: {
+		readonly reviewCoordinationActive: boolean;
+		readonly autoReviewer?: CodeCommitAutoReviewer;
+		readonly reviewVariables?: Map<string, Variable>;
+		readonly pipelineCoordinationName?: string;
+		readonly sourceArtifact: Artifact;
+	}): void {
+		// Build stage — placeholder, user creates their own CodeBuildProject.
+		// For now, just add a manual approval stage with optional AIReview.
+		const stageActions: { name: string; actions: PipelineAction[] }[] = [
+			{
+				name: "Approve",
+				actions: [{ type: "manualApproval", name: "Approve" }],
+			},
+		];
+		if (options?.reviewCoordinationActive) {
+			this.addAiReviewAction(
+				stageActions,
+				options.sourceArtifact,
+				options.autoReviewer,
+				options.reviewVariables,
+				options.pipelineCoordinationName,
+			);
+		}
+		for (const stage of stageActions) {
+			this.addStage(
+				stage,
+				options?.sourceArtifact ?? new Artifact("SourceOutput"),
+			);
+		}
 	}
 	protected applyPermissionPolicy(
 		_construct: Construct,

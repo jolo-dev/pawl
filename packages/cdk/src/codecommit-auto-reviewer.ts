@@ -169,6 +169,17 @@ export type CodeCommitAutoReviewerProps = z.input<
 	readonly stage?: string;
 	/** Prepare or activate the ordinary CodePipeline review coordination path. */
 	readonly reviewCoordinationDeployment?: ReviewCoordinationDeployment;
+	/**
+	 * @deprecated Use `reviewCoordinationDeployment: { phase: "active", reviewActionTimeoutMinutes }` instead.
+	 *
+	 * Deprecated compatibility alias. When supplied without
+	 * `reviewCoordinationDeployment`, maps at runtime to `{ phase: "active",
+	 * reviewActionTimeoutMinutes }`. If both properties are set, the
+	 * constructor throws a conflict error.
+	 */
+	readonly pipelineCoordination?: {
+		readonly reviewActionTimeoutMinutes: number;
+	};
 };
 
 function configuredRepositoryName(repository: Repository): string {
@@ -214,15 +225,32 @@ export class CodeCommitAutoReviewer {
 			team: teamOverride,
 			stage: stageOverride,
 			reviewCoordinationDeployment: reviewCoordinationDeploymentInput,
+			pipelineCoordination: pipelineCoordinationInput,
 			...configInput
 		} = props;
 		const config = CodeCommitAutoReviewerConfigSchema.parse(configInput);
+		// Handle deprecated pipelineCoordination alias.
+		// Destructured before Zod parsing so JS/spread callers survive.
+		if (
+			pipelineCoordinationInput !== undefined &&
+			reviewCoordinationDeploymentInput !== undefined
+		) {
+			throw new Error(
+				"CodeCommitAutoReviewer: pipelineCoordination is deprecated; use reviewCoordinationDeployment instead. Do not specify both.",
+			);
+		}
+		const resolvedNewDeploymentInput =
+			pipelineCoordinationInput !== undefined
+				? {
+						phase: "active" as const,
+						reviewActionTimeoutMinutes:
+							pipelineCoordinationInput.reviewActionTimeoutMinutes,
+					}
+				: reviewCoordinationDeploymentInput;
 		const reviewCoordinationDeployment =
-			reviewCoordinationDeploymentInput === undefined
+			resolvedNewDeploymentInput === undefined
 				? undefined
-				: ReviewCoordinationDeploymentSchema.parse(
-						reviewCoordinationDeploymentInput,
-					);
+				: ReviewCoordinationDeploymentSchema.parse(resolvedNewDeploymentInput);
 		const configuredRepositories = new Set(config.repositories);
 		for (const [repositoryName, repository] of repositoryResources ?? []) {
 			if (!configuredRepositories.has(repositoryName)) {

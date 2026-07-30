@@ -18,7 +18,10 @@ const PIPELINE_VARIABLES = [
 	"PAWL_DESTINATION_REVISION",
 ] as const;
 
-function createTemplate(phase?: ReviewCoordinationDeploymentPhase): Template {
+function createTemplate(
+	phase?: ReviewCoordinationDeploymentPhase,
+	options?: { readonly omitStages?: boolean },
+): Template {
 	const stack = new Stack(createTestApp(), "CoordinationDeploymentStack");
 	const repository = new Repository(stack, "Repository", {
 		repositoryName: "review-repository",
@@ -31,7 +34,11 @@ function createTemplate(phase?: ReviewCoordinationDeploymentPhase): Template {
 		},
 		onPullRequest: true,
 		autoReview: { modelId: "eu.anthropic.claude-sonnet-4-6" },
-		stages: [{ name: "Build", actions: [{ type: "manualApproval" }] }],
+		...(options?.omitStages === true
+			? {}
+			: {
+					stages: [{ name: "Build", actions: [{ type: "manualApproval" }] }],
+				}),
 		...(phase === undefined
 			? {}
 			: { reviewCoordinationDeploymentPhase: phase }),
@@ -39,12 +46,14 @@ function createTemplate(phase?: ReviewCoordinationDeploymentPhase): Template {
 	return Template.fromStack(stack);
 }
 
+type PipelineStageActions = {
+	readonly Name: string;
+	readonly Actions: readonly { readonly Name: string }[];
+};
+
 function pipelineProperties(template: Template): {
 	readonly Variables?: readonly { readonly Name: string }[];
-	readonly Stages: readonly {
-		readonly Name: string;
-		readonly Actions: readonly { readonly Name: string }[];
-	}[];
+	readonly Stages: readonly PipelineStageActions[];
 } {
 	const pipeline = Object.values(
 		template.findResources("AWS::CodePipeline::Pipeline"),
@@ -219,6 +228,50 @@ describe("CodePipeline review coordination deployment phases", () => {
 						"preparing" as ReviewCoordinationDeploymentPhase,
 				}),
 		).toThrow();
+	});
+
+	describe("default stages with PR-gated auto-review", () => {
+		function defaultStageNames(
+			phase?: ReviewCoordinationDeploymentPhase,
+		): readonly string[] {
+			const template = createTemplate(phase, { omitStages: true });
+			return pipelineProperties(template).Stages.flatMap((stage) =>
+				stage.Actions.map(({ Name }) => Name),
+			);
+		}
+
+		test("active phase injects AIReview into default Approve stage", () => {
+			const names = defaultStageNames("active");
+			expect(names).toContain("AIReview");
+		});
+
+		test("prepareGsi1 omits AIReview from default stages", () => {
+			expect(defaultStageNames("prepareGsi1")).not.toContain("AIReview");
+		});
+
+		test("prepareGsi2 omits AIReview from default stages", () => {
+			expect(defaultStageNames("prepareGsi2")).not.toContain("AIReview");
+		});
+
+		test("default phase (active) injects AIReview into default stages", () => {
+			expect(defaultStageNames()).toContain("AIReview");
+		});
+
+		test("default stages with active phase creates bridge and reconciler", () => {
+			const template = createTemplate("active", { omitStages: true });
+			const summary = coordinationResourceSummary(template);
+			expect(summary.hasBridge).toBeTrue();
+			expect(summary.hasReconciler).toBeTrue();
+			expect(summary.variables).toEqual(PIPELINE_VARIABLES);
+		});
+
+		test("default stages with prepareGsi1 skips bridge and reconciler", () => {
+			const template = createTemplate("prepareGsi1", { omitStages: true });
+			const summary = coordinationResourceSummary(template);
+			expect(summary.hasBridge).toBeFalse();
+			expect(summary.hasReconciler).toBeFalse();
+			expect(summary.variables).toEqual([]);
+		});
 	});
 
 	test.each([

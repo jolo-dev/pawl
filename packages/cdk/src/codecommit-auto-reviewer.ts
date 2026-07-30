@@ -25,6 +25,7 @@ const PAWL_ROOT = path.resolve(__dirname, "../../..");
 const PAWL_LOCKFILE = path.join(PAWL_ROOT, "bun.lock");
 
 const nonEmptyString = z.string().trim().min(1);
+const systemInferenceProfilePrefix = /^(?:apac|eu|global|us)\./;
 
 const repositoryNameSchema = nonEmptyString.regex(
 	/^[A-Za-z0-9._-]+$/,
@@ -235,15 +236,21 @@ export class CodeCommitAutoReviewer {
 
 		stateTable.grantReadWrite(reviewer);
 
-		// 4. Bedrock InvokeModel IAM (inference-profile + foundation-model).
-		//    The region wildcard is required for cross-region inference profiles.
+		// 4. Bedrock InvokeModel IAM (inference-profile + routed foundation model).
+		//    System-defined cross-region profile IDs prefix the foundation model ID
+		//    with their routing scope (for example, eu.amazon.* -> amazon.*).
+		const foundationModelId = config.reviewerModelId.replace(
+			systemInferenceProfilePrefix,
+			"",
+		);
+		const foundationModelResource = `arn:aws:bedrock:*::foundation-model/${foundationModelId}`;
 		reviewer.lambda.addToRolePolicy(
 			new PolicyStatement({
 				effect: Effect.ALLOW,
 				actions: ["bedrock:InvokeModel"],
 				resources: [
 					`arn:aws:bedrock:${scope.region}:${scope.account}:inference-profile/${config.reviewerModelId}`,
-					`arn:aws:bedrock:*::foundation-model/anthropic.*`,
+					foundationModelResource,
 				],
 			}),
 		);
@@ -253,10 +260,8 @@ export class CodeCommitAutoReviewer {
 				{
 					id: "AwsSolutions-IAM5",
 					reason:
-						"bedrock:InvokeModel on arn:aws:bedrock:*::foundation-model/anthropic.* is region- and model-wildcarded because cross-region inference profiles route across multiple regions and the base model id differs from the profile id; scoped to Anthropic foundation models only.",
-					appliesTo: [
-						"Resource::arn:aws:bedrock:*::foundation-model/anthropic.*",
-					],
+						"The configured system-defined inference profile can route to the exact foundation model in multiple regions, so only the ARN region is wildcarded.",
+					appliesTo: [`Resource::${foundationModelResource}`],
 				},
 			],
 			true,

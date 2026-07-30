@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { App, CfnParameter } from "aws-cdk-lib";
-import { Template } from "aws-cdk-lib/assertions";
+import { Match, Template } from "aws-cdk-lib/assertions";
 import { Repository } from "aws-cdk-lib/aws-codecommit";
 import {
 	CodeCommitAutoReviewer,
@@ -145,6 +145,28 @@ describe("CodeCommitAutoReviewer", () => {
 			repository,
 		);
 		Template.fromStack(stack).resourceCountIs("AWS::CodeBuild::Project", 2);
+	});
+
+	test("grants the foundation model routed by the configured Nova profile", () => {
+		const stack = createStack("NovaBedrockPolicyStack");
+		createReviewer(stack, {
+			reviewerModelId: "eu.amazon.nova-2-lite-v1:0",
+		});
+
+		Template.fromStack(stack).hasResourceProperties("AWS::IAM::Policy", {
+			PolicyDocument: {
+				Statement: Match.arrayWith([
+					Match.objectLike({
+						Action: "bedrock:InvokeModel",
+						Effect: "Allow",
+						Resource: [
+							"arn:aws:bedrock:eu-west-1:123456789012:inference-profile/eu.amazon.nova-2-lite-v1:0",
+							"arn:aws:bedrock:*::foundation-model/amazon.nova-2-lite-v1:0",
+						],
+					}),
+				]),
+			},
+		});
 	});
 });
 

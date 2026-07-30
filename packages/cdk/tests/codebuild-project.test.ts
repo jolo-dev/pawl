@@ -5,6 +5,7 @@ import { Annotations, Match, Template } from "aws-cdk-lib/assertions";
 import { Repository } from "aws-cdk-lib/aws-codecommit";
 import { AwsSolutionsChecks, NagSuppressions } from "cdk-nag";
 import { Construct } from "constructs";
+import { BuildSpec } from "../index";
 import {
 	CodeBuildProject,
 	CodeBuildProjectConfigSchema,
@@ -941,6 +942,28 @@ describe("CodeBuildProject pipeline mode", () => {
         ),
       );
     }
+  });
+
+  test("accepts an explicit buildspec from the Pawl root export", () => {
+    const stack = new Stack(createTestApp(), "ExplicitBuildSpecStack");
+    new CodeBuildProject(stack, "PipelineBuild", {
+      pipelineMode: true,
+      buildSpec: BuildSpec.fromObject({
+        version: "0.2",
+        phases: { build: { commands: ["node --check src/index.ts"] } },
+      }),
+      networkPolicy: publicTestPolicy,
+    });
+    const template = Template.fromStack(stack);
+    const projects = Object.values(template.findResources("AWS::CodeBuild::Project"));
+
+    expect(
+      projects.every((project) =>
+        (project.Properties.Source as { BuildSpec?: string }).BuildSpec?.includes(
+          "node --check src/index.ts",
+        ),
+      ),
+    ).toBeTrue();
   });
 
   test("does not require a repository target in pipeline mode", () => {

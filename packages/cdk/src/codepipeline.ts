@@ -156,7 +156,11 @@ export interface CodePipelineProps {
 	 * `active`; preparation phases provision indexes without runtime activation.
 	 */
 	readonly reviewCoordinationDeploymentPhase?: ReviewCoordinationDeploymentPhase;
-	/** Deadline for the active PR-gated AIReview action. Default: 60 minutes. */
+	/**
+	 * Deadline for the active PR-gated AIReview action. Default/max: 15 minutes.
+	 * CodePipeline fails a Lambda action after 20 minutes without a reply, so
+	 * this limit preserves a conservative five-minute callback margin.
+	 */
 	readonly reviewActionTimeoutMinutes?: number;
 }
 
@@ -187,7 +191,7 @@ export interface CodePipelineProps {
  * });
  * ```
  */
-const reviewActionTimeoutSchema = z.number().int().min(5).max(1_380);
+const reviewActionTimeoutSchema = z.number().int().min(5).max(15);
 
 /** Zod schema validating an AWS CodePipeline pipeline name. */
 export const CodePipelineNameSchema = z
@@ -286,7 +290,7 @@ export class CodePipeline extends BasicConstruct {
 			);
 		}
 		const reviewActionTimeoutMinutes = reviewCoordinationActive
-			? reviewActionTimeoutSchema.parse(props.reviewActionTimeoutMinutes ?? 60)
+			? reviewActionTimeoutSchema.parse(props.reviewActionTimeoutMinutes ?? 15)
 			: undefined;
 		const reviewVariables = reviewCoordinationActive
 			? new Map(
@@ -361,7 +365,7 @@ export class CodePipeline extends BasicConstruct {
 						: reviewCoordinationDeploymentPhase === "active"
 							? {
 									phase: reviewCoordinationDeploymentPhase,
-									reviewActionTimeoutMinutes: reviewActionTimeoutMinutes ?? 60,
+									reviewActionTimeoutMinutes: reviewActionTimeoutMinutes ?? 15,
 								}
 							: { phase: reviewCoordinationDeploymentPhase },
 			});

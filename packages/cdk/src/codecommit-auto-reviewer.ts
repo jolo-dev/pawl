@@ -174,11 +174,13 @@ export type CodeCommitAutoReviewerProps = z.input<
 	 *
 	 * Deprecated compatibility alias. When supplied without
 	 * `reviewCoordinationDeployment`, maps at runtime to `{ phase: "active",
-	 * reviewActionTimeoutMinutes }`. If both properties are set, the
-	 * constructor throws a conflict error.
+	 * reviewActionTimeoutMinutes }`. The timeout defaults to and cannot exceed
+	 * 15 minutes because CodePipeline's 20-minute no-reply watchdog requires a
+	 * conservative callback margin. If both properties are set, the constructor
+	 * throws a conflict error.
 	 */
 	readonly pipelineCoordination?: {
-		readonly reviewActionTimeoutMinutes: number;
+		readonly reviewActionTimeoutMinutes?: number;
 	};
 };
 

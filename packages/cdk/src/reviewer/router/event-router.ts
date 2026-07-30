@@ -8,6 +8,7 @@ import type {
 	FailureOwnership,
 	LeaseRecoveryInput,
 	RemoteExecutionStatus,
+	ReviewLifecycleState,
 	ReviewStateStore,
 } from "../ports/state-store";
 import {
@@ -35,6 +36,7 @@ export interface EventRouterOptions {
 	readonly retryPolicy?: RetryPolicy;
 	readonly repositoryHash?: (repository: string) => string;
 	readonly pipelineDispatcher?: PrPipelineDispatcher;
+	readonly clock?: () => Date;
 }
 export type { CallbackWake } from "../ports/state-store";
 export interface RecoveryInput
@@ -144,6 +146,14 @@ function remoteStatus(value: unknown): RemoteExecutionStatus | undefined {
 				: "FAILED";
 	return undefined;
 }
+function isNonterminal(lifecycleState: ReviewLifecycleState): boolean {
+	return (
+		lifecycleState === "STARTING" ||
+		lifecycleState === "RUNNING" ||
+		lifecycleState === "WAITING" ||
+		lifecycleState === "BLOCKED_LIMIT"
+	);
+}
 function callbackPayload(wake: CallbackWake): Uint8Array {
 	return new TextEncoder().encode(
 		JSON.stringify({
@@ -167,6 +177,7 @@ export class EventRouter {
 	readonly #retry: RetryPolicy;
 	readonly #repositoryHash: (repository: string) => string;
 	readonly #pipelineDispatcher?: PrPipelineDispatcher;
+	readonly #clock: () => Date;
 
 	constructor(options: EventRouterOptions) {
 		this.#store = options.stateStore;
@@ -184,6 +195,7 @@ export class EventRouter {
 			new RetryPolicy({ baseDelayMs: 25, maxDelayMs: 1_000, maxAttempts: 3 });
 		this.#repositoryHash = options.repositoryHash ?? hashRepository;
 		this.#pipelineDispatcher = options.pipelineDispatcher;
+		this.#clock = options.clock ?? (() => new Date());
 	}
 
 	async route(
@@ -194,12 +206,27 @@ export class EventRouter {
 		const appended = await this.#store.appendEvent(event);
 		try {
 			if (appended.callback !== undefined) await this.#wake(appended.callback);
-			if (!appended.shouldStart)
+			if (!appended.shouldStart) {
+				if (
+					appended.callback === undefined &&
+					isNonterminal(appended.lifecycleState)
+				) {
+					const recovered = await this.recover({
+						request: event.request,
+						generation: appended.generation,
+						leaseVersion: appended.leaseVersion,
+						recoveredAt: this.#clock().toISOString(),
+					});
+					if (recovered !== undefined) {
+						return { ...recovered, appended: appended.appended };
+					}
+				}
 				return {
 					appended: appended.appended,
 					started: false,
 					generation: appended.generation,
 				};
+			}
 			const preparedSnapshot =
 				snapshot ??
 				(loadSnapshot === undefined

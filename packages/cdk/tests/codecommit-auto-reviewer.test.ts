@@ -260,14 +260,15 @@ describe("CodeCommitAutoReviewer", () => {
 });
 
 describe("CodeCommitAutoReviewer deprecated pipelineCoordination alias", () => {
-	test("pipelineCoordination alone maps to active phase resources", () => {
+	test("pipelineCoordination alone maps to active phase resources with the safe default", () => {
 		const stack = createStack("PipelineCoordinationAliasStack");
 		createReviewer(stack, {
-			pipelineCoordination: { reviewActionTimeoutMinutes: 60 },
+			pipelineCoordination: {},
 		});
 		const template = Template.fromStack(stack);
 		const serialized = JSON.stringify(template.toJSON());
 		expect(serialized).toContain("codepipeline:PutJobSuccessResult");
+		expect(serialized).toContain('"REVIEW_ACTION_TIMEOUT_MINUTES":"15"');
 		expect(serialized).toContain("Bridge-lambda");
 		expect(serialized).toContain("Reconciler-lambda");
 		// Verify GSIs are present (both GSI1 and GSI2 for active phase)
@@ -302,6 +303,19 @@ describe("CodeCommitAutoReviewer deprecated pipelineCoordination alias", () => {
 		expect(() =>
 			createReviewer(stack, {
 				pipelineCoordination: { reviewActionTimeoutMinutes: 0 },
+			}),
+		).toThrow();
+		expect(() =>
+			createReviewer(createStack("PipelineCoordinationLegacyTimeoutStack"), {
+				pipelineCoordination: { reviewActionTimeoutMinutes: 60 },
+			}),
+		).toThrow();
+		expect(() =>
+			createReviewer(createStack("ReviewCoordinationLegacyTimeoutStack"), {
+				reviewCoordinationDeployment: {
+					phase: "active",
+					reviewActionTimeoutMinutes: 60,
+				},
 			}),
 		).toThrow();
 	});

@@ -76,6 +76,13 @@ describe("CodePipeline durable review bridge", () => {
 		expect(
 			lambdas.some((resource) => resource.includes("Reconciler-lambda")),
 		).toBeTrue();
+		expect(
+			lambdas.some(
+				(resource) =>
+					resource.includes("Bridge-lambda") &&
+					resource.includes('"REVIEW_ACTION_TIMEOUT_MINUTES":"15"'),
+			),
+		).toBeTrue();
 		template.hasResourceProperties("AWS::Events::Rule", {
 			ScheduleExpression: "rate(1 minute)",
 		});
@@ -96,20 +103,23 @@ describe("CodePipeline durable review bridge", () => {
 		expect(serialized).not.toContain("PAWL_SOURCE_REVISION");
 	});
 
-	test("validates the configurable review timeout", () => {
+	test("validates the conservative CodePipeline review timeout", () => {
 		expect(() =>
 			createBridgePipeline({ reviewActionTimeoutMinutes: 4 }),
 		).toThrow();
 		expect(() =>
-			createBridgePipeline({ reviewActionTimeoutMinutes: 1_381 }),
+			createBridgePipeline({ reviewActionTimeoutMinutes: 16 }),
 		).toThrow();
 		expect(() =>
-			createBridgePipeline({ reviewActionTimeoutMinutes: 90 }),
+			createBridgePipeline({ reviewActionTimeoutMinutes: 60 }),
+		).toThrow();
+		expect(() =>
+			createBridgePipeline({ reviewActionTimeoutMinutes: 15 }),
 		).not.toThrow();
 		expect(() =>
 			createBridgePipeline({
 				onPullRequest: false,
-				reviewActionTimeoutMinutes: 90,
+				reviewActionTimeoutMinutes: 15,
 			}),
 		).toThrow();
 	});

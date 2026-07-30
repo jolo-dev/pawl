@@ -55,12 +55,14 @@ export const ReviewCoordinationDeploymentSchema = z.discriminatedUnion(
 		z
 			.object({
 				phase: z.literal("active"),
-				reviewActionTimeoutMinutes: z.number().int().min(5).max(1_380),
+				// CodePipeline fails Lambda actions after 20 minutes without a reply;
+				// 15 minutes leaves a conservative callback-processing margin.
+				reviewActionTimeoutMinutes: z.number().int().min(5).max(15).default(15),
 			})
 			.strict(),
 	],
 );
 
 export type ReviewCoordinationDeployment = Readonly<
-	z.infer<typeof ReviewCoordinationDeploymentSchema>
+	z.input<typeof ReviewCoordinationDeploymentSchema>
 >;

@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
-import { EventRouter, durableExecutionName } from "../../../src/reviewer/router/event-router";
-import { InMemoryStateStore } from "../fakes/in-memory-state-store";
+import { durableExecutionName, EventRouter } from "../../../src/reviewer/router/event-router";
 import { RetryPolicy } from "../../../src/reviewer/services/retry-policy";
+import { InMemoryStateStore } from "../fakes/in-memory-state-store";
 
 const request = {
   provider: "codecommit",
@@ -334,6 +334,200 @@ test("lists deterministic durable name before stale STARTING recovery", async ()
     recoveredAt: now.toISOString(),
   });
   expect(calls.slice(-2)).toEqual(["list", "status"]);
+});
+
+test("automatically recovers an expired lease when the remote execution failed", async () => {
+  let now = new Date("2026-01-01T00:00:00.000Z");
+  const store = new InMemoryStateStore({
+    clock: () => now,
+    leaseDurationSeconds: 1,
+  });
+  let invokes = 0;
+  const router = new EventRouter({
+    stateStore: store,
+    provider: {} as never,
+    reviewerFunctionName: "reviewer",
+    reviewerArn: "arn:reviewer",
+    repositoryHash: () => "hash",
+    clock: () => now,
+    lambda: {
+      send: async (command) => {
+        if (command.kind === "invoke") {
+          invokes += 1;
+          return { DurableExecutionArn: `arn:execution:${invokes}` };
+        }
+        if (command.kind === "list") {
+          return {
+            DurableExecutions: [
+              {
+                DurableExecutionName: "codecommit-hash-7-g1",
+                DurableExecutionArn: "arn:execution:1",
+              },
+            ],
+          };
+        }
+        if (command.kind === "status") return { Status: "FAILED" };
+        throw new Error(`unexpected ${command.kind} command`);
+      },
+    },
+  });
+
+  await router.route({ ...event, id: "automatic-recovery-seed" });
+  await store.claimEvents(request, 1);
+  now = new Date("2026-01-01T00:00:02.000Z");
+  const result = await router.route({
+    ...event,
+    id: "automatic-recovery-revision",
+    type: "revision-updated",
+    occurredAt: now.toISOString(),
+    revision: "source-2",
+  });
+
+  expect(result).toMatchObject({ appended: true, started: true, generation: 2 });
+  expect(invokes).toBe(2);
+  expect(store.inspectRequest(request)).toMatchObject({
+    lifecycleState: "RUNNING",
+    generation: 2,
+  });
+});
+
+test("does not replace an expired lease while the remote execution is running", async () => {
+  let now = new Date("2026-01-01T00:00:00.000Z");
+  const store = new InMemoryStateStore({
+    clock: () => now,
+    leaseDurationSeconds: 1,
+  });
+  let invokes = 0;
+  const router = new EventRouter({
+    stateStore: store,
+    provider: {} as never,
+    reviewerFunctionName: "reviewer",
+    reviewerArn: "arn:reviewer",
+    repositoryHash: () => "hash",
+    clock: () => now,
+    lambda: {
+      send: async (command) => {
+        if (command.kind === "invoke") {
+          invokes += 1;
+          return { DurableExecutionArn: "arn:execution:1" };
+        }
+        if (command.kind === "list") {
+          return {
+            DurableExecutions: [
+              {
+                DurableExecutionName: "codecommit-hash-7-g1",
+                DurableExecutionArn: "arn:execution:1",
+              },
+            ],
+          };
+        }
+        if (command.kind === "status") return { Status: "RUNNING" };
+        throw new Error(`unexpected ${command.kind} command`);
+      },
+    },
+  });
+
+  await router.route({ ...event, id: "running-recovery-seed" });
+  await store.claimEvents(request, 1);
+  now = new Date("2026-01-01T00:00:02.000Z");
+  const result = await router.route({
+    ...event,
+    id: "running-recovery-revision",
+    type: "revision-updated",
+    occurredAt: now.toISOString(),
+    revision: "source-2",
+  });
+
+  expect(result).toMatchObject({ appended: true, started: false, generation: 1 });
+  expect(invokes).toBe(1);
+  expect(store.inspectRequest(request)?.generation).toBe(1);
+});
+
+test("dispatches CodeCommit pipeline review with the automatically recovered generation", async () => {
+  let now = new Date("2026-01-01T00:00:00.000Z");
+  let sourceRevision = "source-1";
+  const store = new InMemoryStateStore({
+    clock: () => now,
+    leaseDurationSeconds: 1,
+  });
+  const dispatchedGenerations: number[] = [];
+  const router = new EventRouter({
+    stateStore: store,
+    reviewerFunctionName: "reviewer",
+    reviewerArn: "arn:reviewer",
+    repositoryHash: () => "hash",
+    clock: () => now,
+    provider: {
+      getRequest: async () => ({
+        key: request,
+        title: "current",
+        status: "open",
+        sourceBranch: "feature",
+        destinationBranch: "main",
+        sourceRevision,
+        destinationRevision: "base",
+      }),
+    } as never,
+    pipelineDispatcher: {
+      startReviewPipeline: async ({ generation }) => {
+        dispatchedGenerations.push(generation);
+      },
+      completeTerminalRequest: async () => undefined,
+    },
+    lambda: {
+      send: async (command) => {
+        if (command.kind === "invoke") {
+          return {
+            DurableExecutionArn:
+              sourceRevision === "source-1" ? "arn:execution:1" : "arn:execution:2",
+          };
+        }
+        if (command.kind === "list") {
+          return {
+            DurableExecutions: [
+              {
+                DurableExecutionName: "codecommit-hash-7-g1",
+                DurableExecutionArn: "arn:execution:1",
+              },
+            ],
+          };
+        }
+        if (command.kind === "status") return { Status: "FAILED" };
+        throw new Error(`unexpected ${command.kind} command`);
+      },
+    },
+  });
+
+  await router.routeCodeCommit({
+    id: "pipeline-recovery-seed",
+    time: now.toISOString(),
+    source: "aws.codecommit",
+    "detail-type": "CodeCommit Pull Request State Change",
+    detail: {
+      repositoryNames: ["repo"],
+      pullRequestId: "7",
+      event: "pullRequestCreated",
+    },
+  });
+  await store.claimEvents(request, 1);
+  now = new Date("2026-01-01T00:00:02.000Z");
+  sourceRevision = "source-2";
+  const result = await router.routeCodeCommit({
+    id: "pipeline-recovery-revision",
+    time: now.toISOString(),
+    source: "aws.codecommit",
+    "detail-type": "CodeCommit Pull Request State Change",
+    detail: {
+      repositoryNames: ["repo"],
+      pullRequestId: "7",
+      event: "pullRequestSourceBranchUpdated",
+      sourceCommit: sourceRevision,
+      destinationCommit: "base",
+    },
+  });
+
+  expect(result).toMatchObject({ started: true, generation: 2 });
+  expect(dispatchedGenerations).toEqual([1, 2]);
 });
 
 test("persists FAILED on status retry exhaustion instead of treating uncertainty as absent", async () => {

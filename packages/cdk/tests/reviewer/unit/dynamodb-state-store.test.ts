@@ -246,7 +246,12 @@ describe("transactional state protocol", () => {
         remoteStatus: "FAILED",
         recoveredAt: clock.value.toISOString(),
       }),
-    ).toEqual({ recovered: false, reason: "changed" });
+    ).toEqual({
+      recovered: false,
+      reason: "changed",
+      generation: 1,
+      leaseVersion: 1,
+    });
   });
 
   it("appends before returning a callback to wake", async () => {
@@ -410,6 +415,29 @@ describe("transactional state protocol", () => {
     });
   });
 
+  it("exposes recovery eligibility only after an active lease expires, including duplicates", async () => {
+    const clock = { value: new Date(now) };
+    const store = new InMemoryStateStore({
+      clock: () => clock.value,
+      leaseDurationSeconds: 60,
+    });
+    await store.appendEvent(revisionEvent("eligibility-seed"));
+    await store.recordExecution(request, 1, "arn:execution:eligibility");
+    await store.claimEvents(request, 1);
+
+    const active = await store.appendEvent(revisionEvent("eligibility-pending"));
+    expect(active.recoveryEligible).toBeFalse();
+
+    clock.value = new Date("2026-07-18T12:02:00.000Z");
+    const expiredDuplicate = await store.appendEvent(
+      revisionEvent("eligibility-pending"),
+    );
+    expect(expiredDuplicate).toMatchObject({
+      appended: false,
+      recoveryEligible: true,
+    });
+  });
+
   it("recovers expired ownership conditionally and respects remote RUNNING", async () => {
     const clock = { value: new Date(now) };
     const store = new InMemoryStateStore({
@@ -441,7 +469,12 @@ describe("transactional state protocol", () => {
         remoteStatus: "NOT_FOUND",
         recoveredAt: clock.value.toISOString(),
       }),
-    ).toEqual({ recovered: false, reason: "changed" });
+    ).toEqual({
+      recovered: false,
+      reason: "changed",
+      generation: 1,
+      leaseVersion: 2,
+    });
 
     await store.recordExecution(request, 1, "arn:execution:1");
     await store.claimEvents(request, 1);
@@ -765,6 +798,43 @@ describe("DynamoDbStateStore", () => {
     );
     expect(JSON.stringify(transaction?.input)).toContain("1784376050");
     expect(JSON.stringify(transaction?.input)).toContain("deadlineAt");
+  });
+
+  it("returns recovery eligibility for an expired duplicate with pending work", async () => {
+    const clock = { value: new Date(now) };
+    const transport: DynamoDbDocumentTransport = {
+      send: async (command) => {
+        if (command.constructor.name !== "GetCommand") return {};
+        const key = (command as { input?: { Key?: { sk?: string } } }).input?.Key;
+        return key?.sk?.startsWith("EVENT#")
+          ? { Item: { pk: "x" } }
+          : {
+              Item: {
+                lifecycleState: "RUNNING",
+                generation: 3,
+                leaseVersion: 5,
+                leaseExpiresAt: "2026-07-18T12:01:00.000Z",
+                pendingEventCount: 1,
+              },
+            };
+      },
+    };
+    const store = new DynamoDbStateStore({
+      transport,
+      tableName: "state",
+      clock: () => clock.value,
+    });
+
+    expect(
+      (await store.appendEvent(revisionEvent("expired-duplicate"))).recoveryEligible,
+    ).toBeFalse();
+    clock.value = new Date("2026-07-18T12:02:00.000Z");
+    expect(await store.appendEvent(revisionEvent("expired-duplicate"))).toMatchObject({
+      appended: false,
+      generation: 3,
+      leaseVersion: 5,
+      recoveryEligible: true,
+    });
   });
 
   it("returns the active callback for a duplicate event in the adapter", async () => {
@@ -1653,6 +1723,60 @@ describe("DynamoDbStateStore", () => {
     expect(serialized).toContain("#cycle");
     expect(serialized).toContain("sourceRevision");
     expect(serialized).toContain("eventWatermark");
+  });
+
+  it("reloads authoritative lease ownership after a recovery conditional race", async () => {
+    let gets = 0;
+    const transport: DynamoDbDocumentTransport = {
+      send: async (command) => {
+        if (command.constructor.name === "GetCommand") {
+          gets += 1;
+          return {
+            Item:
+              gets === 1
+                ? {
+                    lifecycleState: "RUNNING",
+                    generation: 1,
+                    leaseVersion: 1,
+                    leaseExpiresAt: "2026-07-18T11:59:00.000Z",
+                    pendingEventCount: 1,
+                  }
+                : {
+                    lifecycleState: "STARTING",
+                    generation: 2,
+                    leaseVersion: 2,
+                    leaseExpiresAt: "2026-07-18T12:05:00.000Z",
+                    pendingEventCount: 1,
+                  },
+          };
+        }
+        throw {
+          name: "TransactionCanceledException",
+          CancellationReasons: [{ Code: "ConditionalCheckFailed" }],
+        };
+      },
+    };
+    const store = new DynamoDbStateStore({
+      transport,
+      tableName: "review-state",
+      clock: () => new Date(now),
+    });
+
+    expect(
+      await store.recoverLease({
+        request,
+        generation: 1,
+        leaseVersion: 1,
+        remoteStatus: "FAILED",
+        recoveredAt: now,
+      }),
+    ).toEqual({
+      recovered: false,
+      reason: "changed",
+      generation: 2,
+      leaseVersion: 2,
+    });
+    expect(gets).toBe(2);
   });
 
   it("aliases cycle in beginCycle DynamoDB expressions", async () => {

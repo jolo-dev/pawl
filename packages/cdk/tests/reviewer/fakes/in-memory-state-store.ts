@@ -84,6 +84,31 @@ function compareEvents(left: ReviewEvent, right: ReviewEvent): number {
   return instant === 0 ? left.id.localeCompare(right.id) : instant;
 }
 
+function changedRecovery(state: StoredRequest | undefined): LeaseRecoveryResult {
+  return {
+    recovered: false,
+    reason: "changed",
+    ...(state === undefined
+      ? {}
+      : { generation: state.generation, leaseVersion: state.leaseVersion }),
+  };
+}
+
+function recoveryEligible(state: StoredRequest, appendAt: string, shouldStart = false): boolean {
+  const terminal = ["COMPLETED", "TIMED_OUT", "FAILED"].includes(state.lifecycleState);
+  const hasCallback = state.callbackId !== undefined || state.callbackGeneration !== undefined;
+  const hasPendingWork = [...state.events.values()].some(
+    ({ claimedGeneration }) => claimedGeneration === undefined,
+  );
+  return (
+    !shouldStart &&
+    !terminal &&
+    !hasCallback &&
+    hasPendingWork &&
+    state.leaseExpiresAt <= appendAt
+  );
+}
+
 export interface InspectedRequestState {
   readonly partitionKey: string;
   readonly lifecycleState: ReviewLifecycleState;
@@ -139,6 +164,7 @@ export class InMemoryStateStore implements ReviewStateStore {
   }
 
   async appendEvent(event: ReviewEvent): Promise<AppendEventResult> {
+    const appendAt = this.#clock().toISOString();
     const key = requestKey(event.request);
     let state = this.#requests.get(key);
     const id = eventSortKey(event);
@@ -149,6 +175,7 @@ export class InMemoryStateStore implements ReviewStateStore {
         leaseVersion: state.leaseVersion,
         lifecycleState: state.lifecycleState,
         shouldStart: false,
+        recoveryEligible: recoveryEligible(state, appendAt),
         callback:
           state.callbackId && state.callbackGeneration !== undefined
             ? {
@@ -200,6 +227,7 @@ export class InMemoryStateStore implements ReviewStateStore {
       leaseVersion: state.leaseVersion,
       lifecycleState: state.lifecycleState,
       shouldStart,
+      recoveryEligible: recoveryEligible(state, appendAt, shouldStart),
       callback,
     };
   }
@@ -261,7 +289,7 @@ export class InMemoryStateStore implements ReviewStateStore {
       state.generation !== input.generation ||
       state.leaseVersion !== input.leaseVersion
     ) {
-      return { recovered: false, reason: "changed" };
+      return changedRecovery(state);
     }
     if (state.leaseExpiresAt > recoveredAt) {
       return { recovered: false, reason: "active" };
@@ -280,7 +308,7 @@ export class InMemoryStateStore implements ReviewStateStore {
         return { recovered: false, reason: "active" };
       }
       if (input.remoteStatus !== "NOT_FOUND") {
-        return { recovered: false, reason: "changed" };
+        return changedRecovery(state);
       }
     } else if (
       state.lifecycleState === "RUNNING" ||
@@ -289,7 +317,7 @@ export class InMemoryStateStore implements ReviewStateStore {
     ) {
       state.generation += 1;
     } else {
-      return { recovered: false, reason: "changed" };
+      return changedRecovery(state);
     }
 
     state.lifecycleState = "STARTING";

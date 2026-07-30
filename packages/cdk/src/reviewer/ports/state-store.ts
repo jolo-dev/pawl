@@ -18,6 +18,7 @@ export interface AppendEventResult {
   readonly leaseVersion: number;
   readonly lifecycleState: ReviewLifecycleState;
   readonly shouldStart: boolean;
+  readonly recoveryEligible: boolean;
   readonly callback?: CallbackWake;
 }
 
@@ -39,7 +40,13 @@ export interface LeaseRecoveryInput {
 export type LeaseRecoveryResult =
   | {
       readonly recovered: false;
-      readonly reason: "active" | "changed" | "no-pending-events";
+      readonly reason: "active" | "no-pending-events";
+    }
+  | {
+      readonly recovered: false;
+      readonly reason: "changed";
+      readonly generation?: number;
+      readonly leaseVersion?: number;
     }
   | {
       readonly recovered: true;

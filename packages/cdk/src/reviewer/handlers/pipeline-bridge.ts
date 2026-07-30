@@ -114,18 +114,23 @@ export class LambdaReconcilerKick implements PipelineReconcilerKick {
 	}
 }
 
+export const parsePipelineBridgeTimeout = (value: string | undefined): number => {
+	const timeout = Number(value ?? "15");
+	if (!Number.isInteger(timeout) || timeout < 5 || timeout > 15) {
+		throw new Error("pipeline bridge timeout must be an integer from 5 to 15");
+	}
+	return timeout;
+};
+
 const buildFromEnvironment = (): PipelineBridgeOptions => {
 	const tableName = process.env.STATE_TABLE_NAME;
 	const reconcilerFunctionName = process.env.RECONCILER_FUNCTION_NAME;
-	const timeout = Number(process.env.REVIEW_ACTION_TIMEOUT_MINUTES ?? "60");
+	const timeout = parsePipelineBridgeTimeout(
+		process.env.REVIEW_ACTION_TIMEOUT_MINUTES,
+	);
 	if (!tableName) throw new Error("pipeline bridge requires STATE_TABLE_NAME");
 	if (!reconcilerFunctionName) {
 		throw new Error("pipeline bridge requires RECONCILER_FUNCTION_NAME");
-	}
-	if (!Number.isInteger(timeout) || timeout < 5 || timeout > 1_380) {
-		throw new Error(
-			"pipeline bridge timeout must be an integer from 5 to 1380",
-		);
 	}
 	return {
 		store: new DynamoDbPipelineCoordinationStore({

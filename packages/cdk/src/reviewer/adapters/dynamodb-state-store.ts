@@ -229,8 +229,13 @@ export class DynamoDbStateStore implements ReviewStateStore {
     const pk = this.#pk(event.request);
     for (let attempt = 0; attempt < 6; attempt += 1) {
       const meta = await this.#get(pk, "META");
-      if (await this.#get(pk, this.#eventSk(event))) {
-        return this.#duplicateResult(meta, event.request);
+      const existingEvent = await this.#get(pk, this.#eventSk(event));
+      if (existingEvent) {
+        return this.#duplicateResult(
+          await this.#get(pk, "META"),
+          event.request,
+          this.#clock().toISOString(),
+        );
       }
 
       const now = this.#clock().toISOString();
@@ -306,6 +311,13 @@ export class DynamoDbStateStore implements ReviewStateStore {
           conditionExpression =
             "generation = :generation AND #state = :state AND callbackGeneration = :observedCallbackGeneration";
         }
+        const observedLeaseVersion = numberValue(meta, "leaseVersion");
+        if (observedLeaseVersion === undefined) {
+          conditionExpression += " AND attribute_not_exists(leaseVersion)";
+        } else {
+          values[":observedLeaseVersion"] = observedLeaseVersion;
+          conditionExpression += " AND leaseVersion = :observedLeaseVersion";
+        }
         transactItems.push({
           Update: {
             TableName: this.#tableName,
@@ -325,12 +337,20 @@ export class DynamoDbStateStore implements ReviewStateStore {
         await this.#send(new TransactWriteCommand({ TransactItems: transactItems }));
         const callbackId = meta && stringValue(meta, "callbackId");
         const callbackGeneration = meta && numberValue(meta, "callbackGeneration");
+        const leaseExpiresAt = meta && stringValue(meta, "leaseExpiresAt");
         return {
           appended: true,
           generation,
           leaseVersion,
           lifecycleState,
           shouldStart,
+          recoveryEligible:
+            !shouldStart &&
+            callbackId === undefined &&
+            callbackGeneration === undefined &&
+            !TERMINAL_STATES.has(lifecycleState) &&
+            leaseExpiresAt !== undefined &&
+            leaseExpiresAt <= now,
           callback:
             !shouldStart && callbackId && callbackGeneration !== undefined
               ? {
@@ -477,7 +497,7 @@ export class DynamoDbStateStore implements ReviewStateStore {
       numberValue(meta, "generation") !== input.generation ||
       numberValue(meta, "leaseVersion") !== input.leaseVersion
     ) {
-      return { recovered: false, reason: "changed" };
+      return this.#changedRecoveryResult(meta);
     }
     if ((stringValue(meta, "leaseExpiresAt") ?? "") > recoveredAt) {
       return { recovered: false, reason: "active" };
@@ -496,7 +516,7 @@ export class DynamoDbStateStore implements ReviewStateStore {
         (stringValue(meta, "executionArn") !== undefined || input.remoteStatus !== "NOT_FOUND")) ||
       (!isStarting && state !== "RUNNING" && state !== "WAITING" && state !== "BLOCKED_LIMIT")
     ) {
-      return { recovered: false, reason: "changed" };
+      return this.#changedRecoveryResult(meta);
     }
     const nextGeneration = isStarting ? input.generation : input.generation + 1;
     const generationReset = isStarting
@@ -542,7 +562,7 @@ export class DynamoDbStateStore implements ReviewStateStore {
       };
     } catch (error) {
       if (isConditionalFailure(error)) {
-        return { recovered: false, reason: "changed" };
+        return this.#changedRecoveryResult(await this.#get(pk, "META"));
       }
       throw error;
     }
@@ -1100,17 +1120,40 @@ export class DynamoDbStateStore implements ReviewStateStore {
     return (await this.#transport.send(command)) as T;
   }
 
-  #duplicateResult(meta: Item | undefined, request: RequestKey): AppendEventResult {
+  #changedRecoveryResult(meta: Item | undefined): LeaseRecoveryResult {
+    const generation = meta && numberValue(meta, "generation");
+    const leaseVersion = meta && numberValue(meta, "leaseVersion");
+    return {
+      recovered: false,
+      reason: "changed",
+      ...(generation === undefined ? {} : { generation }),
+      ...(leaseVersion === undefined ? {} : { leaseVersion }),
+    };
+  }
+
+  #duplicateResult(
+    meta: Item | undefined,
+    request: RequestKey,
+    appendAt: string,
+  ): AppendEventResult {
     if (!meta) throw new Error("event exists without request metadata");
     const callbackGeneration = numberValue(meta, "callbackGeneration");
     const callbackId = stringValue(meta, "callbackId");
     const generation = numberValue(meta, "generation") ?? 0;
+    const leaseExpiresAt = stringValue(meta, "leaseExpiresAt");
     return {
       appended: false,
       generation,
       leaseVersion: numberValue(meta, "leaseVersion") ?? 0,
       lifecycleState: lifecycleValue(meta),
       shouldStart: false,
+      recoveryEligible:
+        !TERMINAL_STATES.has(lifecycleValue(meta)) &&
+        callbackId === undefined &&
+        callbackGeneration === undefined &&
+        (numberValue(meta, "pendingEventCount") ?? 0) > 0 &&
+        leaseExpiresAt !== undefined &&
+        leaseExpiresAt <= appendAt,
       callback:
         callbackId && callbackGeneration !== undefined
           ? {

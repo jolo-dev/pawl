@@ -8,7 +8,6 @@ import type {
 	FailureOwnership,
 	LeaseRecoveryInput,
 	RemoteExecutionStatus,
-	ReviewLifecycleState,
 	ReviewStateStore,
 } from "../ports/state-store";
 import {
@@ -63,6 +62,14 @@ export function durableExecutionName(
 	generation: number,
 ): string {
 	return `${provider}-${repositoryHash}-${request}-g${generation}`;
+}
+function isRetryExhaustedFailure(error: unknown): boolean {
+	const record = asRecord(error);
+	return (
+		record?.type === "operational-failure" &&
+		record.lifecycleState === "FAILED" &&
+		record.reason === "retry-exhausted"
+	);
 }
 function isDuplicateExecution(error: unknown): boolean {
 	return asRecord(error)?.name === "DurableExecutionAlreadyStartedException";
@@ -146,14 +153,6 @@ function remoteStatus(value: unknown): RemoteExecutionStatus | undefined {
 				: "FAILED";
 	return undefined;
 }
-function isNonterminal(lifecycleState: ReviewLifecycleState): boolean {
-	return (
-		lifecycleState === "STARTING" ||
-		lifecycleState === "RUNNING" ||
-		lifecycleState === "WAITING" ||
-		lifecycleState === "BLOCKED_LIMIT"
-	);
-}
 function callbackPayload(wake: CallbackWake): Uint8Array {
 	return new TextEncoder().encode(
 		JSON.stringify({
@@ -207,10 +206,7 @@ export class EventRouter {
 		try {
 			if (appended.callback !== undefined) await this.#wake(appended.callback);
 			if (!appended.shouldStart) {
-				if (
-					appended.callback === undefined &&
-					isNonterminal(appended.lifecycleState)
-				) {
+				if (appended.recoveryEligible) {
 					const recovered = await this.recover({
 						request: event.request,
 						generation: appended.generation,
@@ -345,23 +341,34 @@ export class EventRouter {
 					? "NOT_FOUND"
 					: await this.#executionStatus(executionArn);
 		} catch (error) {
-			await this.#completeFailed(
-				input.request,
-				input.generation,
-				error,
-				"status",
-				{
-					kind: "lease",
-					leaseVersion: input.leaseVersion,
-				},
-			);
+			if (!isRetryExhaustedFailure(error)) {
+				await this.#completeFailed(
+					input.request,
+					input.generation,
+					error,
+					"status",
+					{
+						kind: "lease",
+						leaseVersion: input.leaseVersion,
+					},
+				);
+			}
 			return undefined;
 		}
 		const recovery = await this.#store.recoverLease({
 			...leaseRecovery,
 			remoteStatus: remote,
 		});
-		if (!recovery.recovered || !recovery.shouldStart) return undefined;
+		if (!recovery.recovered) {
+			return recovery.reason === "changed" && recovery.generation !== undefined
+				? {
+						appended: false,
+						started: false,
+						generation: recovery.generation,
+					}
+				: undefined;
+		}
+		if (!recovery.shouldStart) return undefined;
 		let started: string | undefined;
 		try {
 			started = await this.#start(

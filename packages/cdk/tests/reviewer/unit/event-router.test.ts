@@ -1,4 +1,8 @@
 import { expect, test } from "bun:test";
+import type {
+  LeaseRecoveryInput,
+  LeaseRecoveryResult,
+} from "../../../src/reviewer/ports/state-store";
 import { durableExecutionName, EventRouter } from "../../../src/reviewer/router/event-router";
 import { RetryPolicy } from "../../../src/reviewer/services/retry-policy";
 import { InMemoryStateStore } from "../fakes/in-memory-state-store";
@@ -16,6 +20,19 @@ const event = {
 };
 function commandInput(command: unknown): Record<string, unknown> {
   return (command as { input: Record<string, unknown> }).input;
+}
+
+class ConditionalRecoveryLoserStore extends InMemoryStateStore {
+  #raceInjected = false;
+
+  override async recoverLease(input: LeaseRecoveryInput): Promise<LeaseRecoveryResult> {
+    if (!this.#raceInjected) {
+      this.#raceInjected = true;
+      const winner = await super.recoverLease(input);
+      if (!winner.recovered) throw new Error("expected competing recovery to win");
+    }
+    return super.recoverLease(input);
+  }
 }
 
 test("appends before invoking a named durable execution and records its ARN", async () => {
@@ -391,6 +408,48 @@ test("automatically recovers an expired lease when the remote execution failed",
   });
 });
 
+test("does not look up remote status for pending work on an unexpired RUNNING lease", async () => {
+  let now = new Date("2026-01-01T00:00:00.000Z");
+  const store = new InMemoryStateStore({
+    clock: () => now,
+    leaseDurationSeconds: 60,
+  });
+  const calls: string[] = [];
+  const router = new EventRouter({
+    stateStore: store,
+    provider: {} as never,
+    reviewerFunctionName: "reviewer",
+    reviewerArn: "arn:reviewer",
+    clock: () => now,
+    lambda: {
+      send: async (command) => {
+        calls.push(command.kind);
+        if (command.kind === "invoke") {
+          return { DurableExecutionArn: "arn:execution:active" };
+        }
+        throw Object.assign(new Error("transient remote lookup failure"), {
+          name: "ThrottlingException",
+        });
+      },
+    },
+  });
+
+  await router.route({ ...event, id: "active-recovery-seed" });
+  await store.claimEvents(request, 1);
+  now = new Date("2026-01-01T00:00:30.000Z");
+  const result = await router.route({
+    ...event,
+    id: "active-recovery-pending",
+    type: "revision-updated",
+    occurredAt: now.toISOString(),
+    revision: "source-active",
+  });
+
+  expect(result).toMatchObject({ started: false, generation: 1 });
+  expect(calls).toEqual(["invoke"]);
+  expect(store.inspectRequest(request)?.lifecycleState).toBe("RUNNING");
+});
+
 test("does not replace an expired lease while the remote execution is running", async () => {
   let now = new Date("2026-01-01T00:00:00.000Z");
   const store = new InMemoryStateStore({
@@ -443,10 +502,63 @@ test("does not replace an expired lease while the remote execution is running", 
   expect(store.inspectRequest(request)?.generation).toBe(1);
 });
 
-test("dispatches CodeCommit pipeline review with the automatically recovered generation", async () => {
+test("concurrent recovery loser returns the winning authoritative generation", async () => {
+  let now = new Date("2026-01-01T00:00:00.000Z");
+  const store = new InMemoryStateStore({
+    clock: () => now,
+    leaseDurationSeconds: 1,
+  });
+  await store.appendEvent({ ...event, id: "concurrent-seed" });
+  await store.recordExecution(request, 1, "arn:execution:1");
+  await store.claimEvents(request, 1);
+  await store.appendEvent({
+    ...event,
+    id: "concurrent-pending",
+    type: "revision-updated",
+    revision: "source-2",
+  });
+  now = new Date("2026-01-01T00:00:02.000Z");
+  let starts = 0;
+  const router = new EventRouter({
+    stateStore: store,
+    provider: {} as never,
+    reviewerFunctionName: "reviewer",
+    reviewerArn: "arn:reviewer",
+    lambda: {
+      send: async (command) => {
+        if (command.kind === "status") return { Status: "FAILED" };
+        if (command.kind === "invoke") {
+          starts += 1;
+          return { DurableExecutionArn: "arn:execution:2" };
+        }
+        throw new Error(`unexpected ${command.kind} command`);
+      },
+    },
+  });
+  const input = {
+    request,
+    generation: 1,
+    leaseVersion: 1,
+    executionArn: "arn:execution:1",
+    recoveredAt: now.toISOString(),
+  } as const;
+
+  const results = await Promise.all([router.recover(input), router.recover(input)]);
+
+  expect(results).toContainEqual({
+    appended: false,
+    started: true,
+    generation: 2,
+    durableExecutionArn: "arn:execution:2",
+  });
+  expect(results).toContainEqual({ appended: false, started: false, generation: 2 });
+  expect(starts).toBe(1);
+});
+
+test("dispatches CodeCommit pipeline review with the winning concurrent recovery generation", async () => {
   let now = new Date("2026-01-01T00:00:00.000Z");
   let sourceRevision = "source-1";
-  const store = new InMemoryStateStore({
+  const store = new ConditionalRecoveryLoserStore({
     clock: () => now,
     leaseDurationSeconds: 1,
   });
@@ -526,11 +638,11 @@ test("dispatches CodeCommit pipeline review with the automatically recovered gen
     },
   });
 
-  expect(result).toMatchObject({ started: true, generation: 2 });
+  expect(result).toMatchObject({ started: false, generation: 2 });
   expect(dispatchedGenerations).toEqual([1, 2]);
 });
 
-test("persists FAILED on status retry exhaustion instead of treating uncertainty as absent", async () => {
+test("leaves expired recovery state unchanged when status lookup is unavailable", async () => {
   let now = new Date("2026-01-01T00:00:00.000Z");
   const store = new InMemoryStateStore({
     clock: () => now,
@@ -566,7 +678,10 @@ test("persists FAILED on status retry exhaustion instead of treating uncertainty
     executionArn: "arn:execution",
     recoveredAt: now.toISOString(),
   });
-  expect(store.inspectRequest(request)?.lifecycleState).toBe("FAILED");
+  expect(store.inspectRequest(request)).toMatchObject({
+    lifecycleState: "RUNNING",
+    generation: 1,
+  });
 });
 
 test("refetches CodeCommit request before appending and starting", async () => {

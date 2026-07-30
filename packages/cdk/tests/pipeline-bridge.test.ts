@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
 	buildPipelineBridge,
 	type PipelineReconcilerKick,
+	parsePipelineBridgeTimeout,
 } from "../src/reviewer/handlers/pipeline-bridge";
 import { FakePipelineCoordinationStore } from "./pipeline-coordination-fakes";
 
@@ -43,6 +44,13 @@ class RecordingKick implements PipelineReconcilerKick {
 }
 
 describe("pipeline review bridge", () => {
+	test("defaults runtime timeout to 15 minutes and rejects unsafe values", () => {
+		expect(parsePipelineBridgeTimeout(undefined)).toBe(15);
+		expect(parsePipelineBridgeTimeout("15")).toBe(15);
+		expect(() => parsePipelineBridgeTimeout("16")).toThrow();
+		expect(() => parsePipelineBridgeTimeout("60")).toThrow();
+	});
+
 	test("registers sanitized job metadata and kicks reconciliation", async () => {
 		const store = new FakePipelineCoordinationStore();
 		const kick = new RecordingKick();

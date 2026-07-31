@@ -10,7 +10,7 @@
 
 ## Completion status (verified 2026-07-31)
 
-- **52 of 52 plan steps complete.** The expanded focused bridge suite passes 132 tests, the broader reviewer/Lambda/CodePipeline suite passes 309 tests, and the scoped Biome gate reports no issues.
+- **52 of 52 plan steps complete.** The expanded focused bridge suite passes 142 tests, the broader reviewer/Lambda/CodePipeline suite passes 310 tests, and the scoped Biome gate reports no issues.
 - `@pawl/lambda` and `@pawl/cdk` builds pass.
 - The CodePipeline integration suite runs against LocalStack through `@testcontainers/localstack`; 10 integration tests pass with the authentication token loaded from AWS SSM Parameter Store and injected only into the container.
 - Real-AWS exact-revision validation was performed. The bridge recovered generation 1 to generation 2, started exactly one pipeline execution/job, and completed `AIReview` with the documented terminal `TimedOut` result after the durable reviewer failed to record an outcome.

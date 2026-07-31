@@ -19,6 +19,18 @@ import type {
 	ReviewEngine,
 	ReviewEngineResult,
 } from "../services/review-engine";
+import {
+	createSanitizedReviewerCallbackFailure,
+	isReviewerWorkflowFailureMetadata,
+	ReviewerWorkflowFailure,
+	type ReviewerWorkflowFailureMetadata,
+	runSanitizedReviewerStep,
+} from "./sanitized-reviewer-step";
+
+export {
+	ReviewerWorkflowFailure,
+	type ReviewerWorkflowFailureMetadata,
+} from "./sanitized-reviewer-step";
 
 /** Structural logger the workflow needs (Powertools Logger satisfies this). */
 export interface ReviewerLogger {
@@ -32,35 +44,6 @@ export interface ReviewerEvent {
 	readonly leaseVersion: number;
 	readonly reviewerArn: string;
 	readonly snapshot?: ReviewRequest;
-}
-
-export interface ReviewerWorkflowFailureMetadata {
-	readonly request: RequestKey;
-	readonly generation: number;
-	readonly sourceRevision: string;
-	readonly cycle: number;
-}
-
-/**
- * Internal transport from the workflow to its handler boundary. Only current
- * review identity is enumerable; the exact thrown value remains in a private
- * field and is exposed solely for identity-preserving rethrow by the handler.
- */
-export class ReviewerWorkflowFailure {
-	readonly metadata: ReviewerWorkflowFailureMetadata;
-	readonly #originalFailure: unknown;
-
-	constructor(
-		metadata: ReviewerWorkflowFailureMetadata,
-		originalFailure: unknown,
-	) {
-		this.metadata = Object.freeze({ ...metadata });
-		this.#originalFailure = originalFailure;
-	}
-
-	unwrap(): unknown {
-		return this.#originalFailure;
-	}
 }
 
 export interface ReviewerWorkflowDeps {
@@ -112,63 +95,93 @@ export class ReviewerWorkflow {
 			//    comments and new pushes are seen). `context.step` caches by
 			//    operation index, so a genuine new iteration re-executes while a
 			//    replay returns the cached result.
-			const ctx = await context.step("load-snapshot", async () => {
-				const reviewRequest = await this.#deps.provider.getRequest(request);
-				const startedAt = this.#deps.clock().toISOString();
-				const snapshot: ReviewCycleSnapshot = {
-					request,
-					generation,
-					cycle,
-					sourceRevision: reviewRequest.sourceRevision,
-					destinationRevision: reviewRequest.destinationRevision,
-					configVersion: 1,
-					eventWatermark:
-						event.snapshot?.sourceRevision ?? reviewRequest.sourceRevision,
-					startedAt,
-				};
-				const [changedFiles, comments, existingFindings, repositoryConfig] =
-					await Promise.all([
-						this.#deps.provider.getDiff(request, {
-							sourceRevision: reviewRequest.sourceRevision,
-							destinationRevision: reviewRequest.destinationRevision,
-						}),
-						this.#deps.provider.listComments(request),
-						this.#deps.store.listFindings(request),
-						this.#deps.configLoader.load(
-							request,
-							reviewRequest.destinationRevision,
-						),
-					]);
-				// Build the ordered conversation history (human comments + reviewer
-				// replies) so follow-up questions can be answered with context. Inline
-				// finding comments are excluded (they're summarised in `findings`).
-				const conversation = buildConversation(
-					comments,
-					this.#deps.reviewerDisplayName,
-				);
-				const humanComments = comments;
-				return {
-					snapshot,
-					reviewRequest,
-					changedFiles,
-					humanComments,
-					conversation,
-					existingFindings,
-					repositoryConfig,
-				};
-			});
+			let loadFailureMetadata: ReviewerWorkflowFailureMetadata | undefined;
+			const loaded = await runSanitizedReviewerStep(
+				context,
+				"load-snapshot",
+				async () => {
+					const reviewRequest = await this.#deps.provider.getRequest(request);
+					loadFailureMetadata = {
+						request,
+						generation,
+						sourceRevision: reviewRequest.sourceRevision,
+						cycle,
+					};
+					const startedAt = this.#deps.clock().toISOString();
+					const snapshot: ReviewCycleSnapshot = {
+						request,
+						generation,
+						cycle,
+						sourceRevision: reviewRequest.sourceRevision,
+						destinationRevision: reviewRequest.destinationRevision,
+						configVersion: 1,
+						eventWatermark:
+							event.snapshot?.sourceRevision ?? reviewRequest.sourceRevision,
+						startedAt,
+					};
+					const [changedFiles, comments, existingFindings, repositoryConfig] =
+						await Promise.all([
+							this.#deps.provider.getDiff(request, {
+								sourceRevision: reviewRequest.sourceRevision,
+								destinationRevision: reviewRequest.destinationRevision,
+							}),
+							this.#deps.provider.listComments(request),
+							this.#deps.store.listFindings(request),
+							this.#deps.configLoader.load(
+								request,
+								reviewRequest.destinationRevision,
+							),
+						]);
+					// Build the ordered conversation history (human comments + reviewer
+					// replies) so follow-up questions can be answered with context. Inline
+					// finding comments are excluded (they're summarised in `findings`).
+					const conversation = buildConversation(
+						comments,
+						this.#deps.reviewerDisplayName,
+					);
+					const humanComments = comments;
+					return {
+						snapshot,
+						reviewRequest,
+						changedFiles,
+						humanComments,
+						conversation,
+						existingFindings,
+						repositoryConfig,
+					};
+				},
+				() => loadFailureMetadata,
+			);
+			// Commit 63d6f2c briefly persisted load failures as this exact raw
+			// metadata shape. Accept it only at this load boundary so those failed
+			// checkpoints replay without changing any successful result shape.
+			if (isReviewerWorkflowFailureMetadata(loaded)) {
+				throw new ReviewerWorkflowFailure(loaded);
+			}
+			const ctx = loaded;
+			loadFailureMetadata = {
+				request: ctx.snapshot.request,
+				generation: ctx.snapshot.generation,
+				sourceRevision: ctx.snapshot.sourceRevision,
+				cycle: ctx.snapshot.cycle,
+			};
 
 			try {
 				// Termination: a merged/closed PR ends the execution without re-reviewing.
 				const requestStatus = ctx.reviewRequest.status;
 				if (requestStatus !== "open") {
-					await context.step("record-terminal-request", async () => {
-						await this.#deps.cycleObserver?.recordTerminalRequest({
-							request,
-							generation,
-							status: requestStatus,
-						});
-					});
+					await runSanitizedReviewerStep(
+						context,
+						"record-terminal-request",
+						async () => {
+							await this.#deps.cycleObserver?.recordTerminalRequest({
+								request,
+								generation,
+								status: requestStatus,
+							});
+						},
+						loadFailureMetadata,
+					);
 					logger.info("reviewer terminating: request not open", {
 						request,
 						generation,
@@ -177,8 +190,11 @@ export class ReviewerWorkflow {
 					return;
 				}
 
-				await context.step("begin-cycle", () =>
-					this.#deps.store.beginCycle(ctx.snapshot),
+				await runSanitizedReviewerStep(
+					context,
+					"begin-cycle",
+					() => this.#deps.store.beginCycle(ctx.snapshot),
+					loadFailureMetadata,
 				);
 				logger.info("reviewer cycle began", {
 					request,
@@ -188,8 +204,11 @@ export class ReviewerWorkflow {
 				});
 
 				// 2. Claim pending events for this generation.
-				const claimed = await context.step("claim-events", () =>
-					this.#deps.store.claimEvents(request, generation),
+				const claimed = await runSanitizedReviewerStep(
+					context,
+					"claim-events",
+					() => this.#deps.store.claimEvents(request, generation),
+					loadFailureMetadata,
 				);
 				logger.info("claimed events", { count: claimed.events.length });
 
@@ -209,150 +228,165 @@ export class ReviewerWorkflow {
 						)
 						.map((event) => event.commentId);
 					const triggerCommentId = triggerCommentIds.at(-1);
-					const statusComment = await context.step("signal-start", async () => {
-						for (const commentId of triggerCommentIds) {
-							try {
-								await this.#deps.provider.reactToComment(
-									request,
-									commentId,
-									"👀",
-								);
-							} catch {
-								logger.info("failed to set 👀 reaction", { commentId });
-							}
-						}
-						if (triggerCommentId === undefined) {
-							return this.#deps.provider.postStatusComment(
-								request,
-								"👀 Reviewing…",
-								`status-${request.provider}-${request.repository}-${request.requestId}-g${generation}-c${ctx.snapshot.cycle}`,
-								{
-									sourceRevision: ctx.snapshot.sourceRevision,
-									destinationRevision: ctx.snapshot.destinationRevision,
-								},
-							);
-						}
-						return undefined;
-					});
-					const reviewExecution = await context.step("run-review", async () => {
-						const runResult = await this.#deps.checkRunner.run({
-							request,
-							snapshot: ctx.snapshot,
-							checks: ctx.repositoryConfig.checks,
-							installCommand: ctx.repositoryConfig.install?.command,
-						});
-						const checks =
-							runResult.status === "completed" ? runResult.checks : [];
-						const reviewInput = {
-							snapshot: ctx.snapshot,
-							changedFiles: ctx.changedFiles,
-							checks,
-							repositoryConfig: ctx.repositoryConfig,
-							humanComments: ctx.humanComments,
-							existingFindings: ctx.existingFindings,
-						};
-						const result = await this.#deps.reviewEngine.review(reviewInput);
-						if (result.status === "reviewed") {
-							await this.#deps.reconciler.apply({
-								request,
-								generation,
-								candidates: [...result.accepted, ...result.dismissals],
-								snapshot: ctx.snapshot,
-								existingFindings: ctx.existingFindings,
-								changedFiles: ctx.changedFiles,
-							});
-						}
-						// Post the completion feedback.
-						if (triggerCommentId !== undefined) {
-							// Human-comment trigger: generate a conversational reply that
-							// answers the comment (using the diff + findings as context), post
-							// it as a threaded reply, and swap the 👀 reaction → ✅.
-							const accepted =
-								result.status === "reviewed" ? result.accepted : [];
-							const { reply } = await this.#deps.reviewEngine.respond(
-								{
-									snapshot: ctx.snapshot,
-									changedFiles: ctx.changedFiles,
-									checks,
-									humanComments: ctx.humanComments,
-									conversation: ctx.conversation,
-								},
-								accepted,
-								result.status === "reviewed"
-									? result.usage
-									: { inputTokens: 0, outputTokens: 0 },
-							);
-							const signed = `${reply}\n\n---\n🤖 AI generated review by ${this.#deps.reviewerDisplayName}`;
-							await this.#deps.provider.replyToComment(
-								request,
-								triggerCommentId,
-								signed,
-								`reply-${request.provider}-${request.repository}-${request.requestId}-g${generation}-c${ctx.snapshot.cycle}`,
-							);
-							// Swap the 👀 reaction for 👍 when done. CodeCommit only supports a
-							// tiny set of reaction emojis (👍 👎 😄 😕 ❤️ 😠 😢 👀) — no ✅ — so
-							// 👍 (thumbsup) is the "review finished / looks good" signal.
-							// Best-effort: a reaction failure must not fail the review.
+					const statusComment = await runSanitizedReviewerStep(
+						context,
+						"signal-start",
+						async () => {
 							for (const commentId of triggerCommentIds) {
 								try {
 									await this.#deps.provider.reactToComment(
 										request,
 										commentId,
-										"👍",
+										"👀",
 									);
 								} catch {
-									logger.info("failed to swap 👀→👍 reaction", { commentId });
+									logger.info("failed to set 👀 reaction", { commentId });
 								}
 							}
-						} else if (statusComment !== undefined) {
-							// Push/open trigger: append a ✅ summary to the 👀 status comment.
-							const findingCount =
-								result.status === "reviewed"
-									? result.accepted.length + result.dismissals.length
-									: 0;
-							const summary =
-								result.status === "reviewed"
-									? findingCount > 0
-										? `✅ Reviewed — ${findingCount} finding${findingCount === 1 ? "" : "s"}.`
-										: "✅ Reviewed — no new findings."
-									: result.status === "blocked"
-										? `⏸️ Review paused (${result.blockedLimit}).`
-										: "✅ Reviewed.";
-							await this.#deps.provider.appendStatusUpdate(
+							if (triggerCommentId === undefined) {
+								return this.#deps.provider.postStatusComment(
+									request,
+									"👀 Reviewing…",
+									`status-${request.provider}-${request.repository}-${request.requestId}-g${generation}-c${ctx.snapshot.cycle}`,
+									{
+										sourceRevision: ctx.snapshot.sourceRevision,
+										destinationRevision: ctx.snapshot.destinationRevision,
+									},
+								);
+							}
+							return undefined;
+						},
+						loadFailureMetadata,
+					);
+					const reviewExecution = await runSanitizedReviewerStep(
+						context,
+						"run-review",
+						async () => {
+							const runResult = await this.#deps.checkRunner.run({
 								request,
-								statusComment,
-								summary,
-								{
-									sourceRevision: ctx.snapshot.sourceRevision,
-									destinationRevision: ctx.snapshot.destinationRevision,
-								},
-							);
-						}
-						return {
-							result,
-							checkStatus:
-								runResult.status === "completed"
-									? ("completed" as const)
-									: ("failed" as const),
-						};
-					});
+								snapshot: ctx.snapshot,
+								checks: ctx.repositoryConfig.checks,
+								installCommand: ctx.repositoryConfig.install?.command,
+							});
+							const checks =
+								runResult.status === "completed" ? runResult.checks : [];
+							const reviewInput = {
+								snapshot: ctx.snapshot,
+								changedFiles: ctx.changedFiles,
+								checks,
+								repositoryConfig: ctx.repositoryConfig,
+								humanComments: ctx.humanComments,
+								existingFindings: ctx.existingFindings,
+							};
+							const result = await this.#deps.reviewEngine.review(reviewInput);
+							if (result.status === "reviewed") {
+								await this.#deps.reconciler.apply({
+									request,
+									generation,
+									candidates: [...result.accepted, ...result.dismissals],
+									snapshot: ctx.snapshot,
+									existingFindings: ctx.existingFindings,
+									changedFiles: ctx.changedFiles,
+								});
+							}
+							// Post the completion feedback.
+							if (triggerCommentId !== undefined) {
+								// Human-comment trigger: generate a conversational reply that
+								// answers the comment (using the diff + findings as context), post
+								// it as a threaded reply, and swap the 👀 reaction → ✅.
+								const accepted =
+									result.status === "reviewed" ? result.accepted : [];
+								const { reply } = await this.#deps.reviewEngine.respond(
+									{
+										snapshot: ctx.snapshot,
+										changedFiles: ctx.changedFiles,
+										checks,
+										humanComments: ctx.humanComments,
+										conversation: ctx.conversation,
+									},
+									accepted,
+									result.status === "reviewed"
+										? result.usage
+										: { inputTokens: 0, outputTokens: 0 },
+								);
+								const signed = `${reply}\n\n---\n🤖 AI generated review by ${this.#deps.reviewerDisplayName}`;
+								await this.#deps.provider.replyToComment(
+									request,
+									triggerCommentId,
+									signed,
+									`reply-${request.provider}-${request.repository}-${request.requestId}-g${generation}-c${ctx.snapshot.cycle}`,
+								);
+								// Swap the 👀 reaction for 👍 when done. CodeCommit only supports a
+								// tiny set of reaction emojis (👍 👎 😄 😕 ❤️ 😠 😢 👀) — no ✅ — so
+								// 👍 (thumbsup) is the "review finished / looks good" signal.
+								// Best-effort: a reaction failure must not fail the review.
+								for (const commentId of triggerCommentIds) {
+									try {
+										await this.#deps.provider.reactToComment(
+											request,
+											commentId,
+											"👍",
+										);
+									} catch {
+										logger.info("failed to swap 👀→👍 reaction", { commentId });
+									}
+								}
+							} else if (statusComment !== undefined) {
+								// Push/open trigger: append a ✅ summary to the 👀 status comment.
+								const findingCount =
+									result.status === "reviewed"
+										? result.accepted.length + result.dismissals.length
+										: 0;
+								const summary =
+									result.status === "reviewed"
+										? findingCount > 0
+											? `✅ Reviewed — ${findingCount} finding${findingCount === 1 ? "" : "s"}.`
+											: "✅ Reviewed — no new findings."
+										: result.status === "blocked"
+											? `⏸️ Review paused (${result.blockedLimit}).`
+											: "✅ Reviewed.";
+								await this.#deps.provider.appendStatusUpdate(
+									request,
+									statusComment,
+									summary,
+									{
+										sourceRevision: ctx.snapshot.sourceRevision,
+										destinationRevision: ctx.snapshot.destinationRevision,
+									},
+								);
+							}
+							return {
+								result,
+								checkStatus:
+									runResult.status === "completed"
+										? ("completed" as const)
+										: ("failed" as const),
+							};
+						},
+						loadFailureMetadata,
+					);
 					const completedReview = reviewExecution.result;
 					reviewResult = completedReview;
 					const checkStatus =
 						completedReview.status === "blocked"
 							? "blocked"
 							: reviewExecution.checkStatus;
-					await context.step("record-cycle-outcome", async () => {
-						await this.#deps.cycleObserver?.recordCycle({
-							request,
-							generation,
-							sourceRevision: ctx.snapshot.sourceRevision,
-							cycle: ctx.snapshot.cycle,
-							reviewStatus: completedReview.status,
-							checkStatus,
-							occurredAt: this.#deps.clock().toISOString(),
-						});
-					});
+					await runSanitizedReviewerStep(
+						context,
+						"record-cycle-outcome",
+						async () => {
+							await this.#deps.cycleObserver?.recordCycle({
+								request,
+								generation,
+								sourceRevision: ctx.snapshot.sourceRevision,
+								cycle: ctx.snapshot.cycle,
+								reviewStatus: completedReview.status,
+								checkStatus,
+								occurredAt: this.#deps.clock().toISOString(),
+							});
+						},
+						loadFailureMetadata,
+					);
 					logger.info("review completed", { status: completedReview.status });
 				}
 
@@ -368,46 +402,47 @@ export class ReviewerWorkflow {
 				await context.waitForCallback(
 					"wait-for-next-event",
 					async (callbackId) => {
-						const registration =
-							blockedLimit === undefined
-								? {
-										request,
-										generation,
-										callbackGeneration: generation,
-										callbackId,
-										registeredAt: this.#deps.clock().toISOString(),
-										leaseVersion,
-										lifecycleState: "WAITING" as const,
-									}
-								: {
-										request,
-										generation,
-										callbackGeneration: generation,
-										callbackId,
-										registeredAt: this.#deps.clock().toISOString(),
-										leaseVersion,
-										lifecycleState: "BLOCKED_LIMIT" as const,
-										blockedLimit,
-									};
-						await this.#deps.store.registerCallback(registration);
-						logger.info("registered callback", {
-							callbackId,
-							generation,
-							lifecycleState: registration.lifecycleState,
-						});
+						try {
+							const registration =
+								blockedLimit === undefined
+									? {
+											request,
+											generation,
+											callbackGeneration: generation,
+											callbackId,
+											registeredAt: this.#deps.clock().toISOString(),
+											leaseVersion,
+											lifecycleState: "WAITING" as const,
+										}
+									: {
+											request,
+											generation,
+											callbackGeneration: generation,
+											callbackId,
+											registeredAt: this.#deps.clock().toISOString(),
+											leaseVersion,
+											lifecycleState: "BLOCKED_LIMIT" as const,
+											blockedLimit,
+										};
+							await this.#deps.store.registerCallback(registration);
+							logger.info("registered callback", {
+								callbackId,
+								generation,
+								lifecycleState: registration.lifecycleState,
+							});
+						} catch (_error: unknown) {
+							throw createSanitizedReviewerCallbackFailure();
+						}
 					},
 				);
 				// On resume (router signalled a new event), loop to re-claim + re-review.
-			} catch (error) {
-				throw new ReviewerWorkflowFailure(
-					{
-						request,
-						generation,
-						sourceRevision: ctx.snapshot.sourceRevision,
-						cycle: ctx.snapshot.cycle,
-					},
-					error,
-				);
+			} catch {
+				throw new ReviewerWorkflowFailure({
+					request,
+					generation,
+					sourceRevision: ctx.snapshot.sourceRevision,
+					cycle: ctx.snapshot.cycle,
+				});
 			}
 		}
 	}

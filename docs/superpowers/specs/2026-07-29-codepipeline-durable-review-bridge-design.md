@@ -179,7 +179,7 @@ Outcome policy:
 
 The first gating outcome for a request generation and source revision is immutable. Later human-comment cycles on the same revision do not change an already completed pipeline action. Reopening the same commit creates a new generation and cannot consume an old outcome.
 
-The deployed reviewer handler catches terminal workflow errors, records a sanitized failure outcome for the matching request/generation/revision when known, invokes the reconciler, and rethrows so the durable execution still reflects failure.
+Every reviewer workflow and handler `context.step` callback catches `unknown` before it can become a durable step error. A failed callback returns one strict reserved result marker containing either no attribution or only authoritative request/generation/source-revision/cycle metadata. Marker detection and control-flow throwing happen after the step resolves. Successful step result shapes remain unchanged for replay. The load boundary also recognizes the exact legacy metadata-only failure result emitted briefly before the reserved marker, without broad shape matching, and restores authoritative failure metadata from every cached successful snapshot before downstream work. A `getRequest` failure remains unattributed and never falls back to the event snapshot; failures after provider context is known carry the authoritative identity. The `waitForCallback` submitter separately catches every registration or logging failure and throws only a fresh fixed internal error, because the submitter is itself durable rather than a `context.step` callback. The deployed handler records the exact current failed outcome when available. Failure-outcome observer errors use the same marker boundary and may produce only a fixed metadata diagnostic outside the step. All paths finish with a fresh fixed terminal error without a cause, while original errors, messages, stacks, and custom fields are discarded inside their durable callbacks.
 
 ### 6. DynamoDB coordination model
 
@@ -361,7 +361,7 @@ The revised static-rule design does not require the separately approved `@aws-sd
 - DynamoDB conditional conflict: reload state and reconcile idempotently.
 - CodePipeline callback throttling or transient failure: preserve intent, allow the completion lease to expire, and retry with bounded exponential backoff.
 - Expired or already-completed CodePipeline job: mark local state terminal with the stored intent and stop retrying.
-- Reviewer exception: record failure outcome, invoke reconciler, then preserve the original reviewer failure.
+- Reviewer exception: each durable step callback converts failures to a strict reserved metadata-only success result, and control flow throws only after the step resolves. Cached successful loads restore authoritative attribution before downstream steps. The callback-wait submitter catches registration and logging failures and substitutes a fresh fixed internal error before the durable operation observes them. Record the authoritative failure outcome and invoke the reconciler when provider context is known; leave `getRequest` failures unattributed without consulting the event snapshot. Failure-outcome recording uses the same step sanitization. The handler always emits a fresh fixed terminal error without a cause. Original errors are discarded inside the callbacks so messages, stacks, prompts, diffs, comments, model output, and custom fields cannot enter durable step or execution history.
 - Reconciler batch failure: process jobs independently; one bad job must not prevent later jobs in the query page from being attempted.
 
 ## Public API changes
@@ -405,6 +405,8 @@ All new runtime payloads and configuration values use Zod schemas. No `any` is i
 - Crash after successful callback but before terminal persistence treats repeated invalid/already-completed response as confirmation.
 - Ambiguous callback retries reuse the immutable intent.
 - Reconciler continues after one job fails.
+- Real `LocalDurableTestRunner` histories for `getRequest`, a post-context `run-review` failure, and failure-outcome observer failure expose only strict markers plus the fixed terminal error; invocation, history-event, operation-data, and step-result surfaces exclude sentinel messages, stacks, and custom fields.
+- Durable failure ordering records an authoritative failed outcome only when provider context exists; unattributed context load failure records none.
 
 ### CDK tests
 

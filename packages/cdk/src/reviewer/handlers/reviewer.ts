@@ -38,6 +38,7 @@ import {
 	ReviewerWorkflow,
 	ReviewerWorkflowFailure,
 } from "../workflows/reviewer-workflow";
+import { runSanitizedReviewerStep } from "../workflows/sanitized-reviewer-step";
 import { LambdaReconcilerKick } from "./pipeline-bridge";
 
 export type { ReviewerEvent } from "../workflows/reviewer-workflow";
@@ -56,10 +57,20 @@ export interface ExecuteReviewerWorkflowDeps {
 	readonly clock: () => Date;
 }
 
+const TERMINAL_FAILURE_NAME = "ReviewerWorkflowTerminalError";
+const TERMINAL_FAILURE_MESSAGE = "Reviewer workflow failed";
+
+function createTerminalFailure(): Error {
+	const error = new Error(TERMINAL_FAILURE_MESSAGE);
+	error.name = TERMINAL_FAILURE_NAME;
+	return error;
+}
+
 /**
  * Executes the deployed workflow. Only typed failures carrying authoritative
  * post-load snapshot identity are persisted; raw failures remain unattributed.
- * The exact original thrown value is always rethrown.
+ * Every failure leaves this durable boundary as a fresh fixed terminal error so
+ * sensitive workflow data cannot enter durable execution history.
  */
 export async function executeReviewerWorkflow(
 	event: ReviewerEvent,
@@ -70,33 +81,38 @@ export async function executeReviewerWorkflow(
 	try {
 		await deps.workflow.run(event, context, logger);
 	} catch (error) {
-		if (!(error instanceof ReviewerWorkflowFailure)) throw error;
-
-		const originalFailure = error.unwrap();
-		const { request, generation, sourceRevision, cycle } = error.metadata;
-		try {
-			await context.step("record-cycle-failure", async () => {
-				await deps.cycleObserver?.recordExecutionFailure({
-					request,
-					generation,
-					sourceRevision,
-					cycle,
-					occurredAt: deps.clock().toISOString(),
-				});
-			});
-		} catch {
+		const terminalFailure = createTerminalFailure();
+		if (error instanceof ReviewerWorkflowFailure) {
+			const { request, generation, sourceRevision, cycle } = error.metadata;
 			try {
-				logger.info("failed to record reviewer failure outcome", {
-					request,
-					generation,
-					sourceRevision,
-					cycle,
-				});
-			} catch {
-				// Reporting must not replace the original workflow failure.
+				await runSanitizedReviewerStep(
+					context,
+					"record-cycle-failure",
+					async () => {
+						await deps.cycleObserver?.recordExecutionFailure({
+							request,
+							generation,
+							sourceRevision,
+							cycle,
+							occurredAt: deps.clock().toISOString(),
+						});
+					},
+					error.metadata,
+				);
+			} catch (_recordingFailure: unknown) {
+				try {
+					logger.info("failed to record reviewer failure outcome", {
+						request,
+						generation,
+						sourceRevision,
+						cycle,
+					});
+				} catch {
+					// Reporting must not alter the fixed terminal failure.
+				}
 			}
 		}
-		throw originalFailure;
+		throw terminalFailure;
 	}
 }
 
@@ -278,11 +294,16 @@ function getComposition(): ReviewerComposition {
 export const handler = useDurableHandler<ReviewerEvent, void>(
 	"durable-reviewer",
 	async (event, context, { logger }) => {
-		await executeReviewerWorkflow(
-			event,
-			context,
-			logger as unknown as ReviewerLogger,
-			getComposition(),
-		);
+		try {
+			const composition = getComposition();
+			await executeReviewerWorkflow(
+				event,
+				context,
+				logger as unknown as ReviewerLogger,
+				composition,
+			);
+		} catch {
+			throw createTerminalFailure();
+		}
 	},
 );

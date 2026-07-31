@@ -1,3 +1,4 @@
+import type { DurableContext } from "@aws/durable-execution-sdk-js";
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import { DynamoDBDocumentClient } from "@aws-sdk/lib-dynamodb";
 import { useDurableHandler } from "@pawl/lambda";
@@ -35,10 +36,69 @@ import {
 	type ReviewerEvent,
 	type ReviewerLogger,
 	ReviewerWorkflow,
+	ReviewerWorkflowFailure,
 } from "../workflows/reviewer-workflow";
 import { LambdaReconcilerKick } from "./pipeline-bridge";
 
 export type { ReviewerEvent } from "../workflows/reviewer-workflow";
+
+export interface ReviewerWorkflowRunner {
+	run(
+		event: ReviewerEvent,
+		context: DurableContext,
+		logger: ReviewerLogger,
+	): Promise<void>;
+}
+
+export interface ExecuteReviewerWorkflowDeps {
+	readonly workflow: ReviewerWorkflowRunner;
+	readonly cycleObserver?: ReviewCycleObserver;
+	readonly clock: () => Date;
+}
+
+/**
+ * Executes the deployed workflow. Only typed failures carrying authoritative
+ * post-load snapshot identity are persisted; raw failures remain unattributed.
+ * The exact original thrown value is always rethrown.
+ */
+export async function executeReviewerWorkflow(
+	event: ReviewerEvent,
+	context: DurableContext,
+	logger: ReviewerLogger,
+	deps: ExecuteReviewerWorkflowDeps,
+): Promise<void> {
+	try {
+		await deps.workflow.run(event, context, logger);
+	} catch (error) {
+		if (!(error instanceof ReviewerWorkflowFailure)) throw error;
+
+		const originalFailure = error.unwrap();
+		const { request, generation, sourceRevision, cycle } = error.metadata;
+		try {
+			await context.step("record-cycle-failure", async () => {
+				await deps.cycleObserver?.recordExecutionFailure({
+					request,
+					generation,
+					sourceRevision,
+					cycle,
+					occurredAt: deps.clock().toISOString(),
+				});
+			});
+		} catch {
+			try {
+				logger.info("failed to record reviewer failure outcome", {
+					request,
+					generation,
+					sourceRevision,
+					cycle,
+				});
+			} catch {
+				// Reporting must not replace the original workflow failure.
+			}
+		}
+		throw originalFailure;
+	}
+}
 
 export interface ReviewerWorkflowOverrides {
 	readonly stateStore?: ReviewStateStore;
@@ -102,7 +162,7 @@ export function buildReviewerWorkflow(
 			clock: options.clock ?? (() => new Date()),
 		});
 	}
-	return buildFromEnvironment();
+	return buildFromEnvironment().workflow;
 }
 
 function defaultProvider(): SourceControlProvider {
@@ -132,7 +192,11 @@ function codeBuildProjectsFromEnv(): Record<string, string> {
 	return map;
 }
 
-function buildFromEnvironment(): ReviewerWorkflow {
+interface ReviewerComposition extends ExecuteReviewerWorkflowDeps {
+	readonly workflow: ReviewerWorkflow;
+}
+
+function buildFromEnvironment(): ReviewerComposition {
 	const tableName = process.env.STATE_TABLE_NAME;
 	if (tableName === undefined || tableName === "") {
 		throw new Error(
@@ -176,11 +240,12 @@ function buildFromEnvironment(): ReviewerWorkflow {
 		reviewerArn,
 		reviewerDisplayName: modelDisplayName(modelId),
 	});
+	const clock = (): Date => new Date();
 	const reviewModel = new BedrockReviewModel({
 		transport: new BedrockRuntimeTransport(),
 		modelId,
 	});
-	return new ReviewerWorkflow({
+	const workflow = new ReviewerWorkflow({
 		store: stateStore,
 		provider,
 		checkRunner: new CodeBuildCheckRunner({
@@ -191,26 +256,33 @@ function buildFromEnvironment(): ReviewerWorkflow {
 		reconciler: new IdempotentFindingReconciler({
 			store: stateStore,
 			provider,
-			clock: () => new Date(),
+			clock,
 		}),
 		configLoader: new ProviderRepositoryConfigLoader({ provider }),
 		reviewerDisplayName: modelDisplayName(modelId),
 		cycleObserver,
-		clock: () => new Date(),
+		clock,
 	});
+	return { workflow, cycleObserver, clock };
 }
 
-let cachedWorkflow: ReviewerWorkflow | undefined;
+let cachedComposition: ReviewerComposition | undefined;
 
-function getWorkflow(): ReviewerWorkflow {
-	if (cachedWorkflow === undefined) cachedWorkflow = buildReviewerWorkflow();
-	return cachedWorkflow;
+function getComposition(): ReviewerComposition {
+	if (cachedComposition === undefined) {
+		cachedComposition = buildFromEnvironment();
+	}
+	return cachedComposition;
 }
 
 export const handler = useDurableHandler<ReviewerEvent, void>(
 	"durable-reviewer",
 	async (event, context, { logger }) => {
-		const workflow = getWorkflow();
-		await workflow.run(event, context, logger as unknown as ReviewerLogger);
+		await executeReviewerWorkflow(
+			event,
+			context,
+			logger as unknown as ReviewerLogger,
+			getComposition(),
+		);
 	},
 );

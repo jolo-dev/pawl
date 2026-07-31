@@ -5,8 +5,16 @@ export interface ReviewCycleOutcome {
 	readonly generation: number;
 	readonly sourceRevision: string;
 	readonly cycle: number;
-	readonly reviewStatus: "reviewed" | "blocked" | "failed";
+	readonly reviewStatus: "reviewed" | "blocked";
 	readonly checkStatus: "completed" | "failed" | "blocked";
+	readonly occurredAt: string;
+}
+
+export interface ReviewExecutionFailure {
+	readonly request: RequestKey;
+	readonly generation: number;
+	readonly sourceRevision: string;
+	readonly cycle: number;
 	readonly occurredAt: string;
 }
 
@@ -18,11 +26,15 @@ export interface ReviewTerminalRequest {
 
 export interface ReviewCycleObserver {
 	recordCycle(outcome: ReviewCycleOutcome): Promise<void>;
+	recordExecutionFailure(failure: ReviewExecutionFailure): Promise<void>;
 	recordTerminalRequest(terminal: ReviewTerminalRequest): Promise<void>;
 }
 
 export class NoopReviewCycleObserver implements ReviewCycleObserver {
 	async recordCycle(_outcome: ReviewCycleOutcome): Promise<void> {}
+	async recordExecutionFailure(
+		_failure: ReviewExecutionFailure,
+	): Promise<void> {}
 	async recordTerminalRequest(
 		_terminal: ReviewTerminalRequest,
 	): Promise<void> {}

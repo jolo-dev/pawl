@@ -2,6 +2,7 @@ import type { PipelineCoordinationStore } from "../ports/pipeline-coordination-s
 import type {
 	ReviewCycleObserver,
 	ReviewCycleOutcome,
+	ReviewExecutionFailure,
 	ReviewTerminalRequest,
 } from "../ports/review-cycle-observer";
 
@@ -35,6 +36,19 @@ export class PipelineReviewCycleObserver implements ReviewCycleObserver {
 			createdAt: outcome.occurredAt,
 		});
 		await this.#wakeRequestJobs(outcome.request, outcome.generation);
+	}
+
+	async recordExecutionFailure(failure: ReviewExecutionFailure): Promise<void> {
+		await this.#store.recordOutcome({
+			request: failure.request,
+			generation: failure.generation,
+			sourceRevision: failure.sourceRevision,
+			cycle: failure.cycle,
+			status: "failed",
+			checkStatus: "failed",
+			createdAt: failure.occurredAt,
+		});
+		await this.#wakeRequestJobs(failure.request, failure.generation);
 	}
 
 	async recordTerminalRequest(terminal: ReviewTerminalRequest): Promise<void> {

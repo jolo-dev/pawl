@@ -34,6 +34,35 @@ export interface ReviewerEvent {
 	readonly snapshot?: ReviewRequest;
 }
 
+export interface ReviewerWorkflowFailureMetadata {
+	readonly request: RequestKey;
+	readonly generation: number;
+	readonly sourceRevision: string;
+	readonly cycle: number;
+}
+
+/**
+ * Internal transport from the workflow to its handler boundary. Only current
+ * review identity is enumerable; the exact thrown value remains in a private
+ * field and is exposed solely for identity-preserving rethrow by the handler.
+ */
+export class ReviewerWorkflowFailure {
+	readonly metadata: ReviewerWorkflowFailureMetadata;
+	readonly #originalFailure: unknown;
+
+	constructor(
+		metadata: ReviewerWorkflowFailureMetadata,
+		originalFailure: unknown,
+	) {
+		this.metadata = Object.freeze({ ...metadata });
+		this.#originalFailure = originalFailure;
+	}
+
+	unwrap(): unknown {
+		return this.#originalFailure;
+	}
+}
+
 export interface ReviewerWorkflowDeps {
 	readonly store: ReviewStateStore;
 	readonly provider: SourceControlProvider;
@@ -129,85 +158,83 @@ export class ReviewerWorkflow {
 				};
 			});
 
-			// Termination: a merged/closed PR ends the execution without re-reviewing.
-			const requestStatus = ctx.reviewRequest.status;
-			if (requestStatus !== "open") {
-				await context.step("record-terminal-request", async () => {
-					await this.#deps.cycleObserver?.recordTerminalRequest({
+			try {
+				// Termination: a merged/closed PR ends the execution without re-reviewing.
+				const requestStatus = ctx.reviewRequest.status;
+				if (requestStatus !== "open") {
+					await context.step("record-terminal-request", async () => {
+						await this.#deps.cycleObserver?.recordTerminalRequest({
+							request,
+							generation,
+							status: requestStatus,
+						});
+					});
+					logger.info("reviewer terminating: request not open", {
 						request,
 						generation,
-						status: requestStatus,
+						status: ctx.reviewRequest.status,
 					});
-				});
-				logger.info("reviewer terminating: request not open", {
+					return;
+				}
+
+				await context.step("begin-cycle", () =>
+					this.#deps.store.beginCycle(ctx.snapshot),
+				);
+				logger.info("reviewer cycle began", {
 					request,
 					generation,
-					status: ctx.reviewRequest.status,
+					cycle: ctx.snapshot.cycle,
+					changedFiles: ctx.changedFiles.length,
 				});
-				return;
-			}
 
-			await context.step("begin-cycle", () =>
-				this.#deps.store.beginCycle(ctx.snapshot),
-			);
-			logger.info("reviewer cycle began", {
-				request,
-				generation,
-				cycle: ctx.snapshot.cycle,
-				changedFiles: ctx.changedFiles.length,
-			});
+				// 2. Claim pending events for this generation.
+				const claimed = await context.step("claim-events", () =>
+					this.#deps.store.claimEvents(request, generation),
+				);
+				logger.info("claimed events", { count: claimed.events.length });
 
-			// 2. Claim pending events for this generation.
-			const claimed = await context.step("claim-events", () =>
-				this.#deps.store.claimEvents(request, generation),
-			);
-			logger.info("claimed events", { count: claimed.events.length });
-
-			// 3. Review. Only run when there are events to process; an empty claim
-			//    is a no-op wake. The engine enforces hard limits + policy filtering.
-			let reviewResult: ReviewEngineResult | undefined;
-			if (claimed.events.length > 0) {
-				// Immediate feedback: when a human comment triggered this cycle, react
-				// 👀 directly on that comment so the user sees their input was received.
-				// For pushes/opens (no comment), fall back to a PR-level 👀 status comment.
-				const triggerCommentIds = claimed.events
-					.filter(
-						(event): event is Extract<ReviewEvent, { type: "human-comment" }> =>
-							event.type === "human-comment",
-					)
-					.map((event) => event.commentId);
-				const triggerCommentId = triggerCommentIds.at(-1);
-				const statusComment = await context.step("signal-start", async () => {
-					for (const commentId of triggerCommentIds) {
-						try {
-							await this.#deps.provider.reactToComment(
-								request,
-								commentId,
-								"👀",
-							);
-						} catch {
-							logger.info("failed to set 👀 reaction", { commentId });
+				// 3. Review. Only run when there are events to process; an empty claim
+				//    is a no-op wake. The engine enforces hard limits + policy filtering.
+				let reviewResult: ReviewEngineResult | undefined;
+				if (claimed.events.length > 0) {
+					// Immediate feedback: when a human comment triggered this cycle, react
+					// 👀 directly on that comment so the user sees their input was received.
+					// For pushes/opens (no comment), fall back to a PR-level 👀 status comment.
+					const triggerCommentIds = claimed.events
+						.filter(
+							(
+								event,
+							): event is Extract<ReviewEvent, { type: "human-comment" }> =>
+								event.type === "human-comment",
+						)
+						.map((event) => event.commentId);
+					const triggerCommentId = triggerCommentIds.at(-1);
+					const statusComment = await context.step("signal-start", async () => {
+						for (const commentId of triggerCommentIds) {
+							try {
+								await this.#deps.provider.reactToComment(
+									request,
+									commentId,
+									"👀",
+								);
+							} catch {
+								logger.info("failed to set 👀 reaction", { commentId });
+							}
 						}
-					}
-					if (triggerCommentId === undefined) {
-						return this.#deps.provider.postStatusComment(
-							request,
-							"👀 Reviewing…",
-							`status-${request.provider}-${request.repository}-${request.requestId}-g${generation}-c${ctx.snapshot.cycle}`,
-							{
-								sourceRevision: ctx.snapshot.sourceRevision,
-								destinationRevision: ctx.snapshot.destinationRevision,
-							},
-						);
-					}
-					return undefined;
-				});
-				let reviewExecution: {
-					readonly result: ReviewEngineResult;
-					readonly checkStatus: "completed" | "failed";
-				};
-				try {
-					reviewExecution = await context.step("run-review", async () => {
+						if (triggerCommentId === undefined) {
+							return this.#deps.provider.postStatusComment(
+								request,
+								"👀 Reviewing…",
+								`status-${request.provider}-${request.repository}-${request.requestId}-g${generation}-c${ctx.snapshot.cycle}`,
+								{
+									sourceRevision: ctx.snapshot.sourceRevision,
+									destinationRevision: ctx.snapshot.destinationRevision,
+								},
+							);
+						}
+						return undefined;
+					});
+					const reviewExecution = await context.step("run-review", async () => {
 						const runResult = await this.#deps.checkRunner.run({
 							request,
 							snapshot: ctx.snapshot,
@@ -309,81 +336,79 @@ export class ReviewerWorkflow {
 									: ("failed" as const),
 						};
 					});
-				} catch (error) {
-					await context.step("record-cycle-failure", async () => {
+					const completedReview = reviewExecution.result;
+					reviewResult = completedReview;
+					const checkStatus =
+						completedReview.status === "blocked"
+							? "blocked"
+							: reviewExecution.checkStatus;
+					await context.step("record-cycle-outcome", async () => {
 						await this.#deps.cycleObserver?.recordCycle({
 							request,
 							generation,
 							sourceRevision: ctx.snapshot.sourceRevision,
 							cycle: ctx.snapshot.cycle,
-							reviewStatus: "failed",
-							checkStatus: "failed",
+							reviewStatus: completedReview.status,
+							checkStatus,
 							occurredAt: this.#deps.clock().toISOString(),
 						});
 					});
-					throw error;
+					logger.info("review completed", { status: completedReview.status });
 				}
-				reviewResult = reviewExecution.result;
-				const checkStatus =
-					reviewResult.status === "blocked"
-						? "blocked"
-						: reviewExecution.checkStatus;
-				await context.step("record-cycle-outcome", async () => {
-					await this.#deps.cycleObserver?.recordCycle({
+
+				// 4. Register a callback and wait for the next event. A BLOCKED_LIMIT
+				//    review registers a BLOCKED_LIMIT callback; otherwise WAITING. The
+				//    submitter runs once per cycle (the SDK tracks it as a durable
+				//    operation and skips it on replay); registerCallback is idempotent
+				//    under the state-store contract.
+				const blockedLimit =
+					reviewResult?.status === "blocked"
+						? reviewResult.blockedLimit
+						: undefined;
+				await context.waitForCallback(
+					"wait-for-next-event",
+					async (callbackId) => {
+						const registration =
+							blockedLimit === undefined
+								? {
+										request,
+										generation,
+										callbackGeneration: generation,
+										callbackId,
+										registeredAt: this.#deps.clock().toISOString(),
+										leaseVersion,
+										lifecycleState: "WAITING" as const,
+									}
+								: {
+										request,
+										generation,
+										callbackGeneration: generation,
+										callbackId,
+										registeredAt: this.#deps.clock().toISOString(),
+										leaseVersion,
+										lifecycleState: "BLOCKED_LIMIT" as const,
+										blockedLimit,
+									};
+						await this.#deps.store.registerCallback(registration);
+						logger.info("registered callback", {
+							callbackId,
+							generation,
+							lifecycleState: registration.lifecycleState,
+						});
+					},
+				);
+				// On resume (router signalled a new event), loop to re-claim + re-review.
+			} catch (error) {
+				throw new ReviewerWorkflowFailure(
+					{
 						request,
 						generation,
 						sourceRevision: ctx.snapshot.sourceRevision,
 						cycle: ctx.snapshot.cycle,
-						reviewStatus: reviewResult?.status ?? "failed",
-						checkStatus,
-						occurredAt: this.#deps.clock().toISOString(),
-					});
-				});
-				logger.info("review completed", { status: reviewResult.status });
+					},
+					error,
+				);
 			}
-
-			// 4. Register a callback and wait for the next event. A BLOCKED_LIMIT
-			//    review registers a BLOCKED_LIMIT callback; otherwise WAITING. The
-			//    submitter runs once per cycle (the SDK tracks it as a durable
-			//    operation and skips it on replay); registerCallback is idempotent
-			//    under the state-store contract.
-			const blockedLimit =
-				reviewResult?.status === "blocked"
-					? reviewResult.blockedLimit
-					: undefined;
-			await context.waitForCallback(
-				"wait-for-next-event",
-				async (callbackId) => {
-					const registration =
-						blockedLimit === undefined
-							? {
-									request,
-									generation,
-									callbackGeneration: generation,
-									callbackId,
-									registeredAt: this.#deps.clock().toISOString(),
-									leaseVersion,
-									lifecycleState: "WAITING" as const,
-								}
-							: {
-									request,
-									generation,
-									callbackGeneration: generation,
-									callbackId,
-									registeredAt: this.#deps.clock().toISOString(),
-									leaseVersion,
-									lifecycleState: "BLOCKED_LIMIT" as const,
-									blockedLimit,
-								};
-					await this.#deps.store.registerCallback(registration);
-					logger.info("registered callback", {
-						callbackId,
-						generation,
-						lifecycleState: registration.lifecycleState,
-					});
-				},
-			);
-			// On resume (router signalled a new event), loop to re-claim + re-review.
 		}
 	}
 }
@@ -405,7 +430,7 @@ export function buildConversation(
 		if (comment.findingFingerprint !== undefined) continue; // inline finding
 		const isReviewer = comment.body.includes(signature);
 		const body = isReviewer
-			? comment.body.split(`\n---\n${signature}`)[0]!.trimEnd()
+			? (comment.body.split(`\n---\n${signature}`).at(0)?.trimEnd() ?? "")
 			: comment.body;
 		if (body === "") continue;
 		turns.push({

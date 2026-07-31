@@ -1,7 +1,9 @@
 import type { RequestKey } from "../src/reviewer/domain/review-request";
 import {
 	type CallbackIntent,
+	callbackIntentSchema,
 	claimCompletion as claimJob,
+	classifyPipelineJobIdentity,
 	completeClaimedJob,
 	type JobState,
 	type PipelineJobRecord,
@@ -13,6 +15,8 @@ import type {
 	PipelineCoordinationStore,
 	PipelineExecutionMapping,
 	PipelineJobPage,
+	ReviewOutcomeObservation,
+	TerminalRequestObservation,
 } from "../src/reviewer/ports/pipeline-coordination-store";
 
 const requestKey = (request: RequestKey, generation: number): string =>
@@ -35,6 +39,20 @@ const outcomeKey = (job: PipelineJobRecord): string | undefined =>
 			])
 		: undefined;
 
+const callbackIntentsMatch = (
+	left: CallbackIntent | undefined,
+	right: CallbackIntent | undefined,
+): boolean => {
+	if (left === undefined || right === undefined) return left === right;
+	const parsedLeft = callbackIntentSchema.parse(left);
+	const parsedRight = callbackIntentSchema.parse(right);
+	return (
+		parsedLeft.status === parsedRight.status &&
+		parsedLeft.category === parsedRight.category &&
+		parsedLeft.message === parsedRight.message
+	);
+};
+
 export class FakePipelineCoordinationStore
 	implements PipelineCoordinationStore
 {
@@ -42,6 +60,8 @@ export class FakePipelineCoordinationStore
 	readonly outcomes = new Map<string, ReviewOutcome>();
 	readonly terminalRequests = new Map<string, TerminalRequestRecord>();
 	readonly mappings = new Map<string, PipelineExecutionMapping>();
+	beforeClaim?: () => void | Promise<void>;
+	afterClaim?: () => void | Promise<void>;
 
 	async registerJob(job: PipelineJobRecord): Promise<PipelineJobRecord> {
 		const existing = this.jobs.get(job.jobId);
@@ -132,20 +152,84 @@ export class FakePipelineCoordinationStore
 		this.jobs.set(jobId, { ...job, callbackCandidate: candidate });
 	}
 	async claimCompletion(input: {
-		readonly jobId: string;
+		readonly observedJob: PipelineJobRecord;
+		readonly outcomeObservation: ReviewOutcomeObservation;
+		readonly terminalRequestObservation: TerminalRequestObservation;
 		readonly intent: CallbackIntent;
 		readonly leaseExpiresAt: string;
 		readonly nextActionAt: string;
 	}): Promise<PipelineJobRecord | undefined> {
-		const job = this.jobs.get(input.jobId);
-		if (!job) return undefined;
-		const claimed = claimJob({
-			job,
+		const identityState = classifyPipelineJobIdentity(input.observedJob);
+		if (identityState === "partial") {
+			throw new Error("cannot claim a partial pipeline job identity");
+		}
+		await this.beforeClaim?.();
+		const currentJob = this.jobs.get(input.observedJob.jobId);
+		if (
+			currentJob?.state !== "PENDING" ||
+			currentJob.terminalIntent !== undefined ||
+			!callbackIntentsMatch(
+				currentJob.callbackCandidate,
+				input.observedJob.callbackCandidate,
+			)
+		) {
+			return undefined;
+		}
+		if (identityState === "identified") {
+			if (
+				input.outcomeObservation.status === "not-applicable" ||
+				input.terminalRequestObservation.status === "not-applicable"
+			) {
+				throw new Error("identified pipeline jobs require both observations");
+			}
+			const currentOutcome = this.getOutcome(input.observedJob);
+			const currentTerminal =
+				input.observedJob.request !== undefined &&
+				input.observedJob.generation !== undefined
+					? this.getTerminalRequestState(
+							input.observedJob.request,
+							input.observedJob.generation,
+						)
+					: Promise.resolve(undefined);
+			const [outcome, terminal] = await Promise.all([
+				currentOutcome,
+				currentTerminal,
+			]);
+			if (
+				(input.outcomeObservation.status === "present") !==
+					(outcome !== undefined) ||
+				(input.terminalRequestObservation.status === "present") !==
+					(terminal !== undefined)
+			) {
+				return undefined;
+			}
+		} else if (
+			input.outcomeObservation.status !== "not-applicable" ||
+			input.terminalRequestObservation.status !== "not-applicable" ||
+			input.intent.status !== "failure" ||
+			input.intent.category !== "ConfigurationError" ||
+			currentJob.callbackCandidate?.status !== "failure" ||
+			currentJob.callbackCandidate.category !== "ConfigurationError" ||
+			!callbackIntentsMatch(currentJob.callbackCandidate, input.intent)
+		) {
+			throw new Error(
+				"unidentified pipeline jobs require an observed ConfigurationError candidate",
+			);
+		}
+		const persisted = claimJob({
+			job: currentJob,
 			intent: input.intent,
 			completionLeaseExpiresAt: input.leaseExpiresAt,
 			nextActionAt: input.nextActionAt,
 		});
-		if (claimed) this.jobs.set(input.jobId, claimed);
+		const claimed = claimJob({
+			job: input.observedJob,
+			intent: input.intent,
+			completionLeaseExpiresAt: input.leaseExpiresAt,
+			nextActionAt: input.nextActionAt,
+		});
+		if (persisted) this.jobs.set(input.observedJob.jobId, persisted);
+		await this.afterClaim?.();
 		return claimed;
 	}
 	async reclaimCompletion(input: {
@@ -158,7 +242,7 @@ export class FakePipelineCoordinationStore
 		const job = this.jobs.get(input.jobId);
 		if (
 			job?.state !== "COMPLETING" ||
-			JSON.stringify(job.terminalIntent) !== JSON.stringify(input.intent) ||
+			!callbackIntentsMatch(job.terminalIntent, input.intent) ||
 			!job.completionLeaseExpiresAt ||
 			Date.parse(job.completionLeaseExpiresAt) > Date.parse(input.now)
 		)
@@ -175,7 +259,7 @@ export class FakePipelineCoordinationStore
 		const job = this.jobs.get(jobId);
 		if (
 			job?.state !== "COMPLETING" ||
-			JSON.stringify(job.terminalIntent) !== JSON.stringify(intent)
+			!callbackIntentsMatch(job.terminalIntent, intent)
 		)
 			return;
 		const completed = completeClaimedJob(job);

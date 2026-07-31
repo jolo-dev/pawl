@@ -170,6 +170,233 @@ describe("pipeline review reconciler", () => {
 		expect(store.jobs.get("reviewed")?.state).toBe("SUCCEEDED");
 	});
 
+	test("refreshes after a superseded candidate appears between read and claim", async () => {
+		const store = new FakePipelineCoordinationStore();
+		const transport = new RecordingResultTransport();
+		await store.registerJob(
+			pendingJob("candidate-race", {
+				deadlineAt: "2026-07-29T11:59:00.000Z",
+			}),
+		);
+		store.beforeClaim = async () => {
+			store.beforeClaim = undefined;
+			await store.setCallbackCandidate("candidate-race", {
+				status: "failure",
+				category: "Superseded",
+			});
+		};
+		const reconcile = buildPipelineReconciler({
+			store,
+			transport,
+			clock: () => new Date(now),
+		});
+
+		await reconcile("candidate-race");
+
+		expect(transport.failures[0]?.category).toBe("Superseded");
+		expect(store.jobs.get("candidate-race")?.terminalIntent).toEqual({
+			status: "failure",
+			category: "Superseded",
+		});
+	});
+
+	test("refreshes after a matching outcome appears before timeout claim", async () => {
+		const store = new FakePipelineCoordinationStore();
+		const transport = new RecordingResultTransport();
+		await store.registerJob(
+			pendingJob("outcome-race", {
+				deadlineAt: "2026-07-29T11:59:00.000Z",
+			}),
+		);
+		store.beforeClaim = async () => {
+			store.beforeClaim = undefined;
+			await store.recordOutcome({
+				request,
+				generation: 3,
+				sourceRevision: "a".repeat(40),
+				status: "blocked",
+				checkStatus: "blocked",
+			});
+		};
+		const reconcile = buildPipelineReconciler({
+			store,
+			transport,
+			clock: () => new Date(now),
+		});
+
+		await reconcile("outcome-race");
+
+		expect(transport.failures[0]?.category).toBe("ReviewBlocked");
+	});
+
+	test("refreshes after a terminal marker appears before timeout claim", async () => {
+		const store = new FakePipelineCoordinationStore();
+		const transport = new RecordingResultTransport();
+		await store.registerJob(
+			pendingJob("terminal-race", {
+				deadlineAt: "2026-07-29T11:59:00.000Z",
+			}),
+		);
+		store.beforeClaim = async () => {
+			store.beforeClaim = undefined;
+			await store.recordTerminalRequestState({
+				request,
+				generation: 3,
+				status: "merged",
+				occurredAt: now,
+			});
+		};
+		const reconcile = buildPipelineReconciler({
+			store,
+			transport,
+			clock: () => new Date(now),
+		});
+
+		await reconcile("terminal-race");
+
+		expect(transport.successes).toEqual(["terminal-race"]);
+		expect(store.jobs.get("terminal-race")?.terminalIntent).toEqual({
+			status: "success",
+			category: "RequestMerged",
+		});
+	});
+
+	test("refreshes every signal after successive snapshot races", async () => {
+		const store = new FakePipelineCoordinationStore();
+		const transport = new RecordingResultTransport();
+		await store.registerJob(
+			pendingJob("successive-races", {
+				deadlineAt: "2026-07-29T11:59:00.000Z",
+			}),
+		);
+		let attempt = 0;
+		store.beforeClaim = async () => {
+			attempt += 1;
+			if (attempt === 1) {
+				await store.recordTerminalRequestState({
+					request,
+					generation: 3,
+					status: "closed",
+					occurredAt: now,
+				});
+			} else if (attempt === 2) {
+				await store.recordOutcome({
+					request,
+					generation: 3,
+					sourceRevision: "a".repeat(40),
+					status: "failed",
+					checkStatus: "failed",
+				});
+			} else {
+				store.beforeClaim = undefined;
+			}
+		};
+		const reconcile = buildPipelineReconciler({
+			store,
+			transport,
+			clock: () => new Date(now),
+		});
+
+		await reconcile("successive-races");
+
+		expect(attempt).toBe(3);
+		expect(transport.failures[0]?.category).toBe("ReviewFailed");
+	});
+
+	test("keeps the selected intent immutable when claim wins before a later signal", async () => {
+		const store = new FakePipelineCoordinationStore();
+		const transport = new RecordingResultTransport();
+		await store.registerJob(
+			pendingJob("claim-wins", {
+				deadlineAt: "2026-07-29T11:59:00.000Z",
+			}),
+		);
+		store.afterClaim = async () => {
+			store.afterClaim = undefined;
+			await store.recordOutcome({
+				request,
+				generation: 3,
+				sourceRevision: "a".repeat(40),
+				status: "reviewed",
+				checkStatus: "completed",
+			});
+		};
+		const reconcile = buildPipelineReconciler({
+			store,
+			transport,
+			clock: () => new Date(now),
+		});
+
+		await reconcile("claim-wins");
+
+		expect(transport.failures[0]?.category).toBe("TimedOut");
+		expect(store.jobs.get("claim-wins")?.terminalIntent).toEqual({
+			status: "failure",
+			category: "TimedOut",
+		});
+	});
+
+	test("fails safely without callback for partially identified jobs", async () => {
+		const store = new FakePipelineCoordinationStore();
+		const transport = new RecordingResultTransport();
+		await store.registerJob({
+			jobId: "partial",
+			state: "PENDING",
+			request,
+			callbackCandidate: {
+				status: "failure",
+				category: "ConfigurationError",
+			},
+		});
+		const reconcile = buildPipelineReconciler({
+			store,
+			transport,
+			clock: () => new Date(now),
+		});
+
+		await expect(reconcile("partial")).rejects.toThrow(
+			"partial pipeline job identity",
+		);
+		expect(transport.attempts).toEqual([]);
+	});
+
+	test("claims an unidentified configuration error when candidate property order changes during normalization", async () => {
+		const store = new FakePipelineCoordinationStore();
+		const transport = new RecordingResultTransport();
+		await store.registerJob({
+			jobId: "unidentified-configuration",
+			state: "PENDING",
+			callbackCandidate: {
+				status: "failure",
+				category: "ConfigurationError",
+				message: "Review configuration is invalid",
+			},
+		});
+		const reconcile = buildPipelineReconciler({
+			store,
+			transport,
+			clock: () => new Date(now),
+		});
+
+		await reconcile("unidentified-configuration");
+
+		expect(transport.failures).toEqual([
+			{
+				jobId: "unidentified-configuration",
+				category: "ConfigurationError",
+				message: "Review configuration is invalid",
+			},
+		]);
+		expect(store.jobs.get("unidentified-configuration")).toMatchObject({
+			state: "FAILED",
+			terminalIntent: {
+				status: "failure",
+				category: "ConfigurationError",
+				message: "Review configuration is invalid",
+			},
+		});
+	});
+
 	test("fails a persisted superseded job despite a late successful outcome", async () => {
 		const store = new FakePipelineCoordinationStore();
 		const transport = new RecordingResultTransport();

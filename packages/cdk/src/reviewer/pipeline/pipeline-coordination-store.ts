@@ -89,6 +89,25 @@ export const pipelineJobRecordSchema = z
 
 export type PipelineJobRecord = z.infer<typeof pipelineJobRecordSchema>;
 
+export type PipelineJobIdentityState =
+	| "identified"
+	| "unidentified"
+	| "partial";
+
+export const classifyPipelineJobIdentity = (
+	job: PipelineJobRecord,
+): PipelineJobIdentityState => {
+	const identityParts = [
+		job.request !== undefined,
+		job.generation !== undefined,
+		job.sourceRevision !== undefined,
+	];
+	const presentCount = identityParts.filter(Boolean).length;
+	if (presentCount === identityParts.length) return "identified";
+	if (presentCount === 0) return "unidentified";
+	return "partial";
+};
+
 export const terminalRequestStateSchema = z.enum(["merged", "closed"]);
 export type TerminalRequestState = z.infer<typeof terminalRequestStateSchema>;
 

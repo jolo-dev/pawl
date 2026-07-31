@@ -5,10 +5,15 @@ import { AwsCodePipelineTransport } from "../adapters/codepipeline-transport";
 import { DynamoDbPipelineCoordinationStore } from "../adapters/dynamodb-pipeline-coordination-store";
 import {
 	type CallbackIntent,
+	classifyPipelineJobIdentity,
 	type PipelineJobRecord,
 	selectCallbackIntent,
 } from "../pipeline/pipeline-coordination-store";
-import type { PipelineCoordinationStore } from "../ports/pipeline-coordination-store";
+import type {
+	PipelineCoordinationStore,
+	ReviewOutcomeObservation,
+	TerminalRequestObservation,
+} from "../ports/pipeline-coordination-store";
 
 export interface PipelineJobResultTransport {
 	putJobSuccess(jobId: string): Promise<void>;
@@ -42,35 +47,92 @@ export const buildPipelineReconciler = (options: PipelineReconcilerOptions) => {
 	const clock = options.clock ?? (() => new Date());
 	const leaseMinutes = options.leaseMinutes ?? 2;
 
+	const observationsFor = async (
+		job: PipelineJobRecord,
+	): Promise<{
+		readonly outcome: ReviewOutcomeObservation;
+		readonly terminalRequest: TerminalRequestObservation;
+	}> => {
+		const identityState = classifyPipelineJobIdentity(job);
+		if (identityState === "partial") {
+			throw new Error("cannot reconcile a partial pipeline job identity");
+		}
+		if (identityState === "unidentified") {
+			if (
+				job.callbackCandidate?.status !== "failure" ||
+				job.callbackCandidate.category !== "ConfigurationError"
+			) {
+				throw new Error(
+					"unidentified pipeline job lacks a ConfigurationError candidate",
+				);
+			}
+			return {
+				outcome: { status: "not-applicable" },
+				terminalRequest: { status: "not-applicable" },
+			};
+		}
+		if (
+			job.request === undefined ||
+			job.generation === undefined ||
+			job.sourceRevision === undefined
+		) {
+			throw new Error("cannot reconcile a partial pipeline job identity");
+		}
+		const [outcome, terminalRequest] = await Promise.all([
+			options.store.getOutcome(job),
+			options.store.getTerminalRequestState(job.request, job.generation),
+		]);
+		return {
+			outcome:
+				outcome === undefined
+					? { status: "absent" }
+					: { status: "present", value: outcome },
+			terminalRequest:
+				terminalRequest === undefined
+					? { status: "absent" }
+					: { status: "present", value: terminalRequest },
+		};
+	};
+
 	const complete = async (job: PipelineJobRecord): Promise<void> => {
 		const now = clock();
 		const nowText = now.toISOString();
 		let claimed: PipelineJobRecord | undefined;
 		if (job.state === "PENDING") {
-			const outcome = await options.store.getOutcome(job);
-			const terminalRequest =
-				job.request !== undefined && job.generation !== undefined
-					? await options.store.getTerminalRequestState(
-							job.request,
-							job.generation,
-						)
-					: undefined;
-			const intent = selectCallbackIntent({
-				job,
-				outcome,
-				terminalRequestState: terminalRequest?.status,
-				now: nowText,
-			});
-			if (intent === undefined) {
-				await options.store.reschedule(job.jobId, addMinutes(now, 1));
-				return;
+			let observedJob = job;
+			for (let snapshot = 0; snapshot < 4; snapshot += 1) {
+				if (observedJob.state !== "PENDING") return;
+				const observations = await observationsFor(observedJob);
+				const intent = selectCallbackIntent({
+					job: observedJob,
+					outcome:
+						observations.outcome.status === "present"
+							? observations.outcome.value
+							: undefined,
+					terminalRequestState:
+						observations.terminalRequest.status === "present"
+							? observations.terminalRequest.value.status
+							: undefined,
+					now: nowText,
+				});
+				if (intent === undefined) {
+					await options.store.reschedule(observedJob.jobId, addMinutes(now, 1));
+					return;
+				}
+				claimed = await options.store.claimCompletion({
+					observedJob,
+					outcomeObservation: observations.outcome,
+					terminalRequestObservation: observations.terminalRequest,
+					intent,
+					leaseExpiresAt: addMinutes(now, leaseMinutes),
+					nextActionAt: addMinutes(now, leaseMinutes),
+				});
+				if (claimed !== undefined) break;
+				if (snapshot === 3) return;
+				const refreshed = await options.store.getJob(observedJob.jobId);
+				if (refreshed === undefined) return;
+				observedJob = refreshed;
 			}
-			claimed = await options.store.claimCompletion({
-				jobId: job.jobId,
-				intent,
-				leaseExpiresAt: addMinutes(now, leaseMinutes),
-				nextActionAt: addMinutes(now, leaseMinutes),
-			});
 		} else if (job.state === "COMPLETING" && job.terminalIntent !== undefined) {
 			if (
 				job.completionLeaseExpiresAt !== undefined &&

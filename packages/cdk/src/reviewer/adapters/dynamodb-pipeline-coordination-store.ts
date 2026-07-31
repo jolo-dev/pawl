@@ -2,6 +2,7 @@ import {
 	GetCommand,
 	PutCommand,
 	QueryCommand,
+	TransactWriteCommand,
 	UpdateCommand,
 } from "@aws-sdk/lib-dynamodb";
 import type { RequestKey } from "../domain/review-request";
@@ -14,6 +15,8 @@ import {
 	buildTerminalRequestKey,
 	type CallbackIntent,
 	callbackIntentSchema,
+	claimCompletion as claimJob,
+	classifyPipelineJobIdentity,
 	type JobState,
 	type PipelineJobRecord,
 	pipelineJobRecordSchema,
@@ -26,7 +29,10 @@ import type {
 	PipelineCoordinationStore,
 	PipelineExecutionMapping,
 	PipelineJobPage,
+	ReviewOutcomeObservation,
+	TerminalRequestObservation,
 } from "../ports/pipeline-coordination-store";
+import { isDynamoDbPureConditionalTransactionCanceledError } from "./dynamodb-errors";
 import type { DynamoDbDocumentTransport } from "./dynamodb-state-store";
 
 const ACTIONABLE_INDEX = "GSI1";
@@ -400,12 +406,172 @@ export class DynamoDbPipelineCoordinationStore
 	}
 
 	async claimCompletion(input: {
-		readonly jobId: string;
+		readonly observedJob: PipelineJobRecord;
+		readonly outcomeObservation: ReviewOutcomeObservation;
+		readonly terminalRequestObservation: TerminalRequestObservation;
 		readonly intent: CallbackIntent;
 		readonly leaseExpiresAt: string;
 		readonly nextActionAt: string;
 	}): Promise<PipelineJobRecord | undefined> {
-		return this.#updateCompleting(input, false);
+		const observedJob = pipelineJobRecordSchema.parse(input.observedJob);
+		const identityState = classifyPipelineJobIdentity(observedJob);
+		if (identityState === "partial") {
+			throw new Error("cannot claim a partial pipeline job identity");
+		}
+		const intent = callbackIntentSchema.parse(input.intent);
+		const claimed = claimJob({
+			job: observedJob,
+			intent,
+			completionLeaseExpiresAt: input.leaseExpiresAt,
+			nextActionAt: input.nextActionAt,
+		});
+		if (claimed === undefined) return undefined;
+
+		const actionable = buildActionableStateIndexKey({
+			state: "COMPLETING",
+			nextActionAt: input.nextActionAt,
+			jobId: observedJob.jobId,
+		});
+		const candidateCondition =
+			observedJob.callbackCandidate === undefined
+				? "attribute_not_exists(callbackCandidate)"
+				: "callbackCandidate = :callbackCandidate";
+		const expressionAttributeValues = {
+			":pending": "PENDING",
+			":completing": "COMPLETING",
+			":intent": intent,
+			":lease": input.leaseExpiresAt,
+			":next": input.nextActionAt,
+			":gsi1pk": actionable.gsiPk,
+			":gsi1sk": actionable.gsiSk,
+			...(observedJob.callbackCandidate
+				? { ":callbackCandidate": observedJob.callbackCandidate }
+				: {}),
+		};
+
+		if (identityState === "unidentified") {
+			if (
+				input.outcomeObservation.status !== "not-applicable" ||
+				input.terminalRequestObservation.status !== "not-applicable" ||
+				intent.status !== "failure" ||
+				intent.category !== "ConfigurationError" ||
+				observedJob.callbackCandidate?.status !== "failure" ||
+				observedJob.callbackCandidate.category !== "ConfigurationError" ||
+				JSON.stringify(observedJob.callbackCandidate) !== JSON.stringify(intent)
+			) {
+				throw new Error(
+					"unidentified pipeline jobs require an observed ConfigurationError candidate",
+				);
+			}
+			try {
+				await this.#transport.send(
+					new UpdateCommand({
+						TableName: this.#tableName,
+						Key: buildPipelineJobKey(observedJob.jobId),
+						UpdateExpression:
+							"SET #state = :completing, terminalIntent = :intent, completionLeaseExpiresAt = :lease, nextActionAt = :next, gsi1pk = :gsi1pk, gsi1sk = :gsi1sk",
+						ConditionExpression: `#state = :pending AND attribute_not_exists(terminalIntent) AND ${candidateCondition}`,
+						ExpressionAttributeNames: { "#state": "state" },
+						ExpressionAttributeValues: expressionAttributeValues,
+					}),
+				);
+				return claimed;
+			} catch (error) {
+				if (isConditionalFailure(error)) return undefined;
+				throw error;
+			}
+		}
+
+		if (
+			observedJob.request === undefined ||
+			observedJob.generation === undefined ||
+			observedJob.sourceRevision === undefined ||
+			input.outcomeObservation.status === "not-applicable" ||
+			input.terminalRequestObservation.status === "not-applicable"
+		) {
+			throw new Error(
+				"identified pipeline jobs require both signal observations",
+			);
+		}
+		const outcomeKey = buildReviewOutcomeKey({
+			request: observedJob.request,
+			generation: observedJob.generation,
+			sourceRevision: observedJob.sourceRevision,
+		});
+		const terminalRequestKey = buildTerminalRequestKey({
+			request: observedJob.request,
+			generation: observedJob.generation,
+		});
+		if (input.outcomeObservation.status === "present") {
+			const observedOutcome = reviewOutcomeSchema.parse(
+				input.outcomeObservation.value,
+			);
+			const observedOutcomeKey = buildReviewOutcomeKey(observedOutcome);
+			if (
+				observedOutcomeKey.pk !== outcomeKey.pk ||
+				observedOutcomeKey.sk !== outcomeKey.sk
+			) {
+				throw new Error("review outcome observation does not match the job");
+			}
+		}
+		if (input.terminalRequestObservation.status === "present") {
+			const observedTerminal = terminalRequestRecordSchema.parse(
+				input.terminalRequestObservation.value,
+			);
+			const observedTerminalKey = buildTerminalRequestKey(observedTerminal);
+			if (
+				observedTerminalKey.pk !== terminalRequestKey.pk ||
+				observedTerminalKey.sk !== terminalRequestKey.sk
+			) {
+				throw new Error("terminal request observation does not match the job");
+			}
+		}
+
+		try {
+			await this.#transport.send(
+				new TransactWriteCommand({
+					TransactItems: [
+						{
+							Update: {
+								TableName: this.#tableName,
+								Key: buildPipelineJobKey(observedJob.jobId),
+								UpdateExpression:
+									"SET #state = :completing, terminalIntent = :intent, completionLeaseExpiresAt = :lease, nextActionAt = :next, gsi1pk = :gsi1pk, gsi1sk = :gsi1sk",
+								ConditionExpression: `#state = :pending AND attribute_not_exists(terminalIntent) AND ${candidateCondition}`,
+								ExpressionAttributeNames: { "#state": "state" },
+								ExpressionAttributeValues: expressionAttributeValues,
+							},
+						},
+						{
+							ConditionCheck: {
+								TableName: this.#tableName,
+								Key: outcomeKey,
+								ConditionExpression:
+									input.outcomeObservation.status === "present"
+										? "attribute_exists(pk)"
+										: "attribute_not_exists(pk)",
+							},
+						},
+						{
+							ConditionCheck: {
+								TableName: this.#tableName,
+								Key: terminalRequestKey,
+								ConditionExpression:
+									input.terminalRequestObservation.status === "present"
+										? "attribute_exists(pk)"
+										: "attribute_not_exists(pk)",
+							},
+						},
+					],
+				}),
+			);
+			return claimed;
+		} catch (error) {
+			if (isDynamoDbPureConditionalTransactionCanceledError(error)) {
+				return undefined;
+			}
+			throw error;
+		}
 	}
 
 	async reclaimCompletion(input: {

@@ -22,6 +22,15 @@ export interface PipelineJobPage {
 	readonly cursor?: Readonly<Record<string, unknown>>;
 }
 
+export type ExactObservation<T> =
+	| { readonly status: "not-applicable" }
+	| { readonly status: "absent" }
+	| { readonly status: "present"; readonly value: T };
+
+export type ReviewOutcomeObservation = ExactObservation<ReviewOutcome>;
+export type TerminalRequestObservation =
+	ExactObservation<TerminalRequestRecord>;
+
 export interface PipelineCoordinationStore {
 	registerJob(job: PipelineJobRecord): Promise<PipelineJobRecord>;
 	getJob(jobId: string): Promise<PipelineJobRecord | undefined>;
@@ -50,7 +59,9 @@ export interface PipelineCoordinationStore {
 	): Promise<PipelineJobPage>;
 	setCallbackCandidate(jobId: string, candidate: CallbackIntent): Promise<void>;
 	claimCompletion(input: {
-		readonly jobId: string;
+		readonly observedJob: PipelineJobRecord;
+		readonly outcomeObservation: ReviewOutcomeObservation;
+		readonly terminalRequestObservation: TerminalRequestObservation;
 		readonly intent: CallbackIntent;
 		readonly leaseExpiresAt: string;
 		readonly nextActionAt: string;

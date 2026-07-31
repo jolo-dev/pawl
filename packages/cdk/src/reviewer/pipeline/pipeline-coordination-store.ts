@@ -92,6 +92,16 @@ export type PipelineJobRecord = z.infer<typeof pipelineJobRecordSchema>;
 export const terminalRequestStateSchema = z.enum(["merged", "closed"]);
 export type TerminalRequestState = z.infer<typeof terminalRequestStateSchema>;
 
+export const terminalRequestRecordSchema = z
+	.strictObject({
+		request: requestKeySchema,
+		generation: generationSchema,
+		status: terminalRequestStateSchema,
+		occurredAt: occurredAtSchema,
+	})
+	.readonly();
+export type TerminalRequestRecord = z.infer<typeof terminalRequestRecordSchema>;
+
 export const intentSelectionInputSchema = z
 	.strictObject({
 		job: pipelineJobRecordSchema,
@@ -125,6 +135,19 @@ export const buildPipelineJobKey = (jobId: string): CoordinationKey => ({
 	pk: `PIPELINE_JOB#${keySegment(jobId)}`,
 	sk: "META",
 });
+
+export const buildTerminalRequestKey = (identity: {
+	readonly request: z.infer<typeof requestKeySchema>;
+	readonly generation: number;
+}): CoordinationKey => {
+	const request = requestKeySchema.parse(identity.request);
+	const generation = generationSchema.parse(identity.generation);
+
+	return {
+		pk: `TERMINAL_REQUEST#${keySegment(request.provider)}#${keySegment(request.repository)}#${keySegment(request.requestId)}#GEN#${generation}`,
+		sk: "META",
+	};
+};
 
 export const buildReviewOutcomeKey = (identity: {
 	readonly request: z.infer<typeof requestKeySchema>;

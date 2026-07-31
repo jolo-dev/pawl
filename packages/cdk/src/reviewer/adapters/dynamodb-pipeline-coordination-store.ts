@@ -11,6 +11,7 @@ import {
 	buildPipelineJobKey,
 	buildRequestScopedJobIndexKey,
 	buildReviewOutcomeKey,
+	buildTerminalRequestKey,
 	type CallbackIntent,
 	callbackIntentSchema,
 	type JobState,
@@ -18,6 +19,8 @@ import {
 	pipelineJobRecordSchema,
 	type ReviewOutcome,
 	reviewOutcomeSchema,
+	type TerminalRequestRecord,
+	terminalRequestRecordSchema,
 } from "../pipeline/pipeline-coordination-store";
 import type {
 	PipelineCoordinationStore,
@@ -90,6 +93,14 @@ const outcomeFromItem = (item: Item): ReviewOutcome =>
 		checkStatus: item.checkStatus,
 		summary: item.summary,
 		createdAt: item.createdAt,
+	});
+
+const terminalRequestFromItem = (item: Item): TerminalRequestRecord =>
+	terminalRequestRecordSchema.parse({
+		request: item.request,
+		generation: item.generation,
+		status: item.status,
+		occurredAt: item.occurredAt,
 	});
 
 const terminalState = (
@@ -239,6 +250,51 @@ export class DynamoDbPipelineCoordinationStore
 			if (item === undefined) throw error;
 			return outcomeFromItem(item);
 		}
+	}
+
+	async recordTerminalRequestState(
+		terminalInput: TerminalRequestRecord,
+	): Promise<TerminalRequestRecord> {
+		const terminal = terminalRequestRecordSchema.parse(terminalInput);
+		const key = buildTerminalRequestKey(terminal);
+		try {
+			await this.#transport.send(
+				new PutCommand({
+					TableName: this.#tableName,
+					Item: {
+						...key,
+						...terminal,
+						expiresAt:
+							Math.floor(this.#clock().getTime() / 1_000) + this.#ttlSeconds,
+					},
+					ConditionExpression: "attribute_not_exists(pk)",
+				}),
+			);
+			return terminal;
+		} catch (error) {
+			if (!isConditionalFailure(error)) throw error;
+			const existing = await this.getTerminalRequestState(
+				terminal.request,
+				terminal.generation,
+			);
+			if (existing === undefined) throw error;
+			return existing;
+		}
+	}
+
+	async getTerminalRequestState(
+		request: RequestKey,
+		generation: number,
+	): Promise<TerminalRequestRecord | undefined> {
+		const response = await this.#transport.send(
+			new GetCommand({
+				TableName: this.#tableName,
+				Key: buildTerminalRequestKey({ request, generation }),
+				ConsistentRead: true,
+			}),
+		);
+		const item = asRecord(asRecord(response)?.Item);
+		return item ? terminalRequestFromItem(item) : undefined;
 	}
 
 	async getOutcome(job: PipelineJobRecord): Promise<ReviewOutcome | undefined> {

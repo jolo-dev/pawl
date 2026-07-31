@@ -48,7 +48,19 @@ export const buildPipelineReconciler = (options: PipelineReconcilerOptions) => {
 		let claimed: PipelineJobRecord | undefined;
 		if (job.state === "PENDING") {
 			const outcome = await options.store.getOutcome(job);
-			const intent = selectCallbackIntent({ job, outcome, now: nowText });
+			const terminalRequest =
+				job.request !== undefined && job.generation !== undefined
+					? await options.store.getTerminalRequestState(
+							job.request,
+							job.generation,
+						)
+					: undefined;
+			const intent = selectCallbackIntent({
+				job,
+				outcome,
+				terminalRequestState: terminalRequest?.status,
+				now: nowText,
+			});
 			if (intent === undefined) {
 				await options.store.reschedule(job.jobId, addMinutes(now, 1));
 				return;

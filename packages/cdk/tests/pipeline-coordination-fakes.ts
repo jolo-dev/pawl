@@ -6,6 +6,8 @@ import {
 	type JobState,
 	type PipelineJobRecord,
 	type ReviewOutcome,
+	type TerminalRequestRecord,
+	terminalRequestRecordSchema,
 } from "../src/reviewer/pipeline/pipeline-coordination-store";
 import type {
 	PipelineCoordinationStore,
@@ -20,6 +22,8 @@ const requestKey = (request: RequestKey, generation: number): string =>
 		request.requestId,
 		generation,
 	]);
+const terminalRequestKey = (request: RequestKey, generation: number): string =>
+	requestKey(request, generation);
 const outcomeKey = (job: PipelineJobRecord): string | undefined =>
 	job.request && job.generation !== undefined && job.sourceRevision
 		? JSON.stringify([
@@ -36,6 +40,7 @@ export class FakePipelineCoordinationStore
 {
 	readonly jobs = new Map<string, PipelineJobRecord>();
 	readonly outcomes = new Map<string, ReviewOutcome>();
+	readonly terminalRequests = new Map<string, TerminalRequestRecord>();
 	readonly mappings = new Map<string, PipelineExecutionMapping>();
 
 	async registerJob(job: PipelineJobRecord): Promise<PipelineJobRecord> {
@@ -71,6 +76,22 @@ export class FakePipelineCoordinationStore
 	async getOutcome(job: PipelineJobRecord): Promise<ReviewOutcome | undefined> {
 		const key = outcomeKey(job);
 		return key ? this.outcomes.get(key) : undefined;
+	}
+	async recordTerminalRequestState(
+		terminalInput: TerminalRequestRecord,
+	): Promise<TerminalRequestRecord> {
+		const terminal = terminalRequestRecordSchema.parse(terminalInput);
+		const key = terminalRequestKey(terminal.request, terminal.generation);
+		const existing = this.terminalRequests.get(key);
+		if (existing) return existing;
+		this.terminalRequests.set(key, terminal);
+		return terminal;
+	}
+	async getTerminalRequestState(
+		request: RequestKey,
+		generation: number,
+	): Promise<TerminalRequestRecord | undefined> {
+		return this.terminalRequests.get(terminalRequestKey(request, generation));
 	}
 	async listDueJobs(
 		state: Extract<JobState, "PENDING" | "COMPLETING">,

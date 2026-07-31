@@ -176,6 +176,42 @@ describe("PipelineReviewDispatcher", () => {
 		expect(kick.count).toBe(1);
 	});
 
+	test("keeps the first terminal marker stable across duplicate terminal events", async () => {
+		const store = new FakePipelineCoordinationStore();
+		const dispatcher = new PipelineReviewDispatcher({
+			pipelineName: "pipeline",
+			transport: new RecordingPipelineTransport(),
+			store,
+			reconciler: new RecordingKick(),
+			clock: () => new Date("2026-07-29T12:00:00.000Z"),
+		});
+
+		await dispatcher.completeTerminalRequest({
+			request,
+			generation: 3,
+			status: "merged",
+		});
+		await store.registerJob(
+			pendingJob("between-events", snapshot.sourceRevision),
+		);
+		await dispatcher.completeTerminalRequest({
+			request,
+			generation: 3,
+			status: "closed",
+		});
+
+		expect(await store.getTerminalRequestState(request, 3)).toEqual({
+			request,
+			generation: 3,
+			status: "merged",
+			occurredAt: "2026-07-29T12:00:00.000Z",
+		});
+		expect(store.jobs.get("between-events")?.callbackCandidate).toEqual({
+			status: "success",
+			category: "RequestMerged",
+		});
+	});
+
 	test("ignores a conditional conflict for a concurrently selected callback and still invokes the reconciler", async () => {
 		const store = new ConcurrentlySelectedStore();
 		await store.registerJob(pendingJob("concurrent", snapshot.sourceRevision));

@@ -5,6 +5,7 @@ import type {
 	ReviewExecutionFailure,
 	ReviewTerminalRequest,
 } from "../ports/review-cycle-observer";
+import { isDynamoDbConditionalCheckFailedError } from "./dynamodb-errors";
 
 interface ReconcilerKick {
 	invoke(jobId?: string): Promise<void>;
@@ -52,10 +53,16 @@ export class PipelineReviewCycleObserver implements ReviewCycleObserver {
 	}
 
 	async recordTerminalRequest(terminal: ReviewTerminalRequest): Promise<void> {
+		const terminalState = await this.#store.recordTerminalRequestState({
+			request: terminal.request,
+			generation: terminal.generation,
+			status: terminal.status,
+			occurredAt: this.#clock().toISOString(),
+		});
 		const candidate = {
 			status: "success",
 			category:
-				terminal.status === "merged" ? "RequestMerged" : "RequestClosed",
+				terminalState.status === "merged" ? "RequestMerged" : "RequestClosed",
 		} as const;
 		let cursor: Readonly<Record<string, unknown>> | undefined;
 		do {
@@ -66,7 +73,11 @@ export class PipelineReviewCycleObserver implements ReviewCycleObserver {
 			);
 			for (const job of page.jobs) {
 				if (job.state === "PENDING") {
-					await this.#store.setCallbackCandidate(job.jobId, candidate);
+					try {
+						await this.#store.setCallbackCandidate(job.jobId, candidate);
+					} catch (error) {
+						if (!isDynamoDbConditionalCheckFailedError(error)) throw error;
+					}
 				}
 			}
 			cursor = page.cursor;

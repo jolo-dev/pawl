@@ -8,10 +8,12 @@ import {
 	buildPipelineJobKey,
 	buildRequestScopedJobIndexKey,
 	buildReviewOutcomeKey,
+	buildTerminalRequestKey,
 	callbackFailureCategorySchema,
 	callbackIntentSchema,
 	jobStateSchema,
 	selectCallbackIntent,
+	terminalRequestRecordSchema,
 } from "../src/reviewer/pipeline/pipeline-coordination-store";
 
 const userParameters = {
@@ -118,6 +120,37 @@ describe("pipeline coordination domain", () => {
 			callbackIntentSchema.parse({
 				status: "failure",
 				category: "ReviewSucceeded",
+			}),
+		).toThrow();
+	});
+
+	it("builds and strictly validates terminal request markers by request generation", () => {
+		expect(
+			buildTerminalRequestKey({ request: job.request, generation: 3 }),
+		).toEqual({
+			pk: "TERMINAL_REQUEST#codecommit#orders#42#GEN#3",
+			sk: "META",
+		});
+		expect(
+			terminalRequestRecordSchema.parse({
+				request: job.request,
+				generation: 3,
+				status: "merged",
+				occurredAt: "2026-07-29T12:00:00.000Z",
+			}),
+		).toEqual({
+			request: job.request,
+			generation: 3,
+			status: "merged",
+			occurredAt: "2026-07-29T12:00:00.000Z",
+		});
+		expect(() =>
+			terminalRequestRecordSchema.parse({
+				request: job.request,
+				generation: 3,
+				status: "closed",
+				occurredAt: "2026-07-29T12:00:00.000Z",
+				secret: "not-approved",
 			}),
 		).toThrow();
 	});

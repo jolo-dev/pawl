@@ -98,6 +98,74 @@ describe("DynamoDbPipelineCoordinationStore", () => {
 		});
 	});
 
+	test("keeps terminal request markers immutable and returns the first write on conflict", async () => {
+		const existing = {
+			request,
+			generation: 3,
+			status: "merged",
+			occurredAt: now,
+		} as const;
+		const transport = new RecordingTransport();
+		transport.nextError = conditionalFailure();
+		transport.responses.push({ Item: existing });
+		const store = createStore(transport);
+
+		await expect(
+			store.recordTerminalRequestState({
+				...existing,
+				status: "closed",
+			}),
+		).resolves.toEqual(existing);
+
+		const put = transport.commands[0];
+		const get = transport.commands[1];
+		expect(put).toBeInstanceOf(PutCommand);
+		expect(get).toBeInstanceOf(GetCommand);
+		if (!(put instanceof PutCommand) || !(get instanceof GetCommand)) return;
+		const expectedKey = {
+			pk: "TERMINAL_REQUEST#codecommit#orders#42#GEN#3",
+			sk: "META",
+		};
+		expect(put.input.Item).toEqual({
+			...expectedKey,
+			...existing,
+			status: "closed",
+			expiresAt: Math.floor(new Date(now).getTime() / 1_000) + 2_592_000,
+		});
+		expect(put.input.ConditionExpression).toBe("attribute_not_exists(pk)");
+		expect(get.input).toMatchObject({
+			Key: expectedKey,
+			ConsistentRead: true,
+		});
+	});
+
+	test("gets terminal request markers consistently", async () => {
+		const marker = {
+			request,
+			generation: 3,
+			status: "closed",
+			occurredAt: now,
+		} as const;
+		const transport = new RecordingTransport();
+		transport.responses.push({ Item: marker });
+		const store = createStore(transport);
+
+		await expect(store.getTerminalRequestState(request, 3)).resolves.toEqual(
+			marker,
+		);
+
+		const get = transport.commands[0];
+		expect(get).toBeInstanceOf(GetCommand);
+		if (!(get instanceof GetCommand)) return;
+		expect(get.input).toMatchObject({
+			Key: {
+				pk: "TERMINAL_REQUEST#codecommit#orders#42#GEN#3",
+				sk: "META",
+			},
+			ConsistentRead: true,
+		});
+	});
+
 	test("keeps outcomes immutable by request, generation, and revision", async () => {
 		const existing = {
 			request,

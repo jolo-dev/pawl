@@ -1,4 +1,5 @@
 import type { StartReviewPipelineExecution } from "./adapters/codepipeline-transport";
+import { isDynamoDbConditionalCheckFailedError } from "./adapters/dynamodb-errors";
 import type { RequestKey, ReviewRequest } from "./domain/review-request";
 import type { PipelineJobRecord } from "./pipeline/pipeline-coordination-store";
 import type {
@@ -211,11 +212,6 @@ export interface PrPipelineDispatcher {
 	}): Promise<void>;
 }
 
-const ignoreConditionalConflict = (error: unknown): boolean =>
-	typeof error === "object" &&
-	error !== null &&
-	(error as Record<string, unknown>).name === "ConditionalCheckFailedException";
-
 export class PipelineReviewDispatcher implements PrPipelineDispatcher {
 	readonly #pipelineName: string;
 	readonly #sourceActionName: string;
@@ -276,9 +272,16 @@ export class PipelineReviewDispatcher implements PrPipelineDispatcher {
 		readonly generation: number;
 		readonly status: "merged" | "closed";
 	}): Promise<void> {
+		const terminalState = await this.#store.recordTerminalRequestState({
+			request: input.request,
+			generation: input.generation,
+			status: input.status,
+			occurredAt: this.#clock().toISOString(),
+		});
 		const candidate = {
 			status: "success",
-			category: input.status === "merged" ? "RequestMerged" : "RequestClosed",
+			category:
+				terminalState.status === "merged" ? "RequestMerged" : "RequestClosed",
 		} as const;
 		await this.#forEachRequestJob(
 			input.request,
@@ -288,7 +291,7 @@ export class PipelineReviewDispatcher implements PrPipelineDispatcher {
 				try {
 					await this.#store.setCallbackCandidate(job.jobId, candidate);
 				} catch (error) {
-					if (!ignoreConditionalConflict(error)) throw error;
+					if (!isDynamoDbConditionalCheckFailedError(error)) throw error;
 				}
 			},
 		);
@@ -309,7 +312,7 @@ export class PipelineReviewDispatcher implements PrPipelineDispatcher {
 					category: "Superseded",
 				});
 			} catch (error) {
-				if (!ignoreConditionalConflict(error)) throw error;
+				if (!isDynamoDbConditionalCheckFailedError(error)) throw error;
 			}
 		});
 	}

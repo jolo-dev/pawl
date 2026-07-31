@@ -4,6 +4,7 @@ import type {
 	JobState,
 	PipelineJobRecord,
 	ReviewOutcome,
+	TerminalRequestRecord,
 } from "../pipeline/pipeline-coordination-store";
 
 export interface PipelineExecutionMapping {
@@ -30,6 +31,13 @@ export interface PipelineCoordinationStore {
 	): Promise<PipelineExecutionMapping | undefined>;
 	recordOutcome(outcome: ReviewOutcome): Promise<ReviewOutcome>;
 	getOutcome(job: PipelineJobRecord): Promise<ReviewOutcome | undefined>;
+	recordTerminalRequestState(
+		terminal: TerminalRequestRecord,
+	): Promise<TerminalRequestRecord>;
+	getTerminalRequestState(
+		request: RequestKey,
+		generation: number,
+	): Promise<TerminalRequestRecord | undefined>;
 	listDueJobs(
 		state: Extract<JobState, "PENDING" | "COMPLETING">,
 		now: string,

@@ -1,8 +1,10 @@
 import { describe, expect, spyOn, test } from "bun:test";
+import { PipelineReviewCycleObserver } from "../src/reviewer/adapters/pipeline-review-cycle-observer";
 import {
 	buildPipelineReconciler,
 	type PipelineJobResultTransport,
 } from "../src/reviewer/handlers/pipeline-reconciler";
+import { PipelineReviewDispatcher } from "../src/reviewer/pipeline-review-common";
 import { FakePipelineCoordinationStore } from "./pipeline-coordination-fakes";
 
 const request = {
@@ -60,6 +62,90 @@ const pendingJob = (
 });
 
 describe("pipeline review reconciler", () => {
+	test.each([
+		["merged", "RequestMerged", "dispatcher"],
+		["closed", "RequestClosed", "observer"],
+	] as const)("completes a late-registered job after a durable %s terminal request from the %s", async (status, category, producer) => {
+		const store = new FakePipelineCoordinationStore();
+		const transport = new RecordingResultTransport();
+		const noopKick = { invoke: async () => undefined };
+		if (producer === "dispatcher") {
+			const dispatcher = new PipelineReviewDispatcher({
+				pipelineName: "pipeline",
+				transport: {
+					startExecution: async () => ({ executionId: "unused" }),
+				},
+				store,
+				reconciler: noopKick,
+				clock: () => new Date(now),
+			});
+			await dispatcher.completeTerminalRequest({
+				request,
+				generation: 3,
+				status,
+			});
+		} else {
+			const observer = new PipelineReviewCycleObserver({
+				store,
+				reconciler: noopKick,
+				clock: () => new Date(now),
+			});
+			await observer.recordTerminalRequest({
+				request,
+				generation: 3,
+				status,
+			});
+		}
+
+		await store.registerJob(
+			pendingJob(`late-${status}`, {
+				deadlineAt: "2026-07-29T11:59:00.000Z",
+			}),
+		);
+		const reconcile = buildPipelineReconciler({
+			store,
+			transport,
+			clock: () => new Date(now),
+		});
+		await reconcile(`late-${status}`);
+
+		expect(transport.successes).toEqual([`late-${status}`]);
+		expect(transport.failures).toEqual([]);
+		expect(store.jobs.get(`late-${status}`)).toMatchObject({
+			state: "SUCCEEDED",
+			terminalIntent: { status: "success", category },
+		});
+	});
+
+	test("keeps a matching outcome ahead of the durable terminal marker", async () => {
+		const store = new FakePipelineCoordinationStore();
+		const transport = new RecordingResultTransport();
+		await store.recordTerminalRequestState({
+			request,
+			generation: 3,
+			status: "closed",
+			occurredAt: now,
+		});
+		await store.registerJob(pendingJob("outcome-first"));
+		await store.recordOutcome({
+			request,
+			generation: 3,
+			sourceRevision: "a".repeat(40),
+			status: "blocked",
+			checkStatus: "blocked",
+		});
+		const reconcile = buildPipelineReconciler({
+			store,
+			transport,
+			clock: () => new Date(now),
+		});
+
+		await reconcile("outcome-first");
+
+		expect(transport.failures[0]?.category).toBe("ReviewBlocked");
+		expect(store.jobs.get("outcome-first")?.state).toBe("FAILED");
+	});
+
 	test("completes reviewed outcomes successfully regardless of findings", async () => {
 		const store = new FakePipelineCoordinationStore();
 		const transport = new RecordingResultTransport();
@@ -159,6 +245,12 @@ describe("pipeline review reconciler", () => {
 		const store = new FakePipelineCoordinationStore();
 		const transport = new RecordingResultTransport();
 		const intent = { status: "failure", category: "ReviewFailed" } as const;
+		await store.recordTerminalRequestState({
+			request,
+			generation: 3,
+			status: "merged",
+			occurredAt: now,
+		});
 		await store.registerJob(
 			pendingJob("retry", {
 				state: "COMPLETING",

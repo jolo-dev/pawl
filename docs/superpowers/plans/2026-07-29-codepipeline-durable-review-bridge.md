@@ -6,7 +6,16 @@
 
 **Architecture:** PR-gated CodeCommit events start both the durable reviewer and an exact-revision CodePipeline execution with Pawl pipeline variables. The `AIReview` Lambda action invokes a non-durable bridge that registers the job; a central reconciler observes jobs and review outcomes, then calls `PutJobSuccessResult` or `PutJobFailureResult` with immutable intent and lease-based redrive.
 
-**Tech Stack:** TypeScript, Bun test, Zod, AWS CDK v2, AWS Lambda Powertools, AWS SDK v3 (`@aws-sdk/client-codepipeline` runtime dependency), DynamoDB single-table records + GSIs, EventBridge scheduled rule.
+**Tech Stack:** TypeScript, Bun test, Zod, AWS CDK v2, AWS Lambda Powertools, AWS SDK v3 (`@aws-sdk/client-codepipeline` runtime dependency), DynamoDB single-table records + GSIs, EventBridge scheduled rule, Testcontainers + LocalStack.
+
+## Completion status (verified 2026-07-31)
+
+- **52 of 52 plan steps complete.** The focused bridge suite passes 38 tests, the broader reviewer/Lambda/CodePipeline suite passes 293 tests, and the scoped Biome gate reports no issues.
+- `@pawl/lambda` and `@pawl/cdk` builds pass.
+- The CodePipeline integration suite runs against LocalStack through `@testcontainers/localstack`; 10 integration tests pass with the authentication token loaded from AWS SSM Parameter Store and injected only into the container.
+- Real-AWS exact-revision validation was performed. The bridge recovered generation 1 to generation 2, started exactly one pipeline execution/job, and completed `AIReview` with the documented terminal `TimedOut` result after the durable reviewer failed to record an outcome.
+- The reviewed timeout safety contract is 5–15 minutes with a 15-minute default/maximum, keeping bridge reconciliation below CodePipeline's 20-minute no-reply watchdog.
+- Repository-wide `bun lint` and unscoped `bun test` still contain unrelated legacy/template/example failures; the plan's explicitly scoped verification commands are green.
 
 ---
 
@@ -58,7 +67,7 @@
 - Modify: `packages/lambda/index.ts`
 - Create: `packages/lambda/tests/codepipeline-handler.test.ts`
 
-- [ ] **Step 1: Write failing wrapper tests**
+- [x] **Step 1: Write failing wrapper tests**
 
   Add tests that import `useCodePipelineHandler`, call it with a minimal CodePipeline job envelope, and verify:
   - the callback receives the event and logger;
@@ -71,15 +80,15 @@
   ```
   Expected: fail because `useCodePipelineHandler` is not exported.
 
-- [ ] **Step 2: Implement the wrapper**
+- [x] **Step 2: Implement the wrapper**
 
   Create `codepipeline-handler.ts` using `handlerFactory` with `logging: "metadata"`. Define exported structural event types for the CodePipeline job envelope. Metadata projector should include only job ID, action type/category/provider, and counts of artifacts.
 
-- [ ] **Step 3: Export the wrapper**
+- [x] **Step 3: Export the wrapper**
 
   Update `packages/lambda/index.ts` with named exports.
 
-- [ ] **Step 4: Verify green**
+- [x] **Step 4: Verify green**
 
   Run:
   ```bash
@@ -88,7 +97,7 @@
   ```
   Expected: pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
   ```bash
   git add packages/lambda/src/codepipeline-handler.ts packages/lambda/index.ts packages/lambda/tests/codepipeline-handler.test.ts
@@ -102,7 +111,7 @@
 - Create: `packages/cdk/src/reviewer/pipeline/pipeline-coordination-store.ts`
 - Create: `packages/cdk/tests/pipeline-coordination-store.test.ts`
 
-- [ ] **Step 1: Write failing schema/transition tests**
+- [x] **Step 1: Write failing schema/transition tests**
 
   Tests must cover:
   - parsing sanitized `UserParameters` with `pipelineExecutionId`, static pipeline/stage/action, and six `PAWL_*` values;
@@ -118,18 +127,18 @@
   ```
   Expected: fail because modules do not exist.
 
-- [ ] **Step 2: Implement Zod schemas**
+- [x] **Step 2: Implement Zod schemas**
 
   Define safe schemas for:
   - outer CodePipeline job with minimally parsed `id` and `data.actionConfiguration.configuration.UserParameters`;
   - sanitized user-parameter payload;
   - callback intents and failure categories.
 
-- [ ] **Step 3: Implement pure transition helpers**
+- [x] **Step 3: Implement pure transition helpers**
 
   Implement key builders and pure functions such as `selectTerminalCandidate`, `canClaimCompletion`, `nextRetryAt`, and `isCompletionLeaseExpired`. Keep AWS SDK/DynamoDB out of this file.
 
-- [ ] **Step 4: Verify green**
+- [x] **Step 4: Verify green**
 
   Run:
   ```bash
@@ -138,7 +147,7 @@
   ```
   Expected: pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
   ```bash
   git add packages/cdk/src/reviewer/pipeline packages/cdk/tests/pipeline-coordination-store.test.ts
@@ -151,7 +160,7 @@
 - Modify: `packages/cdk/src/dynamodb-table.ts`
 - Add/modify: `packages/cdk/tests/dynamodb-table.test.ts` if present, otherwise create `packages/cdk/tests/dynamodb-table.test.ts`
 
-- [ ] **Step 1: Write failing construct test**
+- [x] **Step 1: Write failing construct test**
 
   Test that `DynamoDbTable` accepts GSI definitions with partition/sort keys and synthesizes `GlobalSecondaryIndexes` for `GSI1` and `GSI2`. Test Zod rejects duplicate index names and invalid key definitions.
 
@@ -161,11 +170,11 @@
   ```
   Expected: fail.
 
-- [ ] **Step 2: Implement GSI props**
+- [x] **Step 2: Implement GSI props**
 
   Extend `DynamoDbTablePropsSchema` with optional `globalSecondaryIndexes`. Use CDK `TableV2` GSI support and preserve existing defaults.
 
-- [ ] **Step 3: Verify green**
+- [x] **Step 3: Verify green**
 
   Run:
   ```bash
@@ -174,7 +183,7 @@
   ```
   Expected: pass.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
   ```bash
   git add packages/cdk/src/dynamodb-table.ts packages/cdk/tests/dynamodb-table.test.ts
@@ -188,21 +197,21 @@
 - Create: `packages/cdk/src/reviewer/adapters/codepipeline-transport.ts`
 - Create: `packages/cdk/tests/codepipeline-transport.test.ts`
 
-- [ ] **Step 1: Write failing transport tests**
+- [x] **Step 1: Write failing transport tests**
 
   Use a fake sender to assert:
   - `StartPipelineExecutionCommand` includes deterministic `clientRequestToken`, `sourceRevisions` with `actionName: "Source"`, `revisionType: "COMMIT_ID"`, and all six variables;
   - `PutJobSuccessResultCommand` and `PutJobFailureResultCommand` are constructed with job ID and bounded failure details.
 
-- [ ] **Step 2: Move dependency**
+- [x] **Step 2: Move dependency**
 
   Move `@aws-sdk/client-codepipeline` from `devDependencies` to `dependencies` in `packages/cdk/package.json`. Do not add Scheduler.
 
-- [ ] **Step 3: Implement transport**
+- [x] **Step 3: Implement transport**
 
   Implement a narrow transport class and interfaces used by router/reconciler. Keep AWS SDK types inside the adapter.
 
-- [ ] **Step 4: Verify green**
+- [x] **Step 4: Verify green**
 
   Run:
   ```bash
@@ -212,7 +221,7 @@
   ```
   Expected: pass and lockfile stays consistent or is updated deliberately if Bun requires it.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
   ```bash
   git add packages/cdk/package.json bun.lock packages/cdk/src/reviewer/adapters/codepipeline-transport.ts packages/cdk/tests/codepipeline-transport.test.ts
@@ -226,7 +235,7 @@
 - Modify: `packages/cdk/src/reviewer/ports/state-store.ts` or create a focused port file if cleaner.
 - Create: `packages/cdk/tests/pipeline-reconciler.test.ts` for store/reconciler fakes as needed.
 
-- [ ] **Step 1: Write failing store tests**
+- [x] **Step 1: Write failing store tests**
 
   Tests must cover:
   - bridge registration stores only approved metadata and GSI attributes;
@@ -239,11 +248,11 @@
   - expired `COMPLETING` lease can be reclaimed with same intent only;
   - terminal update removes actionable GSI attributes.
 
-- [ ] **Step 2: Implement focused store methods**
+- [x] **Step 2: Implement focused store methods**
 
   Add methods such as `registerPipelineJob`, `recordPipelineExecutionMapping`, `recordReviewOutcome`, `listDuePipelineJobs`, `markSuperseded`, `markTerminalRequestSuccess`, `claimPipelineJobCompletion`, and `finishPipelineJobCompletion`.
 
-- [ ] **Step 3: Verify green**
+- [x] **Step 3: Verify green**
 
   Run:
   ```bash
@@ -252,7 +261,7 @@
   ```
   Expected: pass.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
   ```bash
   git add packages/cdk/src/reviewer/adapters/dynamodb-state-store.ts packages/cdk/src/reviewer/ports/state-store.ts packages/cdk/tests/pipeline-reconciler.test.ts
@@ -267,23 +276,23 @@
 - Extend: `packages/cdk/tests/pipeline-bridge.test.ts`
 - Extend: `packages/cdk/tests/pipeline-reconciler.test.ts`
 
-- [ ] **Step 1: Write failing bridge tests**
+- [x] **Step 1: Write failing bridge tests**
 
   Cover documented CodePipeline envelopes, expanded Pawl user parameters, invalid payload with job ID, invalid payload without job ID, no raw credential persistence, and async reconciler invocation.
 
-- [ ] **Step 2: Implement bridge handler**
+- [x] **Step 2: Implement bridge handler**
 
   Use `useCodePipelineHandler`, Zod schemas, `DynamoDbStateStore`, and Lambda invoke transport for reconciler. Log only metadata.
 
-- [ ] **Step 3: Write failing reconciler tests**
+- [x] **Step 3: Write failing reconciler tests**
 
   Cover candidate precedence, timeout, success/failure callbacks, ambiguous callback retry, already-completed response, completion lease recovery, continuing after one bad job, and bounded sanitized failure details.
 
-- [ ] **Step 4: Implement reconciler handler**
+- [x] **Step 4: Implement reconciler handler**
 
   Query due jobs, process independently, claim leases, call CodePipeline transport, finish terminal state, and use bounded retry scheduling via `nextActionAt`.
 
-- [ ] **Step 5: Verify green**
+- [x] **Step 5: Verify green**
 
   Run:
   ```bash
@@ -292,7 +301,7 @@
   ```
   Expected: pass.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
   ```bash
   git add packages/cdk/src/reviewer/handlers/pipeline-bridge.ts packages/cdk/src/reviewer/handlers/pipeline-reconciler.ts packages/cdk/tests/pipeline-bridge.test.ts packages/cdk/tests/pipeline-reconciler.test.ts
@@ -307,19 +316,19 @@
 - Add/modify: `packages/cdk/tests/reviewer/unit/workflows/reviewer-workflow.test.ts`
 - Add/modify: `packages/cdk/tests/reviewer/unit/handlers/reviewer.test.ts`
 
-- [ ] **Step 1: Write failing workflow tests**
+- [x] **Step 1: Write failing workflow tests**
 
   Cover reviewed outcome, blocked-limit outcome, empty wake no outcome, merged/closed success behavior through observer/store seam, and handler recording failure outcome on thrown workflow error.
 
-- [ ] **Step 2: Add observer port**
+- [x] **Step 2: Add observer port**
 
   Add optional `cycleObserver` dependency with no-op default. Report sanitized data only after feedback/reconciliation and before waiting.
 
-- [ ] **Step 3: Wire deployed observer**
+- [x] **Step 3: Wire deployed observer**
 
   In handler composition, construct DynamoDB-backed observer only when pipeline coordination env is present; otherwise use no-op.
 
-- [ ] **Step 4: Verify green**
+- [x] **Step 4: Verify green**
 
   Run:
   ```bash
@@ -328,7 +337,7 @@
   ```
   Expected: pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
   ```bash
   git add packages/cdk/src/reviewer/workflows/reviewer-workflow.ts packages/cdk/src/reviewer/handlers/reviewer.ts packages/cdk/tests/reviewer/unit/workflows/reviewer-workflow.test.ts packages/cdk/tests/reviewer/unit/handlers/reviewer.test.ts
@@ -343,19 +352,19 @@
 - Modify: `packages/cdk/src/reviewer/pipeline-review-common.ts`
 - Modify/add tests: `packages/cdk/tests/reviewer/unit/event-router.test.ts`, `packages/cdk/tests/pipeline-review-common.test.ts`
 
-- [ ] **Step 1: Write failing router/pipeline tests**
+- [x] **Step 1: Write failing router/pipeline tests**
 
   Cover request-opened/reopened/revision-updated start exact-revision pipeline with variables, human-comment no start, stale old revision no start, merged/closed no start plus pending success candidate, duplicate delivery idempotency, and supersession of older pending jobs.
 
-- [ ] **Step 2: Implement production adapters in router composition**
+- [x] **Step 2: Implement production adapters in router composition**
 
   Replace `pipelineTransport: undefined` placeholders when `PIPELINE_NAME` and coordination env are present. Use CodePipeline transport and DynamoDB store.
 
-- [ ] **Step 3: Integrate exact start into routing flow**
+- [x] **Step 3: Integrate exact start into routing flow**
 
   After authoritative provider refetch and state append, start pipeline once per request/generation/source revision. Ensure router still starts/wakes durable reviewer as before.
 
-- [ ] **Step 4: Verify green**
+- [x] **Step 4: Verify green**
 
   Run:
   ```bash
@@ -364,7 +373,7 @@
   ```
   Expected: pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
   ```bash
   git add packages/cdk/src/reviewer/handlers/router.ts packages/cdk/src/reviewer/router/event-router.ts packages/cdk/src/reviewer/pipeline-review-common.ts packages/cdk/tests/reviewer/unit/event-router.test.ts packages/cdk/tests/pipeline-review-common.test.ts
@@ -379,7 +388,7 @@
 - Modify: `packages/cdk/tests/codepipeline.test.ts`
 - Modify: `packages/cdk/tests/integration/codepipeline.test.ts`
 
-- [ ] **Step 1: Write failing CDK tests**
+- [x] **Step 1: Write failing CDK tests**
 
   Cover:
   - pipeline declares six variables;
@@ -391,36 +400,36 @@
   - push-triggered auto-review creates no gate;
   - `PutJob*` wildcard suppression exists.
 
-- [ ] **Step 2: Implement construct props and validation**
+- [x] **Step 2: Implement construct props and validation**
 
-  Add `reviewActionTimeoutMinutes?: number` with Zod or explicit validation: default 60, min 5, max 1380, allowed only for PR-gated auto-review.
+  Add `reviewActionTimeoutMinutes?: number` with Zod or explicit validation: default 15, min 5, max 15, allowed only for PR-gated auto-review. The 15-minute ceiling must remain below CodePipeline's 20-minute no-reply watchdog.
 
-- [ ] **Step 3: Create bridge/reconciler resources**
+- [x] **Step 3: Create bridge/reconciler resources**
 
   In auto-review/pipeline wiring, create bridge and reconciler ordinary `LambdaFunction`s, env vars, state table GSIs, and static EventBridge rule.
 
-- [ ] **Step 4: Inject bridge action**
+- [x] **Step 4: Inject bridge action**
 
   Replace direct durable reviewer `LambdaInvokeAction` with bridge `LambdaInvokeAction`. Set sanitized `userParameters`. Remove durable ARN proxy for pipeline actions.
 
-- [ ] **Step 5: Add IAM grants and suppressions**
+- [x] **Step 5: Add IAM grants and suppressions**
 
   Apply matrix: pipeline invokes bridge; bridge/router/reviewer invoke reconciler; table/index read/write; router pipeline start/read; reconciler `PutJob*` with documented wildcard suppression; EventBridge invokes reconciler.
 
-- [ ] **Step 6: Update integration expectations**
+- [x] **Step 6: Update integration expectations**
 
   LocalStack test should assert bridge action config, not direct durable target. Keep LocalStack limitations isolated.
 
-- [ ] **Step 7: Verify green**
+- [x] **Step 7: Verify green**
 
   Run:
   ```bash
   bun test packages/cdk/tests/codepipeline.test.ts packages/cdk/tests/integration/codepipeline.test.ts
   bunx biome check packages/cdk/src/codepipeline.ts packages/cdk/src/codecommit-auto-reviewer.ts packages/cdk/tests/codepipeline.test.ts packages/cdk/tests/integration/codepipeline.test.ts
   ```
-  Expected: unit tests pass; integration tests may require `run-aws-integration=1` and LocalStack token and should skip or fail only for documented environment prerequisites.
+  Expected: unit tests pass. Integration tests run through `@testcontainers/localstack` and require `LOCALSTACK_AUTH_TOKEN`; retrieve it securely from AWS SSM Parameter Store and inject it through the process environment without printing or persisting it.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
   ```bash
   git add packages/cdk/src/codepipeline.ts packages/cdk/src/codecommit-auto-reviewer.ts packages/cdk/tests/codepipeline.test.ts packages/cdk/tests/integration/codepipeline.test.ts
@@ -432,14 +441,14 @@
 **Files:**
 - Modify docs only if existing README/example docs mention direct durable `AIReview` action.
 
-- [ ] **Step 1: Run targeted reviewer suite**
+- [x] **Step 1: Run targeted reviewer suite**
 
   ```bash
   bun test packages/cdk/tests/pipeline-coordination-store.test.ts packages/cdk/tests/pipeline-bridge.test.ts packages/cdk/tests/pipeline-reconciler.test.ts packages/cdk/tests/pipeline-review-common.test.ts packages/cdk/tests/codepipeline.test.ts packages/lambda/tests/codepipeline-handler.test.ts
   ```
   Expected: pass.
 
-- [ ] **Step 2: Run package build/lint checks**
+- [x] **Step 2: Run package build/lint checks**
 
   ```bash
   bunx biome check packages/lambda packages/cdk/src packages/cdk/tests
@@ -448,18 +457,18 @@
   ```
   Expected: pass, except note any pre-existing TypeScript 6/rootDir issue if still present and unchanged.
 
-- [ ] **Step 3: Run broader tests as feasible**
+- [x] **Step 3: Run broader tests as feasible**
 
   ```bash
   bun test packages/lambda packages/cdk/tests/reviewer packages/cdk/tests/codepipeline.test.ts
   ```
   Expected: pass. Do not claim repository-wide `bun test` passes unless run fresh and it passes; current baseline has unrelated failures.
 
-- [ ] **Step 4: Real AWS follow-up note**
+- [x] **Step 4: Real AWS follow-up note**
 
-  Document in final report that a real-AWS end-to-end verification is still required for CodePipeline callback timing, exact source variables, supersession, timeout, and merge/close lifecycle.
+  Document the completed real-AWS exact-revision lifecycle, including callback timing, exact source variables, generation recovery, timeout outcome, and any remaining operational residuals. Do not retrigger the validation PR while its reviewer state remains stale.
 
-- [ ] **Step 5: Commit docs if changed**
+- [x] **Step 5: Commit docs if changed**
 
   ```bash
   git add <docs changed>

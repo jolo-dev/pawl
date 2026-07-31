@@ -1,24 +1,24 @@
 {
-  "commentsForPullRequestData": [
-    {
-      "repositoryName": "widgets",
-      "pullRequestId": "42",
-      "beforeCommitId": "destination-immutable-def",
-      "afterCommitId": "source-immutable-abc",
-      "location": {
-        "filePath": "src/a.ts",
-        "filePosition": 12,
-        "relativeFileVersion": "AFTER"
-      },
-      "comments": [
-        {
-          "commentId": "comment-1",
-          "content": "First",
-          "inReplyTo": "root-1",
-          "authorArn": "arn:aws:iam::123:user/reviewer"
-        }
-      ]
-    }
-  ],
-  "nextToken": "comments-page-2"
+	"commentsForPullRequestData": [
+		{
+			"repositoryName": "widgets",
+			"pullRequestId": "42",
+			"beforeCommitId": "destination-immutable-def",
+			"afterCommitId": "source-immutable-abc",
+			"location": {
+				"filePath": "src/a.ts",
+				"filePosition": 12,
+				"relativeFileVersion": "AFTER"
+			},
+			"comments": [
+				{
+					"commentId": "comment-1",
+					"content": "First",
+					"inReplyTo": "root-1",
+					"authorArn": "arn:aws:iam::123:user/reviewer"
+				}
+			]
+		}
+	],
+	"nextToken": "comments-page-2"
 }

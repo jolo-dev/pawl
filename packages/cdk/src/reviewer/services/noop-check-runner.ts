@@ -1,4 +1,8 @@
-import type { CheckRunInput, CheckRunResult, CheckRunner } from "../ports/check-runner";
+import type {
+	CheckRunInput,
+	CheckRunner,
+	CheckRunResult,
+} from "../ports/check-runner";
 
 /**
  * No-op check runner. Runs no builds and returns an empty result. The real
@@ -6,7 +10,7 @@ import type { CheckRunInput, CheckRunResult, CheckRunner } from "../ports/check-
  * and retrieves bounded CloudWatch logs.
  */
 export class NoopCheckRunner implements CheckRunner {
-  async run(_input: CheckRunInput): Promise<CheckRunResult> {
-    return { status: "completed", checks: [] };
-  }
+	async run(_input: CheckRunInput): Promise<CheckRunResult> {
+		return { status: "completed", checks: [] };
+	}
 }

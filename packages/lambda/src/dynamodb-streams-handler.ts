@@ -1,9 +1,5 @@
 import type { Logger } from "@aws-lambda-powertools/logger";
-import type {
-	DynamoDBBatchResponse,
-	DynamoDBStreamEvent,
-	DynamoDBStreamHandler,
-} from "aws-lambda";
+import type { DynamoDBStreamEvent, DynamoDBStreamHandler } from "aws-lambda";
 import { handlerFactory } from "./base/handler-factory";
 import type { HandlerWithHooks } from "./base/hooks";
 
@@ -18,18 +14,20 @@ import type { HandlerWithHooks } from "./base/hooks";
  * function that handles the DynamoDB stream event and logger. The `handleRequest` function returns a
  * promise that resolves to `void` or `DynamoDBBatchResponse`.
  */
+type DynamoDBStreamResult = Awaited<ReturnType<DynamoDBStreamHandler>>;
+
 export function useDynamoDbStreamsHandler(
 	serviceName: string,
 	handleRequest: (
 		event: DynamoDBStreamEvent,
 		logger: Logger,
-	) => Promise<void | DynamoDBBatchResponse>,
+	) => Promise<DynamoDBStreamResult>,
 ): HandlerWithHooks<
 	DynamoDBStreamHandler,
 	DynamoDBStreamEvent,
-	void | DynamoDBBatchResponse
+	DynamoDBStreamResult
 > {
-	return handlerFactory<DynamoDBStreamEvent, void | DynamoDBBatchResponse>(
+	return handlerFactory<DynamoDBStreamEvent, DynamoDBStreamResult>(
 		serviceName,
 		handleRequest,
 	);

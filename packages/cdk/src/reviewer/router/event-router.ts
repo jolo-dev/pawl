@@ -597,25 +597,36 @@ export class EventRouter {
 		normalized: NormalizedCodeCommitEvent,
 		snapshot?: ReviewRequest,
 	): ReviewEvent {
-		if (normalized.type === "revision-updated")
+		if (normalized.type === "revision-updated") {
+			const revision = snapshot?.sourceRevision ?? normalized.revision;
+			if (revision === undefined) {
+				throw new Error(
+					"Expected revision-updated event to include a revision",
+				);
+			}
 			return {
 				id: normalized.id,
 				type: normalized.type,
 				request: normalized.request,
 				occurredAt: normalized.occurredAt,
-				revision: snapshot?.sourceRevision ?? normalized.revision!,
+				revision,
 			};
-		if (normalized.type === "human-comment")
+		}
+		if (normalized.type === "human-comment") {
+			if (normalized.commentId === undefined) {
+				throw new Error("Expected human-comment event to include a comment ID");
+			}
 			return {
 				id: normalized.id,
 				type: normalized.type,
 				request: normalized.request,
 				occurredAt: normalized.occurredAt,
-				commentId: normalized.commentId!,
+				commentId: normalized.commentId,
 				...(normalized.inReplyTo === undefined
 					? {}
 					: { inReplyTo: normalized.inReplyTo }),
 			};
+		}
 		return {
 			id: normalized.id,
 			type: normalized.type,

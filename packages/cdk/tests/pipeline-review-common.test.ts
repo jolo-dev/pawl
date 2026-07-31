@@ -2,12 +2,12 @@ import { describe, expect, test } from "bun:test";
 import {
 	formatCiSummary,
 	handlePipelineExecutionEvent,
-	startPipelineForPr,
 	type PipelineDispatchConfig,
 	type PipelineExecutionSummary,
 	type PipelineMappingStore,
 	type PipelineTransport,
 	type PrCommentPoster,
+	startPipelineForPr,
 } from "../src/reviewer/pipeline-review-common";
 
 function makeMockTransport(
@@ -26,7 +26,15 @@ function makeMockTransport(
 function makeMockMappingStore(
 	overrides: Partial<PipelineMappingStore> = {},
 ): PipelineMappingStore {
-	const store = new Map<string, { pullRequestId: string; repositoryName: string; sourceCommitId: string; destinationCommitId: string }>();
+	const store = new Map<
+		string,
+		{
+			pullRequestId: string;
+			repositoryName: string;
+			sourceCommitId: string;
+			destinationCommitId: string;
+		}
+	>();
 	return {
 		putMapping: async (params) => {
 			store.set(params.executionId, {
@@ -41,14 +49,18 @@ function makeMockMappingStore(
 	};
 }
 
-function makeMockPoster(overrides: Partial<PrCommentPoster> = {}): PrCommentPoster {
+function makeMockPoster(
+	overrides: Partial<PrCommentPoster> = {},
+): PrCommentPoster {
 	return {
 		postComment: async () => {},
 		...overrides,
 	};
 }
 
-function makeConfig(overrides: Partial<PipelineDispatchConfig> = {}): PipelineDispatchConfig {
+function makeConfig(
+	overrides: Partial<PipelineDispatchConfig> = {},
+): PipelineDispatchConfig {
 	return {
 		pipelineTransport: makeMockTransport(),
 		pipelineName: "my-pipeline",
@@ -60,7 +72,8 @@ function makeConfig(overrides: Partial<PipelineDispatchConfig> = {}): PipelineDi
 
 describe("startPipelineForPr", () => {
 	test("starts execution with sourceRevision and persists mapping", async () => {
-		const startCalls: Array<{ pipelineName: string; sourceRevision?: string }> = [];
+		const startCalls: Array<{ pipelineName: string; sourceRevision?: string }> =
+			[];
 		const putCalls: Array<{ executionId: string; pullRequestId: string }> = [];
 		const config = makeConfig({
 			pipelineTransport: makeMockTransport({
@@ -120,7 +133,11 @@ describe("startPipelineForPr", () => {
 
 describe("handlePipelineExecutionEvent", () => {
 	test("resolves mapping, fetches summary, and posts comment", async () => {
-		const postedComments: Array<{ repositoryName: string; pullRequestId: string; content: string }> = [];
+		const postedComments: Array<{
+			repositoryName: string;
+			pullRequestId: string;
+			content: string;
+		}> = [];
 		const config = makeConfig({
 			mappingStore: makeMockMappingStore({
 				getMapping: async () => ({
@@ -143,8 +160,12 @@ describe("handlePipelineExecutionEvent", () => {
 		);
 
 		expect(postedComments).toHaveLength(1);
-		expect(postedComments[0]!.pullRequestId).toBe("pr-1");
-		expect(postedComments[0]!.content).toContain("Succeeded");
+		const postedComment = postedComments[0];
+		if (postedComment === undefined) {
+			throw new Error("Expected a posted pipeline execution comment");
+		}
+		expect(postedComment.pullRequestId).toBe("pr-1");
+		expect(postedComment.content).toContain("Succeeded");
 	});
 
 	test("ignores events without a mapping", async () => {

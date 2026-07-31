@@ -7,7 +7,10 @@ import {
 } from "@aws-sdk/lib-dynamodb";
 import type { RequestKey } from "../domain/review-request";
 import {
+	type AuthoritativeRevisionRecord,
+	authoritativeRevisionRecordSchema,
 	buildActionableStateIndexKey,
+	buildAuthoritativeRevisionKey,
 	buildPipelineExecutionKey,
 	buildPipelineJobKey,
 	buildRequestScopedJobIndexKey,
@@ -26,6 +29,7 @@ import {
 	terminalRequestRecordSchema,
 } from "../pipeline/pipeline-coordination-store";
 import type {
+	AuthoritativeRevisionObservation,
 	PipelineCoordinationStore,
 	PipelineExecutionMapping,
 	PipelineJobPage,
@@ -107,6 +111,17 @@ const terminalRequestFromItem = (item: Item): TerminalRequestRecord =>
 		generation: item.generation,
 		status: item.status,
 		occurredAt: item.occurredAt,
+	});
+
+const authoritativeRevisionFromItem = (
+	item: Item,
+): AuthoritativeRevisionRecord =>
+	authoritativeRevisionRecordSchema.parse({
+		request: item.request,
+		generation: item.generation,
+		sourceRevision: item.sourceRevision,
+		observedAt: item.observedAt,
+		eventId: item.eventId,
 	});
 
 const terminalState = (
@@ -303,6 +318,56 @@ export class DynamoDbPipelineCoordinationStore
 		return item ? terminalRequestFromItem(item) : undefined;
 	}
 
+	async recordAuthoritativeRevision(
+		markerInput: AuthoritativeRevisionRecord,
+	): Promise<AuthoritativeRevisionRecord> {
+		const marker = authoritativeRevisionRecordSchema.parse(markerInput);
+		const key = buildAuthoritativeRevisionKey(marker);
+		try {
+			await this.#transport.send(
+				new PutCommand({
+					TableName: this.#tableName,
+					Item: {
+						...key,
+						...marker,
+						expiresAt:
+							Math.floor(this.#clock().getTime() / 1_000) + this.#ttlSeconds,
+					},
+					ConditionExpression:
+						"attribute_not_exists(pk) OR observedAt < :observedAt OR (observedAt = :observedAt AND eventId < :eventId)",
+					ExpressionAttributeValues: {
+						":observedAt": marker.observedAt,
+						":eventId": marker.eventId,
+					},
+				}),
+			);
+			return marker;
+		} catch (error) {
+			if (!isConditionalFailure(error)) throw error;
+			const winner = await this.getAuthoritativeRevision(
+				marker.request,
+				marker.generation,
+			);
+			if (winner === undefined) throw error;
+			return winner;
+		}
+	}
+
+	async getAuthoritativeRevision(
+		request: RequestKey,
+		generation: number,
+	): Promise<AuthoritativeRevisionRecord | undefined> {
+		const response = await this.#transport.send(
+			new GetCommand({
+				TableName: this.#tableName,
+				Key: buildAuthoritativeRevisionKey({ request, generation }),
+				ConsistentRead: true,
+			}),
+		);
+		const item = asRecord(asRecord(response)?.Item);
+		return item ? authoritativeRevisionFromItem(item) : undefined;
+	}
+
 	async getOutcome(job: PipelineJobRecord): Promise<ReviewOutcome | undefined> {
 		if (!job.request || job.generation === undefined || !job.sourceRevision) {
 			return undefined;
@@ -409,6 +474,7 @@ export class DynamoDbPipelineCoordinationStore
 		readonly observedJob: PipelineJobRecord;
 		readonly outcomeObservation: ReviewOutcomeObservation;
 		readonly terminalRequestObservation: TerminalRequestObservation;
+		readonly authoritativeRevisionObservation: AuthoritativeRevisionObservation;
 		readonly intent: CallbackIntent;
 		readonly leaseExpiresAt: string;
 		readonly nextActionAt: string;
@@ -453,6 +519,7 @@ export class DynamoDbPipelineCoordinationStore
 			if (
 				input.outcomeObservation.status !== "not-applicable" ||
 				input.terminalRequestObservation.status !== "not-applicable" ||
+				input.authoritativeRevisionObservation.status !== "not-applicable" ||
 				intent.status !== "failure" ||
 				intent.category !== "ConfigurationError" ||
 				observedJob.callbackCandidate?.status !== "failure" ||
@@ -487,10 +554,11 @@ export class DynamoDbPipelineCoordinationStore
 			observedJob.generation === undefined ||
 			observedJob.sourceRevision === undefined ||
 			input.outcomeObservation.status === "not-applicable" ||
-			input.terminalRequestObservation.status === "not-applicable"
+			input.terminalRequestObservation.status === "not-applicable" ||
+			input.authoritativeRevisionObservation.status === "not-applicable"
 		) {
 			throw new Error(
-				"identified pipeline jobs require both signal observations",
+				"identified pipeline jobs require all signal observations",
 			);
 		}
 		const outcomeKey = buildReviewOutcomeKey({
@@ -499,6 +567,10 @@ export class DynamoDbPipelineCoordinationStore
 			sourceRevision: observedJob.sourceRevision,
 		});
 		const terminalRequestKey = buildTerminalRequestKey({
+			request: observedJob.request,
+			generation: observedJob.generation,
+		});
+		const authoritativeRevisionKey = buildAuthoritativeRevisionKey({
 			request: observedJob.request,
 			generation: observedJob.generation,
 		});
@@ -524,6 +596,25 @@ export class DynamoDbPipelineCoordinationStore
 				observedTerminalKey.sk !== terminalRequestKey.sk
 			) {
 				throw new Error("terminal request observation does not match the job");
+			}
+		}
+		const observedAuthoritativeRevision =
+			input.authoritativeRevisionObservation.status === "present"
+				? authoritativeRevisionRecordSchema.parse(
+						input.authoritativeRevisionObservation.value,
+					)
+				: undefined;
+		if (observedAuthoritativeRevision !== undefined) {
+			const observedMarkerKey = buildAuthoritativeRevisionKey(
+				observedAuthoritativeRevision,
+			);
+			if (
+				observedMarkerKey.pk !== authoritativeRevisionKey.pk ||
+				observedMarkerKey.sk !== authoritativeRevisionKey.sk
+			) {
+				throw new Error(
+					"authoritative revision observation does not match the job",
+				);
 			}
 		}
 
@@ -560,6 +651,26 @@ export class DynamoDbPipelineCoordinationStore
 									input.terminalRequestObservation.status === "present"
 										? "attribute_exists(pk)"
 										: "attribute_not_exists(pk)",
+							},
+						},
+						{
+							ConditionCheck: {
+								TableName: this.#tableName,
+								Key: authoritativeRevisionKey,
+								ConditionExpression:
+									observedAuthoritativeRevision === undefined
+										? "attribute_not_exists(pk)"
+										: "sourceRevision = :sourceRevision AND observedAt = :observedAt AND eventId = :eventId",
+								...(observedAuthoritativeRevision === undefined
+									? {}
+									: {
+											ExpressionAttributeValues: {
+												":sourceRevision":
+													observedAuthoritativeRevision.sourceRevision,
+												":observedAt": observedAuthoritativeRevision.observedAt,
+												":eventId": observedAuthoritativeRevision.eventId,
+											},
+										}),
 							},
 						},
 					],

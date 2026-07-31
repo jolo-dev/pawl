@@ -117,6 +117,108 @@ describe("pipeline review reconciler", () => {
 		});
 	});
 
+	test("fails a late old-revision job after the newer marker's eager scan", async () => {
+		const store = new FakePipelineCoordinationStore();
+		const transport = new RecordingResultTransport();
+		const dispatcher = new PipelineReviewDispatcher({
+			pipelineName: "pipeline",
+			transport: {
+				startExecution: async () => ({ executionId: "new-execution" }),
+			},
+			store,
+			reconciler: { invoke: async () => undefined },
+			clock: () => new Date(now),
+		});
+		await dispatcher.startReviewPipeline({
+			snapshot: {
+				key: request,
+				title: "Review",
+				status: "open",
+				sourceBranch: "feature",
+				destinationBranch: "main",
+				sourceRevision: "b".repeat(40),
+				destinationRevision: "c".repeat(40),
+			},
+			generation: 3,
+			observedAt: now,
+			eventId: "new-revision",
+		});
+		await store.registerJob(
+			pendingJob("late-old", {
+				sourceRevision: "a".repeat(40),
+				deadlineAt: "2026-07-29T13:00:00.000Z",
+			}),
+		);
+		const reconcile = buildPipelineReconciler({
+			store,
+			transport,
+			clock: () => new Date(now),
+		});
+
+		await reconcile("late-old");
+
+		expect(transport.successes).toEqual([]);
+		expect(transport.failures).toEqual([
+			{
+				jobId: "late-old",
+				category: "Superseded",
+				message: "Superseded",
+			},
+		]);
+		expect(store.jobs.get("late-old")?.state).toBe("FAILED");
+	});
+
+	test("refreshes all signals when the authoritative marker changes before claim", async () => {
+		const store = new FakePipelineCoordinationStore();
+		const transport = new RecordingResultTransport();
+		await store.registerJob(
+			pendingJob("marker-race", {
+				deadlineAt: "2026-07-29T11:59:00.000Z",
+			}),
+		);
+		await store.recordAuthoritativeRevision({
+			request,
+			generation: 3,
+			sourceRevision: "a".repeat(40),
+			observedAt: "2026-07-29T11:59:00.000Z",
+			eventId: "old-revision",
+		});
+		await store.recordOutcome({
+			request,
+			generation: 3,
+			sourceRevision: "a".repeat(40),
+			status: "reviewed",
+			checkStatus: "completed",
+		});
+		let attempts = 0;
+		store.beforeClaim = async () => {
+			attempts += 1;
+			store.beforeClaim = undefined;
+			await store.recordAuthoritativeRevision({
+				request,
+				generation: 3,
+				sourceRevision: "b".repeat(40),
+				observedAt: now,
+				eventId: "new-revision",
+			});
+		};
+		const reconcile = buildPipelineReconciler({
+			store,
+			transport,
+			clock: () => new Date(now),
+		});
+
+		await reconcile("marker-race");
+
+		expect(attempts).toBe(1);
+		expect(transport.successes).toEqual([]);
+		expect(transport.failures[0]?.category).toBe("Superseded");
+		expect(store.jobs.get("marker-race")?.terminalIntent).toEqual({
+			status: "failure",
+			category: "Superseded",
+		});
+	});
+
 	test("keeps a matching outcome ahead of the durable terminal marker", async () => {
 		const store = new FakePipelineCoordinationStore();
 		const transport = new RecordingResultTransport();

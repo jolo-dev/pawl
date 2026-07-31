@@ -121,6 +121,23 @@ export const terminalRequestRecordSchema = z
 	.readonly();
 export type TerminalRequestRecord = z.infer<typeof terminalRequestRecordSchema>;
 
+export const authoritativeRevisionRecordSchema = z
+	.strictObject({
+		request: requestKeySchema,
+		generation: generationSchema,
+		sourceRevision: revisionSchema,
+		observedAt: occurredAtSchema,
+		eventId: nonEmptyIdSchema,
+	})
+	.transform((marker) => ({
+		...marker,
+		observedAt: new Date(marker.observedAt).toISOString(),
+	}))
+	.readonly();
+export type AuthoritativeRevisionRecord = z.infer<
+	typeof authoritativeRevisionRecordSchema
+>;
+
 export const intentSelectionInputSchema = z
 	.strictObject({
 		job: pipelineJobRecordSchema,
@@ -164,6 +181,19 @@ export const buildTerminalRequestKey = (identity: {
 
 	return {
 		pk: `TERMINAL_REQUEST#${keySegment(request.provider)}#${keySegment(request.repository)}#${keySegment(request.requestId)}#GEN#${generation}`,
+		sk: "META",
+	};
+};
+
+export const buildAuthoritativeRevisionKey = (identity: {
+	readonly request: z.infer<typeof requestKeySchema>;
+	readonly generation: number;
+}): CoordinationKey => {
+	const request = requestKeySchema.parse(identity.request);
+	const generation = generationSchema.parse(identity.generation);
+
+	return {
+		pk: `AUTHORITATIVE_REVISION#${keySegment(request.provider)}#${keySegment(request.repository)}#${keySegment(request.requestId)}#GEN#${generation}`,
 		sk: "META",
 	};
 };

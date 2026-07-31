@@ -1,7 +1,10 @@
 import type { StartReviewPipelineExecution } from "./adapters/codepipeline-transport";
 import { isDynamoDbConditionalCheckFailedError } from "./adapters/dynamodb-errors";
 import type { RequestKey, ReviewRequest } from "./domain/review-request";
-import type { PipelineJobRecord } from "./pipeline/pipeline-coordination-store";
+import {
+	authoritativeRevisionRecordSchema,
+	type PipelineJobRecord,
+} from "./pipeline/pipeline-coordination-store";
 import type {
 	PipelineCoordinationStore,
 	PipelineExecutionMapping,
@@ -204,6 +207,8 @@ export interface PrPipelineDispatcher {
 	startReviewPipeline(input: {
 		readonly snapshot: ReviewRequest;
 		readonly generation: number;
+		readonly observedAt: string;
+		readonly eventId: string;
 	}): Promise<void>;
 	completeTerminalRequest(input: {
 		readonly request: RequestKey;
@@ -239,8 +244,29 @@ export class PipelineReviewDispatcher implements PrPipelineDispatcher {
 	async startReviewPipeline(input: {
 		readonly snapshot: ReviewRequest;
 		readonly generation: number;
+		readonly observedAt: string;
+		readonly eventId: string;
 	}): Promise<void> {
 		if (input.snapshot.status !== "open") return;
+		const candidate = authoritativeRevisionRecordSchema.parse({
+			request: input.snapshot.key,
+			generation: input.generation,
+			sourceRevision: input.snapshot.sourceRevision,
+			observedAt: input.observedAt,
+			eventId: input.eventId,
+		});
+		const winner = await this.#store.recordAuthoritativeRevision(candidate);
+		if (
+			winner.request.provider !== candidate.request.provider ||
+			winner.request.repository !== candidate.request.repository ||
+			winner.request.requestId !== candidate.request.requestId ||
+			winner.generation !== candidate.generation ||
+			winner.sourceRevision !== candidate.sourceRevision ||
+			winner.observedAt !== candidate.observedAt ||
+			winner.eventId !== candidate.eventId
+		) {
+			return;
+		}
 		await this.#markOlderJobsSuperseded(
 			input.snapshot.key,
 			input.generation,

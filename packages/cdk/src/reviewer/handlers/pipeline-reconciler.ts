@@ -10,6 +10,7 @@ import {
 	selectCallbackIntent,
 } from "../pipeline/pipeline-coordination-store";
 import type {
+	AuthoritativeRevisionObservation,
 	PipelineCoordinationStore,
 	ReviewOutcomeObservation,
 	TerminalRequestObservation,
@@ -52,6 +53,7 @@ export const buildPipelineReconciler = (options: PipelineReconcilerOptions) => {
 	): Promise<{
 		readonly outcome: ReviewOutcomeObservation;
 		readonly terminalRequest: TerminalRequestObservation;
+		readonly authoritativeRevision: AuthoritativeRevisionObservation;
 	}> => {
 		const identityState = classifyPipelineJobIdentity(job);
 		if (identityState === "partial") {
@@ -69,6 +71,7 @@ export const buildPipelineReconciler = (options: PipelineReconcilerOptions) => {
 			return {
 				outcome: { status: "not-applicable" },
 				terminalRequest: { status: "not-applicable" },
+				authoritativeRevision: { status: "not-applicable" },
 			};
 		}
 		if (
@@ -78,10 +81,13 @@ export const buildPipelineReconciler = (options: PipelineReconcilerOptions) => {
 		) {
 			throw new Error("cannot reconcile a partial pipeline job identity");
 		}
-		const [outcome, terminalRequest] = await Promise.all([
-			options.store.getOutcome(job),
-			options.store.getTerminalRequestState(job.request, job.generation),
-		]);
+		const [outcome, terminalRequest, authoritativeRevision] = await Promise.all(
+			[
+				options.store.getOutcome(job),
+				options.store.getTerminalRequestState(job.request, job.generation),
+				options.store.getAuthoritativeRevision(job.request, job.generation),
+			],
+		);
 		return {
 			outcome:
 				outcome === undefined
@@ -91,6 +97,10 @@ export const buildPipelineReconciler = (options: PipelineReconcilerOptions) => {
 				terminalRequest === undefined
 					? { status: "absent" }
 					: { status: "present", value: terminalRequest },
+			authoritativeRevision:
+				authoritativeRevision === undefined
+					? { status: "absent" }
+					: { status: "present", value: authoritativeRevision },
 		};
 	};
 
@@ -105,6 +115,10 @@ export const buildPipelineReconciler = (options: PipelineReconcilerOptions) => {
 				const observations = await observationsFor(observedJob);
 				const intent = selectCallbackIntent({
 					job: observedJob,
+					superseded:
+						observations.authoritativeRevision.status === "present" &&
+						observations.authoritativeRevision.value.sourceRevision !==
+							observedJob.sourceRevision,
 					outcome:
 						observations.outcome.status === "present"
 							? observations.outcome.value
@@ -123,6 +137,7 @@ export const buildPipelineReconciler = (options: PipelineReconcilerOptions) => {
 					observedJob,
 					outcomeObservation: observations.outcome,
 					terminalRequestObservation: observations.terminalRequest,
+					authoritativeRevisionObservation: observations.authoritativeRevision,
 					intent,
 					leaseExpiresAt: addMinutes(now, leaseMinutes),
 					nextActionAt: addMinutes(now, leaseMinutes),

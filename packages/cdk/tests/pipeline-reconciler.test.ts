@@ -109,6 +109,50 @@ describe("DynamoDbPipelineCoordinationStore", () => {
 		});
 	});
 
+	test("conditionally records the authoritative revision with a 30-day TTL and consistently reads the winner", async () => {
+		const candidate = {
+			request,
+			generation: 3,
+			sourceRevision: "b".repeat(40),
+			observedAt: "2026-07-29T14:00:00+02:00",
+			eventId: "revision-b",
+		} as const;
+		const winner = {
+			...candidate,
+			sourceRevision: "c".repeat(40),
+			observedAt: now,
+			eventId: "revision-c",
+		};
+		const transport = new RecordingTransport();
+		transport.nextError = conditionalFailure();
+		transport.responses.push({ Item: winner });
+		const store = createStore(transport);
+
+		await expect(store.recordAuthoritativeRevision(candidate)).resolves.toEqual(
+			winner,
+		);
+
+		const put = transport.commands[0];
+		const get = transport.commands[1];
+		expect(put).toBeInstanceOf(PutCommand);
+		expect(get).toBeInstanceOf(GetCommand);
+		if (!(put instanceof PutCommand) || !(get instanceof GetCommand)) return;
+		const key = {
+			pk: "AUTHORITATIVE_REVISION#codecommit#orders#42#GEN#3",
+			sk: "META",
+		};
+		expect(put.input.Item).toEqual({
+			...key,
+			...candidate,
+			observedAt: now,
+			expiresAt: Math.floor(new Date(now).getTime() / 1_000) + 2_592_000,
+		});
+		expect(put.input.ConditionExpression).toBe(
+			"attribute_not_exists(pk) OR observedAt < :observedAt OR (observedAt = :observedAt AND eventId < :eventId)",
+		);
+		expect(get.input).toMatchObject({ Key: key, ConsistentRead: true });
+	});
+
 	test("keeps terminal request markers immutable and returns the first write on conflict", async () => {
 		const existing = {
 			request,
@@ -258,6 +302,7 @@ describe("DynamoDbPipelineCoordinationStore", () => {
 				observedJob,
 				outcomeObservation: { status: "absent" },
 				terminalRequestObservation: { status: "absent" },
+				authoritativeRevisionObservation: { status: "absent" },
 				intent,
 				leaseExpiresAt: "2026-07-29T12:02:00.000Z",
 				nextActionAt: "2026-07-29T12:02:00.000Z",
@@ -273,8 +318,8 @@ describe("DynamoDbPipelineCoordinationStore", () => {
 		const command = transport.commands[0];
 		expect(command).toBeInstanceOf(TransactWriteCommand);
 		if (!(command instanceof TransactWriteCommand)) return;
-		expect(command.input.TransactItems).toHaveLength(3);
-		const [update, outcomeCheck, terminalCheck] =
+		expect(command.input.TransactItems).toHaveLength(4);
+		const [update, outcomeCheck, terminalCheck, markerCheck] =
 			command.input.TransactItems ?? [];
 		expect(update?.Update?.Key).toEqual({
 			pk: "PIPELINE_JOB#job-1",
@@ -306,6 +351,14 @@ describe("DynamoDbPipelineCoordinationStore", () => {
 			},
 			ConditionExpression: "attribute_not_exists(pk)",
 		});
+		expect(markerCheck?.ConditionCheck).toEqual({
+			TableName: "state",
+			Key: {
+				pk: "AUTHORITATIVE_REVISION#codecommit#orders#42#GEN#3",
+				sk: "META",
+			},
+			ConditionExpression: "attribute_not_exists(pk)",
+		});
 	});
 
 	test("checks observed present immutable signals by exact keys", async () => {
@@ -329,6 +382,16 @@ describe("DynamoDbPipelineCoordinationStore", () => {
 			observedJob: job,
 			outcomeObservation: { status: "present", value: outcome },
 			terminalRequestObservation: { status: "present", value: terminal },
+			authoritativeRevisionObservation: {
+				status: "present",
+				value: {
+					request,
+					generation: 3,
+					sourceRevision: job.sourceRevision,
+					observedAt: "2026-07-29T12:00:00Z",
+					eventId: "revision-event",
+				},
+			},
 			intent: { status: "success", category: "ReviewSucceeded" },
 			leaseExpiresAt: "2026-07-29T12:02:00.000Z",
 			nextActionAt: "2026-07-29T12:02:00.000Z",
@@ -337,11 +400,23 @@ describe("DynamoDbPipelineCoordinationStore", () => {
 		const command = transport.commands[0];
 		expect(command).toBeInstanceOf(TransactWriteCommand);
 		if (!(command instanceof TransactWriteCommand)) return;
-		for (const item of command.input.TransactItems?.slice(1) ?? []) {
+		for (const item of command.input.TransactItems?.slice(1, 3) ?? []) {
 			expect(item.ConditionCheck?.ConditionExpression).toBe(
 				"attribute_exists(pk)",
 			);
 		}
+		const markerCheck = command.input.TransactItems?.[3]?.ConditionCheck;
+		expect(markerCheck?.ConditionExpression).toBe(
+			"sourceRevision = :sourceRevision AND observedAt = :observedAt AND eventId = :eventId",
+		);
+		expect(markerCheck?.ExpressionAttributeValues).toEqual({
+			":sourceRevision": job.sourceRevision,
+			":observedAt": now,
+			":eventId": "revision-event",
+		});
+		expect(markerCheck?.ExpressionAttributeValues).not.toHaveProperty(
+			":expiresAt",
+		);
 	});
 
 	test.each([
@@ -384,6 +459,7 @@ describe("DynamoDbPipelineCoordinationStore", () => {
 			terminalRequestObservation: terminalPresent
 				? { status: "present", value: terminal }
 				: { status: "absent" },
+			authoritativeRevisionObservation: { status: "absent" },
 			intent: { status: "success", category: "ReviewSucceeded" },
 			leaseExpiresAt: "2026-07-29T12:02:00.000Z",
 			nextActionAt: "2026-07-29T12:02:00.000Z",
@@ -432,6 +508,7 @@ describe("DynamoDbPipelineCoordinationStore", () => {
 			},
 			outcomeObservation: { status: "not-applicable" },
 			terminalRequestObservation: { status: "not-applicable" },
+			authoritativeRevisionObservation: { status: "not-applicable" },
 			intent: candidate,
 			leaseExpiresAt: "2026-07-29T12:02:00.000Z",
 			nextActionAt: "2026-07-29T12:02:00.000Z",
@@ -465,6 +542,7 @@ describe("DynamoDbPipelineCoordinationStore", () => {
 				},
 				outcomeObservation: { status: "not-applicable" },
 				terminalRequestObservation: { status: "not-applicable" },
+				authoritativeRevisionObservation: { status: "not-applicable" },
 				intent: { status: "failure", category: "ConfigurationError" },
 				leaseExpiresAt: "2026-07-29T12:02:00.000Z",
 				nextActionAt: "2026-07-29T12:02:00.000Z",
@@ -485,6 +563,7 @@ describe("DynamoDbPipelineCoordinationStore", () => {
 			observedJob: job,
 			outcomeObservation: { status: "absent" } as const,
 			terminalRequestObservation: { status: "absent" } as const,
+			authoritativeRevisionObservation: { status: "absent" } as const,
 			intent: { status: "failure", category: "TimedOut" } as const,
 			leaseExpiresAt: "2026-07-29T12:02:00.000Z",
 			nextActionAt: "2026-07-29T12:02:00.000Z",

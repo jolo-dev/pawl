@@ -1,5 +1,7 @@
 import type { RequestKey } from "../src/reviewer/domain/review-request";
 import {
+	type AuthoritativeRevisionRecord,
+	authoritativeRevisionRecordSchema,
 	type CallbackIntent,
 	callbackIntentSchema,
 	claimCompletion as claimJob,
@@ -12,6 +14,7 @@ import {
 	terminalRequestRecordSchema,
 } from "../src/reviewer/pipeline/pipeline-coordination-store";
 import type {
+	AuthoritativeRevisionObservation,
 	PipelineCoordinationStore,
 	PipelineExecutionMapping,
 	PipelineJobPage,
@@ -28,6 +31,10 @@ const requestKey = (request: RequestKey, generation: number): string =>
 	]);
 const terminalRequestKey = (request: RequestKey, generation: number): string =>
 	requestKey(request, generation);
+const authoritativeRevisionKey = (
+	request: RequestKey,
+	generation: number,
+): string => requestKey(request, generation);
 const outcomeKey = (job: PipelineJobRecord): string | undefined =>
 	job.request && job.generation !== undefined && job.sourceRevision
 		? JSON.stringify([
@@ -59,6 +66,10 @@ export class FakePipelineCoordinationStore
 	readonly jobs = new Map<string, PipelineJobRecord>();
 	readonly outcomes = new Map<string, ReviewOutcome>();
 	readonly terminalRequests = new Map<string, TerminalRequestRecord>();
+	readonly authoritativeRevisions = new Map<
+		string,
+		AuthoritativeRevisionRecord
+	>();
 	readonly mappings = new Map<string, PipelineExecutionMapping>();
 	beforeClaim?: () => void | Promise<void>;
 	afterClaim?: () => void | Promise<void>;
@@ -113,6 +124,36 @@ export class FakePipelineCoordinationStore
 	): Promise<TerminalRequestRecord | undefined> {
 		return this.terminalRequests.get(terminalRequestKey(request, generation));
 	}
+	async recordAuthoritativeRevision(
+		markerInput: AuthoritativeRevisionRecord,
+	): Promise<AuthoritativeRevisionRecord> {
+		const marker = authoritativeRevisionRecordSchema.parse(markerInput);
+		const key = authoritativeRevisionKey(marker.request, marker.generation);
+		const current = this.authoritativeRevisions.get(key);
+		if (current !== undefined) {
+			const instantOrder =
+				Date.parse(marker.observedAt) - Date.parse(current.observedAt);
+			const eventOrder =
+				marker.eventId === current.eventId
+					? 0
+					: marker.eventId > current.eventId
+						? 1
+						: -1;
+			if (instantOrder < 0 || (instantOrder === 0 && eventOrder <= 0)) {
+				return current;
+			}
+		}
+		this.authoritativeRevisions.set(key, marker);
+		return marker;
+	}
+	async getAuthoritativeRevision(
+		request: RequestKey,
+		generation: number,
+	): Promise<AuthoritativeRevisionRecord | undefined> {
+		return this.authoritativeRevisions.get(
+			authoritativeRevisionKey(request, generation),
+		);
+	}
 	async listDueJobs(
 		state: Extract<JobState, "PENDING" | "COMPLETING">,
 		now: string,
@@ -155,6 +196,7 @@ export class FakePipelineCoordinationStore
 		readonly observedJob: PipelineJobRecord;
 		readonly outcomeObservation: ReviewOutcomeObservation;
 		readonly terminalRequestObservation: TerminalRequestObservation;
+		readonly authoritativeRevisionObservation: AuthoritativeRevisionObservation;
 		readonly intent: CallbackIntent;
 		readonly leaseExpiresAt: string;
 		readonly nextActionAt: string;
@@ -178,9 +220,10 @@ export class FakePipelineCoordinationStore
 		if (identityState === "identified") {
 			if (
 				input.outcomeObservation.status === "not-applicable" ||
-				input.terminalRequestObservation.status === "not-applicable"
+				input.terminalRequestObservation.status === "not-applicable" ||
+				input.authoritativeRevisionObservation.status === "not-applicable"
 			) {
-				throw new Error("identified pipeline jobs require both observations");
+				throw new Error("identified pipeline jobs require all observations");
 			}
 			const currentOutcome = this.getOutcome(input.observedJob);
 			const currentTerminal =
@@ -191,21 +234,43 @@ export class FakePipelineCoordinationStore
 							input.observedJob.generation,
 						)
 					: Promise.resolve(undefined);
-			const [outcome, terminal] = await Promise.all([
+			const currentMarker =
+				input.observedJob.request !== undefined &&
+				input.observedJob.generation !== undefined
+					? this.getAuthoritativeRevision(
+							input.observedJob.request,
+							input.observedJob.generation,
+						)
+					: Promise.resolve(undefined);
+			const [outcome, terminal, marker] = await Promise.all([
 				currentOutcome,
 				currentTerminal,
+				currentMarker,
 			]);
+			const observedMarker =
+				input.authoritativeRevisionObservation.status === "present"
+					? authoritativeRevisionRecordSchema.parse(
+							input.authoritativeRevisionObservation.value,
+						)
+					: undefined;
 			if (
 				(input.outcomeObservation.status === "present") !==
 					(outcome !== undefined) ||
 				(input.terminalRequestObservation.status === "present") !==
-					(terminal !== undefined)
+					(terminal !== undefined) ||
+				(input.authoritativeRevisionObservation.status === "present") !==
+					(marker !== undefined) ||
+				(observedMarker !== undefined &&
+					(marker?.sourceRevision !== observedMarker.sourceRevision ||
+						marker.observedAt !== observedMarker.observedAt ||
+						marker.eventId !== observedMarker.eventId))
 			) {
 				return undefined;
 			}
 		} else if (
 			input.outcomeObservation.status !== "not-applicable" ||
 			input.terminalRequestObservation.status !== "not-applicable" ||
+			input.authoritativeRevisionObservation.status !== "not-applicable" ||
 			input.intent.status !== "failure" ||
 			input.intent.category !== "ConfigurationError" ||
 			currentJob.callbackCandidate?.status !== "failure" ||

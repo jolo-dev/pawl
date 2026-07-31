@@ -97,7 +97,12 @@ describe("PipelineReviewDispatcher", () => {
 			clock: () => new Date("2026-07-29T12:00:00.000Z"),
 		});
 
-		await dispatcher.startReviewPipeline({ snapshot, generation: 3 });
+		await dispatcher.startReviewPipeline({
+			snapshot,
+			generation: 3,
+			observedAt: "2026-07-29T12:00:00.000Z",
+			eventId: "revision-new",
+		});
 
 		expect(store.jobs.get("old")?.callbackCandidate).toEqual({
 			status: "failure",
@@ -238,6 +243,81 @@ describe("PipelineReviewDispatcher", () => {
 		expect(kick.count).toBe(1);
 	});
 
+	test("orders authoritative revisions and only dispatches the logical winner", async () => {
+		const store = new FakePipelineCoordinationStore();
+		const transport = new RecordingPipelineTransport();
+		const dispatcher = new PipelineReviewDispatcher({
+			pipelineName: "pipeline",
+			transport,
+			store,
+			reconciler: new RecordingKick(),
+		});
+		const start = (input: {
+			readonly revision: string;
+			readonly generation?: number;
+			readonly observedAt: string;
+			readonly eventId: string;
+		}) =>
+			dispatcher.startReviewPipeline({
+				snapshot: { ...snapshot, sourceRevision: input.revision },
+				generation: input.generation ?? 3,
+				observedAt: input.observedAt,
+				eventId: input.eventId,
+			});
+
+		await start({
+			revision: "b".repeat(40),
+			observedAt: "2026-07-29T12:00:01.000Z",
+			eventId: "event-b",
+		});
+		await start({
+			revision: "a".repeat(40),
+			observedAt: "2026-07-29T12:00:00.000Z",
+			eventId: "event-a",
+		});
+		await start({
+			revision: "b".repeat(40),
+			observedAt: "2026-07-29T12:00:01Z",
+			eventId: "event-b",
+		});
+		await start({
+			revision: "c".repeat(40),
+			observedAt: "2026-07-29T12:00:01.000Z",
+			eventId: "event-a",
+		});
+		await start({
+			revision: "d".repeat(40),
+			observedAt: "2026-07-29T12:00:01.000Z",
+			eventId: "event-b",
+		});
+		await start({
+			revision: "e".repeat(40),
+			observedAt: "2026-07-29T12:00:01.000Z",
+			eventId: "event-c",
+		});
+		await start({
+			revision: "f".repeat(40),
+			generation: 4,
+			observedAt: "2026-07-29T11:00:00.000Z",
+			eventId: "generation-four",
+		});
+
+		expect(transport.starts.map((input) => input.sourceRevision)).toEqual([
+			"b".repeat(40),
+			"b".repeat(40),
+			"e".repeat(40),
+			"f".repeat(40),
+		]);
+		expect(await store.getAuthoritativeRevision(request, 3)).toMatchObject({
+			sourceRevision: "e".repeat(40),
+			observedAt: "2026-07-29T12:00:01.000Z",
+			eventId: "event-c",
+		});
+		expect(await store.getAuthoritativeRevision(request, 4)).toMatchObject({
+			sourceRevision: "f".repeat(40),
+		});
+	});
+
 	test("does not start a pipeline for a terminal snapshot", async () => {
 		const transport = new RecordingPipelineTransport();
 		const dispatcher = new PipelineReviewDispatcher({
@@ -249,6 +329,8 @@ describe("PipelineReviewDispatcher", () => {
 		await dispatcher.startReviewPipeline({
 			snapshot: { ...snapshot, status: "merged" },
 			generation: 3,
+			observedAt: "2026-07-29T12:00:00.000Z",
+			eventId: "terminal",
 		});
 		expect(transport.starts).toHaveLength(0);
 	});

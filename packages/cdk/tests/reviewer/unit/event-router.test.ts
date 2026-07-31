@@ -248,6 +248,57 @@ test("persists FAILED for permanent and exhausted start failures", async () => {
 	}
 });
 
+test("passes the normalized event timestamp and id to pipeline dispatch", async () => {
+	const store = new InMemoryStateStore();
+	const starts: unknown[] = [];
+	const router = new EventRouter({
+		stateStore: store,
+		reviewerFunctionName: "reviewer",
+		reviewerArn: "arn:reviewer",
+		provider: {
+			getRequest: async () => ({
+				key: request,
+				title: "Review",
+				status: "open",
+				sourceBranch: "feature",
+				destinationBranch: "main",
+				sourceRevision: "source-1",
+				destinationRevision: "base-123",
+			}),
+		} as never,
+		pipelineDispatcher: {
+			startReviewPipeline: async (input) => {
+				starts.push(input);
+			},
+			completeTerminalRequest: async () => undefined,
+		},
+		lambda: { send: async () => ({ DurableExecutionArn: "arn:execution" }) },
+	});
+
+	await router.routeCodeCommit({
+		id: "revision-event-1",
+		time: "2026-01-01T01:00:00+01:00",
+		source: "aws.codecommit",
+		"detail-type": "CodeCommit Pull Request State Change",
+		detail: {
+			repositoryName: "repo",
+			pullRequestId: "7",
+			event: "pullRequestSourceBranchUpdated",
+			sourceCommit: "source-1",
+			destinationCommit: "base-123",
+		},
+	});
+
+	expect(starts).toEqual([
+		{
+			snapshot: expect.objectContaining({ sourceRevision: "source-1" }),
+			generation: 1,
+			observedAt: "2026-01-01T00:00:00.000Z",
+			eventId: "revision-event-1",
+		},
+	]);
+});
+
 test("records permanent provider refetch failures accurately", async () => {
 	const store = new InMemoryStateStore();
 	const router = new EventRouter({

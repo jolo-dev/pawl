@@ -5,6 +5,8 @@ import {
 	sanitizedActionUserParametersSchema,
 } from "../src/reviewer/pipeline/codepipeline-job-event";
 import {
+	authoritativeRevisionRecordSchema,
+	buildAuthoritativeRevisionKey,
 	buildPipelineJobKey,
 	buildRequestScopedJobIndexKey,
 	buildReviewOutcomeKey,
@@ -150,6 +152,40 @@ describe("pipeline coordination domain", () => {
 				generation: 3,
 				status: "closed",
 				occurredAt: "2026-07-29T12:00:00.000Z",
+				secret: "not-approved",
+			}),
+		).toThrow();
+	});
+
+	it("strictly canonicalizes authoritative revision markers by request generation", () => {
+		expect(
+			buildAuthoritativeRevisionKey({ request: job.request, generation: 3 }),
+		).toEqual({
+			pk: "AUTHORITATIVE_REVISION#codecommit#orders#42#GEN#3",
+			sk: "META",
+		});
+		expect(
+			authoritativeRevisionRecordSchema.parse({
+				request: job.request,
+				generation: 3,
+				sourceRevision: job.sourceRevision,
+				observedAt: "2026-07-29T14:00:00+02:00",
+				eventId: "revision-event",
+			}),
+		).toEqual({
+			request: job.request,
+			generation: 3,
+			sourceRevision: job.sourceRevision,
+			observedAt: "2026-07-29T12:00:00.000Z",
+			eventId: "revision-event",
+		});
+		expect(() =>
+			authoritativeRevisionRecordSchema.parse({
+				request: job.request,
+				generation: 3,
+				sourceRevision: job.sourceRevision,
+				observedAt: "2026-07-29T12:00:00.000Z",
+				eventId: "revision-event",
 				secret: "not-approved",
 			}),
 		).toThrow();

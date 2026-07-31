@@ -296,6 +296,8 @@ export class EventRouter {
 			await this.#pipelineDispatcher.startReviewPipeline({
 				snapshot,
 				generation: result.generation,
+				observedAt: normalized.occurredAt,
+				eventId: normalized.id,
 			});
 		} else if (
 			normalized.type === "request-merged" ||

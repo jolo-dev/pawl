@@ -1,5 +1,6 @@
 import type { RequestKey } from "../domain/review-request";
 import type {
+	AuthoritativeRevisionRecord,
 	CallbackIntent,
 	JobState,
 	PipelineJobRecord,
@@ -30,6 +31,8 @@ export type ExactObservation<T> =
 export type ReviewOutcomeObservation = ExactObservation<ReviewOutcome>;
 export type TerminalRequestObservation =
 	ExactObservation<TerminalRequestRecord>;
+export type AuthoritativeRevisionObservation =
+	ExactObservation<AuthoritativeRevisionRecord>;
 
 export interface PipelineCoordinationStore {
 	registerJob(job: PipelineJobRecord): Promise<PipelineJobRecord>;
@@ -47,6 +50,13 @@ export interface PipelineCoordinationStore {
 		request: RequestKey,
 		generation: number,
 	): Promise<TerminalRequestRecord | undefined>;
+	recordAuthoritativeRevision(
+		marker: AuthoritativeRevisionRecord,
+	): Promise<AuthoritativeRevisionRecord>;
+	getAuthoritativeRevision(
+		request: RequestKey,
+		generation: number,
+	): Promise<AuthoritativeRevisionRecord | undefined>;
 	listDueJobs(
 		state: Extract<JobState, "PENDING" | "COMPLETING">,
 		now: string,
@@ -62,6 +72,7 @@ export interface PipelineCoordinationStore {
 		readonly observedJob: PipelineJobRecord;
 		readonly outcomeObservation: ReviewOutcomeObservation;
 		readonly terminalRequestObservation: TerminalRequestObservation;
+		readonly authoritativeRevisionObservation: AuthoritativeRevisionObservation;
 		readonly intent: CallbackIntent;
 		readonly leaseExpiresAt: string;
 		readonly nextActionAt: string;

@@ -302,22 +302,23 @@ A delayed old revision event cannot supersede a newer execution because the rout
 When a PR is merged or closed:
 
 - no new pipeline execution starts;
+- an immutable request-and-generation terminal marker is persisted before existing jobs are scanned;
 - `PENDING` jobs for that request generation receive a terminal-request success candidate only if no higher-precedence candidate exists;
 - `COMPLETING` jobs are not modified;
 - the reconciler is invoked; and
 - the existing durable callback lifecycle remains responsible for ending the reviewer execution.
 
-Registration racing with merge or close is safe because the bridge carries request identity directly. The first reconciliation checks authoritative request lifecycle state and applies the precedence rules.
+Registration racing with merge or close is safe because the bridge carries request identity directly and the terminal marker is durable. Reconciliation reads the marker for every identified job, so a job registered after the terminal event still succeeds as `RequestMerged` or `RequestClosed` according to the precedence rules.
 
 ### 10. Configurable timeout and durable redrive
 
-CodePipeline Lambda actions have a fixed 24-hour timeout and do not support `TimeoutInMinutes`. Pawl implements an earlier configurable deadline in job state.
+CodePipeline Lambda actions require a job success/failure callback and apply a 20-minute no-reply watchdog. Pawl implements an earlier configurable deadline in job state so reconciliation can send a terminal callback before that watchdog.
 
 Add `reviewActionTimeoutMinutes` to `CodePipelineProps`:
 
-- default: `60`;
+- default: `15`;
 - integer minimum: `5`;
-- integer maximum: `1380` (23 hours, leaving service-side margin before CodePipeline's fixed 24-hour timeout);
+- integer maximum: `15` (leaving reconciliation margin before CodePipeline's 20-minute no-reply watchdog);
 - valid only for PR-gated auto-review.
 
 The CDK construct creates one EventBridge rule with a one-minute rate targeting the reconciler Lambda. No dynamic schedules are created. This avoids orphan schedules, scheduler client-token races, and `iam:PassRole`.
@@ -413,14 +414,14 @@ All new runtime payloads and configuration values use Zod schemas. No `any` is i
 - No durable ARN or `$LATEST` appears in pipeline action configuration.
 - Push-triggered mode does not inject the gate.
 - Bridge/reconciler Lambdas, one-minute EventBridge rule, environment, state-table GSIs, and least-privilege policies synthesize.
-- Timeout validation accepts 5–1380, rejects invalid modes and ranges, and defaults to 60.
+- Timeout validation accepts 5–15, rejects invalid modes and ranges, and defaults to 15.
 - `PutJob*` wildcard suppression is present and specifically documented.
 - Router, reviewer, bridge, and reconciler grants match the IAM matrix.
 - Existing cdk-nag checks pass with documented suppressions only where AWS APIs cannot be resource-scoped.
 
 ### Integration tests
 
-Using the existing LocalStack setup where supported:
+Using `@testcontainers/localstack` with authentication injected only into the container from the test process environment:
 
 - deploy the pipeline and verify bridge action and user-parameter configuration;
 - invoke the bridge with a realistic CodePipeline job envelope and expanded Pawl parameters;

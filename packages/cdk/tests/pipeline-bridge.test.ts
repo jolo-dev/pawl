@@ -57,7 +57,7 @@ describe("pipeline review bridge", () => {
 		const bridge = buildPipelineBridge({
 			store,
 			reconciler: kick,
-			timeoutMinutes: 60,
+			timeoutMinutes: 15,
 			clock: () => new Date("2026-07-29T12:00:00.000Z"),
 		});
 
@@ -78,7 +78,7 @@ describe("pipeline review bridge", () => {
 			generation: 3,
 			sourceRevision: "a".repeat(40),
 			destinationRevision: "b".repeat(40),
-			deadlineAt: "2026-07-29T13:00:00.000Z",
+			deadlineAt: "2026-07-29T12:15:00.000Z",
 			nextActionAt: "2026-07-29T12:00:00.000Z",
 		});
 		expect(JSON.stringify(store.jobs.get("job-1"))).not.toContain("secret");
@@ -91,7 +91,7 @@ describe("pipeline review bridge", () => {
 		const bridge = buildPipelineBridge({
 			store,
 			reconciler: kick,
-			timeoutMinutes: 60,
+			timeoutMinutes: 15,
 			clock: () => new Date("2026-07-29T12:00:00.000Z"),
 		});
 
@@ -109,7 +109,7 @@ describe("pipeline review bridge", () => {
 		const bridge = buildPipelineBridge({
 			store: new FakePipelineCoordinationStore(),
 			reconciler: new RecordingKick(),
-			timeoutMinutes: 60,
+			timeoutMinutes: 15,
 		});
 		await expect(
 			bridge({ "CodePipeline.job": { data: {} } }),

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { Template, Match } from "aws-cdk-lib/assertions";
+import { Match, Template } from "aws-cdk-lib/assertions";
 import { Repository } from "aws-cdk-lib/aws-codecommit";
 import { CodePipeline } from "../src/codepipeline";
 import { Stack } from "../src/stack";
@@ -62,9 +62,21 @@ describe("CodePipeline push mode", () => {
 		const pipelines = Object.values(
 			template.findResources("AWS::CodePipeline::Pipeline"),
 		);
-		const sourceStage = (pipelines[0] as { Properties: { Stages: Array<{ Actions: Array<{ Configuration: Record<string, string> }> }> } }).Properties.Stages[0];
+		const sourceStage = (
+			pipelines[0] as {
+				Properties: {
+					Stages: Array<{
+						Actions: Array<{ Configuration: Record<string, string> }>;
+					}>;
+				};
+			}
+		).Properties.Stages[0];
 		// In push mode, trigger should be EVENTS (default) or not explicitly set to NONE
-		const sourceConfig = sourceStage.Actions[0]!.Configuration;
+		const sourceAction = sourceStage.Actions[0];
+		if (!sourceAction) {
+			throw new Error("Expected source stage to contain an action");
+		}
+		const sourceConfig = sourceAction.Configuration;
 		// CodeCommitTrigger.NONE would set DetectChanges to false
 		// Default (EVENTS) leaves DetectChanges true or absent
 		expect(sourceConfig.DetectChanges ?? "true").not.toBe("false");
@@ -94,8 +106,20 @@ describe("CodePipeline PR-gated mode", () => {
 		const pipelines = Object.values(
 			template.findResources("AWS::CodePipeline::Pipeline"),
 		);
-		const sourceStage = (pipelines[0] as { Properties: { Stages: Array<{ Actions: Array<{ Configuration: Record<string, string> }> }> } }).Properties.Stages[0];
-		const sourceConfig = sourceStage.Actions[0]!.Configuration;
+		const sourceStage = (
+			pipelines[0] as {
+				Properties: {
+					Stages: Array<{
+						Actions: Array<{ Configuration: Record<string, string> }>;
+					}>;
+				};
+			}
+		).Properties.Stages[0];
+		const sourceAction = sourceStage.Actions[0];
+		if (!sourceAction) {
+			throw new Error("Expected source stage to contain an action");
+		}
+		const sourceConfig = sourceAction.Configuration;
 		expect(sourceConfig.PollForSourceChanges).toBe(false);
 	});
 

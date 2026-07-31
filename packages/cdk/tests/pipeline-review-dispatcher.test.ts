@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
+import { ConditionalCheckFailedException } from "@aws-sdk/client-dynamodb";
 import type { StartReviewPipelineExecution } from "../src/reviewer/adapters/codepipeline-transport";
 import type { ReviewRequest } from "../src/reviewer/domain/review-request";
+import type { CallbackIntent } from "../src/reviewer/pipeline/pipeline-coordination-store";
 import { PipelineReviewDispatcher } from "../src/reviewer/pipeline-review-common";
 import { FakePipelineCoordinationStore } from "./pipeline-coordination-fakes";
 
@@ -34,6 +36,31 @@ class RecordingKick {
 	}
 }
 
+class ConcurrentlySelectedStore extends FakePipelineCoordinationStore {
+	override async setCallbackCandidate(
+		jobId: string,
+		_candidate: CallbackIntent,
+	): Promise<void> {
+		const job = this.jobs.get(jobId);
+		if (job) {
+			this.jobs.set(jobId, {
+				...job,
+				callbackCandidate: {
+					status: "failure",
+					category: "ReviewBlocked",
+				},
+			});
+		}
+		throw new ConditionalCheckFailedException({
+			message: "The conditional request failed",
+			$metadata: {
+				httpStatusCode: 400,
+				requestId: "concurrent-selection",
+			},
+		});
+	}
+}
+
 const pendingJob = (jobId: string, sourceRevision: string) => ({
 	jobId,
 	state: "PENDING" as const,
@@ -50,9 +77,16 @@ const pendingJob = (jobId: string, sourceRevision: string) => ({
 });
 
 describe("PipelineReviewDispatcher", () => {
-	test("supersedes older jobs and starts the exact authoritative revision", async () => {
+	test("supersedes older pending jobs only and starts the exact authoritative revision", async () => {
 		const store = new FakePipelineCoordinationStore();
 		await store.registerJob(pendingJob("old", "a".repeat(40)));
+		await store.registerJob(pendingJob("current", snapshot.sourceRevision));
+		await store.registerJob({
+			...pendingJob("completing", "a".repeat(40)),
+			state: "COMPLETING",
+			terminalIntent: { status: "failure", category: "ReviewFailed" },
+			completionLeaseExpiresAt: "2026-07-29T12:02:00.000Z",
+		});
 		const transport = new RecordingPipelineTransport();
 		const kick = new RecordingKick();
 		const dispatcher = new PipelineReviewDispatcher({
@@ -69,6 +103,12 @@ describe("PipelineReviewDispatcher", () => {
 			status: "failure",
 			category: "Superseded",
 		});
+		expect(store.jobs.get("current")?.callbackCandidate).toBeUndefined();
+		expect(store.jobs.get("completing")?.terminalIntent).toEqual({
+			status: "failure",
+			category: "ReviewFailed",
+		});
+		expect(store.jobs.get("completing")?.callbackCandidate).toBeUndefined();
 		expect(transport.starts).toEqual([
 			{
 				pipelineName: "pipeline",
@@ -88,9 +128,19 @@ describe("PipelineReviewDispatcher", () => {
 		expect(kick.count).toBe(1);
 	});
 
-	test("marks only pending jobs successful when a request closes", async () => {
+	test.each([
+		["merged", "RequestMerged"],
+		["closed", "RequestClosed"],
+	] as const)("marks genuinely pending jobs successful when a request is %s", async (status, category) => {
 		const store = new FakePipelineCoordinationStore();
 		await store.registerJob(pendingJob("pending", snapshot.sourceRevision));
+		await store.registerJob({
+			...pendingJob("already-selected", snapshot.sourceRevision),
+			callbackCandidate: {
+				status: "failure",
+				category: "ReviewBlocked",
+			},
+		});
 		await store.registerJob({
 			...pendingJob("completing", snapshot.sourceRevision),
 			state: "COMPLETING",
@@ -108,16 +158,46 @@ describe("PipelineReviewDispatcher", () => {
 		await dispatcher.completeTerminalRequest({
 			request,
 			generation: 3,
-			status: "closed",
+			status,
 		});
 
 		expect(store.jobs.get("pending")?.callbackCandidate).toEqual({
 			status: "success",
-			category: "RequestClosed",
+			category,
+		});
+		expect(store.jobs.get("already-selected")?.callbackCandidate).toEqual({
+			status: "failure",
+			category: "ReviewBlocked",
 		});
 		expect(store.jobs.get("completing")?.terminalIntent).toEqual({
 			status: "failure",
 			category: "ReviewFailed",
+		});
+		expect(kick.count).toBe(1);
+	});
+
+	test("ignores a conditional conflict for a concurrently selected callback and still invokes the reconciler", async () => {
+		const store = new ConcurrentlySelectedStore();
+		await store.registerJob(pendingJob("concurrent", snapshot.sourceRevision));
+		const kick = new RecordingKick();
+		const dispatcher = new PipelineReviewDispatcher({
+			pipelineName: "pipeline",
+			transport: new RecordingPipelineTransport(),
+			store,
+			reconciler: kick,
+		});
+
+		await expect(
+			dispatcher.completeTerminalRequest({
+				request,
+				generation: 3,
+				status: "closed",
+			}),
+		).resolves.toBeUndefined();
+
+		expect(store.jobs.get("concurrent")?.callbackCandidate).toEqual({
+			status: "failure",
+			category: "ReviewBlocked",
 		});
 		expect(kick.count).toBe(1);
 	});

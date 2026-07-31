@@ -1,16 +1,33 @@
 import { describe, expect, test } from "bun:test";
-import { PutCommand, QueryCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
+import {
+	GetCommand,
+	PutCommand,
+	QueryCommand,
+	UpdateCommand,
+} from "@aws-sdk/lib-dynamodb";
 import { DynamoDbPipelineCoordinationStore } from "../src/reviewer/adapters/dynamodb-pipeline-coordination-store";
 import type { DynamoDbDocumentTransport } from "../src/reviewer/adapters/dynamodb-state-store";
 
 class RecordingTransport implements DynamoDbDocumentTransport {
 	readonly commands: object[] = [];
 	readonly responses: unknown[] = [];
+	nextError: unknown | undefined;
+
 	async send(command: object): Promise<unknown> {
 		this.commands.push(command);
+		if (this.nextError !== undefined) {
+			const error = this.nextError;
+			this.nextError = undefined;
+			throw error;
+		}
 		return this.responses.shift() ?? {};
 	}
 }
+
+const conditionalFailure = (): Error =>
+	Object.assign(new Error("conditional conflict"), {
+		name: "ConditionalCheckFailedException",
+	});
 
 const request = {
 	provider: "codecommit",
@@ -41,7 +58,7 @@ const createStore = (transport: RecordingTransport) =>
 	});
 
 describe("DynamoDbPipelineCoordinationStore", () => {
-	test("registers approved job metadata with actionable and request indexes", async () => {
+	test("registers only approved job metadata with actionable and request indexes", async () => {
 		const transport = new RecordingTransport();
 		const store = createStore(transport);
 		await expect(store.registerJob(job)).resolves.toEqual(job);
@@ -50,22 +67,39 @@ describe("DynamoDbPipelineCoordinationStore", () => {
 		expect(command).toBeInstanceOf(PutCommand);
 		if (!(command instanceof PutCommand)) return;
 		expect(command.input.ConditionExpression).toBe("attribute_not_exists(pk)");
-		expect(command.input.Item).toMatchObject({
+		expect(command.input.Item).toEqual({
 			pk: "PIPELINE_JOB#job-1",
 			sk: "META",
-			jobId: "job-1",
+			...job,
 			gsi1pk: "PIPELINE_JOB_STATE#PENDING",
+			gsi1sk: `${now}#job-1`,
 			gsi2pk: "REQUEST#codecommit#orders#42#GEN#3",
+			gsi2sk: `REVISION#${job.sourceRevision}#JOB#job-1`,
+			expiresAt: Math.floor(new Date(now).getTime() / 1_000) + 2_592_000,
 		});
-		expect(JSON.stringify(command.input.Item)).not.toContain(
-			"artifactCredentials",
-		);
 	});
 
-	test("records an immutable generation-scoped outcome", async () => {
+	test("returns the existing job when duplicate registration loses its conditional write", async () => {
 		const transport = new RecordingTransport();
+		transport.nextError = conditionalFailure();
+		transport.responses.push({ Item: job });
 		const store = createStore(transport);
-		await store.recordOutcome({
+
+		await expect(store.registerJob(job)).resolves.toEqual(job);
+
+		expect(transport.commands).toHaveLength(2);
+		expect(transport.commands[0]).toBeInstanceOf(PutCommand);
+		const get = transport.commands[1];
+		expect(get).toBeInstanceOf(GetCommand);
+		if (!(get instanceof GetCommand)) return;
+		expect(get.input).toMatchObject({
+			Key: { pk: "PIPELINE_JOB#job-1", sk: "META" },
+			ConsistentRead: true,
+		});
+	});
+
+	test("keeps outcomes immutable by request, generation, and revision", async () => {
+		const existing = {
 			request,
 			generation: 3,
 			sourceRevision: "a".repeat(40),
@@ -73,15 +107,57 @@ describe("DynamoDbPipelineCoordinationStore", () => {
 			status: "reviewed",
 			checkStatus: "completed",
 			createdAt: now,
+		} as const;
+		const transport = new RecordingTransport();
+		transport.nextError = conditionalFailure();
+		transport.responses.push({ Item: existing });
+		const store = createStore(transport);
+
+		await expect(
+			store.recordOutcome({
+				...existing,
+				status: "failed",
+				checkStatus: "failed",
+			}),
+		).resolves.toEqual(existing);
+
+		const put = transport.commands[0];
+		const get = transport.commands[1];
+		expect(put).toBeInstanceOf(PutCommand);
+		expect(get).toBeInstanceOf(GetCommand);
+		if (!(put instanceof PutCommand) || !(get instanceof GetCommand)) return;
+		const expectedKey = {
+			pk: "REVIEW_OUTCOME#codecommit#orders#42#GEN#3",
+			sk: `REVISION#${existing.sourceRevision}`,
+		};
+		expect(put.input.Item).toMatchObject(expectedKey);
+		expect(put.input.ConditionExpression).toBe("attribute_not_exists(pk)");
+		expect(get.input).toMatchObject({
+			Key: expectedKey,
+			ConsistentRead: true,
 		});
+	});
+
+	test("writes callback candidates only onto genuinely pending jobs", async () => {
+		const transport = new RecordingTransport();
+		const store = createStore(transport);
+		const candidate = { status: "failure", category: "Superseded" } as const;
+
+		await store.setCallbackCandidate("job-1", candidate);
 
 		const command = transport.commands[0];
-		expect(command).toBeInstanceOf(PutCommand);
-		if (!(command instanceof PutCommand)) return;
-		expect(command.input.Item?.pk).toBe(
-			"REVIEW_OUTCOME#codecommit#orders#42#GEN#3",
+		expect(command).toBeInstanceOf(UpdateCommand);
+		if (!(command instanceof UpdateCommand)) return;
+		expect(command.input.UpdateExpression).toContain(
+			"callbackCandidate = :candidate",
 		);
-		expect(command.input.ConditionExpression).toBe("attribute_not_exists(pk)");
+		expect(command.input.ConditionExpression).toBe(
+			"#state = :pending AND attribute_not_exists(terminalIntent) AND attribute_not_exists(callbackCandidate)",
+		);
+		expect(command.input.ExpressionAttributeValues).toMatchObject({
+			":pending": "PENDING",
+			":candidate": candidate,
+		});
 	});
 
 	test("claims and reclaims only the same immutable completion intent", async () => {
@@ -130,41 +206,75 @@ describe("DynamoDbPipelineCoordinationStore", () => {
 			!(reclaim instanceof UpdateCommand)
 		)
 			return;
-		expect(claim.input.ConditionExpression).toContain(
-			"attribute_not_exists(terminalIntent)",
+		expect(claim.input.UpdateExpression).toContain("#state = :completing");
+		expect(claim.input.UpdateExpression).toContain("terminalIntent = :intent");
+		expect(claim.input.UpdateExpression).toContain(
+			"completionLeaseExpiresAt = :lease",
 		);
-		expect(claim.input.ExpressionAttributeValues?.[":gsi1pk"]).toBe(
-			"PIPELINE_JOB_STATE#COMPLETING",
+		expect(claim.input.ConditionExpression).toBe(
+			"#state = :pending AND attribute_not_exists(terminalIntent)",
 		);
-		expect(reclaim.input.ConditionExpression).toContain(
-			"terminalIntent = :intent",
+		expect(claim.input.ExpressionAttributeValues).toMatchObject({
+			":pending": "PENDING",
+			":completing": "COMPLETING",
+			":intent": intent,
+			":lease": "2026-07-29T12:02:00.000Z",
+			":next": "2026-07-29T12:02:00.000Z",
+			":gsi1pk": "PIPELINE_JOB_STATE#COMPLETING",
+		});
+		expect(reclaim.input.ConditionExpression).toBe(
+			"#state = :completing AND terminalIntent = :intent AND completionLeaseExpiresAt <= :now",
 		);
-		expect(reclaim.input.ConditionExpression).toContain(
-			"completionLeaseExpiresAt <= :now",
-		);
+		expect(reclaim.input.ExpressionAttributeValues).toMatchObject({
+			":completing": "COMPLETING",
+			":intent": intent,
+			":now": "2026-07-29T12:03:00.000Z",
+			":lease": "2026-07-29T12:04:00.000Z",
+			":next": "2026-07-29T12:04:00.000Z",
+		});
 	});
 
-	test("queries due jobs and request jobs through separate indexes with pagination", async () => {
+	test("queries due jobs and paginates request-scoped jobs", async () => {
+		const cursor = { pk: "PIPELINE_JOB#job-1", sk: "META" };
+		const nextJob = {
+			...job,
+			jobId: "job-2",
+			sourceRevision: "c".repeat(40),
+		};
 		const transport = new RecordingTransport();
-		transport.responses.push({ Items: [], LastEvaluatedKey: { pk: "next" } });
 		transport.responses.push({ Items: [] });
+		transport.responses.push({ Items: [job], LastEvaluatedKey: cursor });
+		transport.responses.push({ Items: [nextJob] });
 		const store = createStore(transport);
 
-		const due = await store.listDueJobs("PENDING", now);
-		await store.listRequestJobs(request, 3, due.cursor);
+		await store.listDueJobs("PENDING", now);
+		const first = await store.listRequestJobs(request, 3);
+		const second = await store.listRequestJobs(request, 3, first.cursor);
 
-		const dueCommand = transport.commands[0];
-		const requestCommand = transport.commands[1];
-		expect(dueCommand).toBeInstanceOf(QueryCommand);
-		expect(requestCommand).toBeInstanceOf(QueryCommand);
+		expect(first).toEqual({ jobs: [job], cursor });
+		expect(second).toEqual({ jobs: [nextJob], cursor: undefined });
+		const dueQuery = transport.commands[0];
+		const firstQuery = transport.commands[1];
+		const secondQuery = transport.commands[2];
+		expect(dueQuery).toBeInstanceOf(QueryCommand);
+		expect(firstQuery).toBeInstanceOf(QueryCommand);
+		expect(secondQuery).toBeInstanceOf(QueryCommand);
 		if (
-			!(dueCommand instanceof QueryCommand) ||
-			!(requestCommand instanceof QueryCommand)
+			!(dueQuery instanceof QueryCommand) ||
+			!(firstQuery instanceof QueryCommand) ||
+			!(secondQuery instanceof QueryCommand)
 		)
 			return;
-		expect(dueCommand.input.IndexName).toBe("GSI1");
-		expect(requestCommand.input.IndexName).toBe("GSI2");
-		expect(requestCommand.input.ExclusiveStartKey).toEqual({ pk: "next" });
+		expect(dueQuery.input.IndexName).toBe("GSI1");
+		expect(firstQuery.input).toMatchObject({
+			IndexName: "GSI2",
+			KeyConditionExpression: "gsi2pk = :pk",
+			ExpressionAttributeValues: {
+				":pk": "REQUEST#codecommit#orders#42#GEN#3",
+			},
+		});
+		expect(firstQuery.input.ExclusiveStartKey).toBeUndefined();
+		expect(secondQuery.input.ExclusiveStartKey).toEqual(cursor);
 	});
 
 	test("terminal completion removes both indexes", async () => {

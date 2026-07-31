@@ -25,6 +25,34 @@ export interface LocalStackSetup {
 	readonly env: Record<string, string>;
 }
 
+export interface LocalStackChildEnvConfig {
+	readonly parentEnv: Readonly<Record<string, string | undefined>>;
+	readonly endpoint: string;
+	readonly cdkContext: Readonly<Record<string, string>>;
+	readonly extraEnv?: Readonly<Record<string, string>>;
+}
+
+export function createLocalStackChildEnv(
+	config: LocalStackChildEnvConfig,
+): Record<string, string> {
+	const env: Record<string, string> = {};
+	copyChildEnv(config.parentEnv, env);
+
+	const url = new URL(config.endpoint);
+	Object.assign(env, {
+		PAWL_CDK_SYNTH: "1",
+		PAWL_CDK_CONTEXT: JSON.stringify(config.cdkContext),
+		AWS_DEFAULT_REGION: "us-east-1",
+		AWS_ACCESS_KEY_ID: "test",
+		AWS_SECRET_ACCESS_KEY: "test",
+		AWS_ENDPOINT_URL: config.endpoint,
+		AWS_ENDPOINT_URL_S3: `http://s3.${url.hostname}:${url.port}`,
+	});
+	copyChildEnv(config.extraEnv ?? {}, env);
+
+	return env;
+}
+
 export function createLocalStackSetup(
 	config: LocalStackSetupConfig,
 ): LocalStackSetup {
@@ -57,21 +85,12 @@ export function createLocalStackSetup(
 			])
 			.start();
 		endpoint = localstack.getConnectionUri();
-		const port = new URL(endpoint).port;
-		const url = new URL(endpoint);
-		const s3Endpoint = `http://s3.${url.hostname}:${port}`;
-
-		env = {
-			...process.env,
-			PAWL_CDK_SYNTH: "1",
-			PAWL_CDK_CONTEXT: JSON.stringify(cdkContext),
-			AWS_DEFAULT_REGION: "us-east-1",
-			AWS_ACCESS_KEY_ID: "test",
-			AWS_SECRET_ACCESS_KEY: "test",
-			AWS_ENDPOINT_URL: endpoint,
-			AWS_ENDPOINT_URL_S3: s3Endpoint,
-			...config.extraEnv,
-		};
+		env = createLocalStackChildEnv({
+			parentEnv: process.env,
+			endpoint,
+			cdkContext,
+			extraEnv: config.extraEnv,
+		});
 
 		const contextArgs = Object.entries(cdkContext).flatMap(([k, v]) => [
 			"--context",
@@ -106,6 +125,17 @@ export function createLocalStackSetup(
 export function getLocalStackSetupStackName(stack: StackFunction): string {
 	if (!stack.name) throw new Error("Stack functions must be named");
 	return stack.name;
+}
+
+function copyChildEnv(
+	source: Readonly<Record<string, string | undefined>>,
+	target: Record<string, string>,
+): void {
+	for (const [key, value] of Object.entries(source)) {
+		if (key !== "LOCALSTACK_AUTH_TOKEN" && value !== undefined) {
+			target[key] = value;
+		}
+	}
 }
 
 function throwError(message: string): never {

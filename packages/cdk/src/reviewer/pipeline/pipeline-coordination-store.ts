@@ -227,6 +227,9 @@ export const selectCallbackIntent = (
 	if (selection.superseded === true) {
 		return { status: "failure", category: "Superseded" };
 	}
+	if (job.callbackCandidate?.category === "Superseded") {
+		return job.callbackCandidate;
+	}
 	if (
 		selection.outcome !== undefined &&
 		outcomeMatchesJob(job, selection.outcome)

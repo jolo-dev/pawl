@@ -223,6 +223,53 @@ describe("pipeline coordination domain", () => {
 		).toBeUndefined();
 	});
 
+	it("preserves persisted supersession ahead of a late matching outcome", () => {
+		expect(
+			selectCallbackIntent({
+				job: {
+					...job,
+					callbackCandidate: {
+						status: "failure",
+						category: "Superseded",
+					},
+				},
+				outcome: {
+					request: job.request,
+					generation: job.generation,
+					sourceRevision: job.sourceRevision,
+					status: "reviewed",
+					checkStatus: "completed",
+				},
+			}),
+		).toEqual({ status: "failure", category: "Superseded" });
+	});
+
+	it.each([
+		["success", "ReviewSucceeded"],
+		["success", "RequestMerged"],
+		["success", "RequestClosed"],
+		["failure", "ConfigurationError"],
+		["failure", "ReviewBlocked"],
+		["failure", "ReviewFailed"],
+		["failure", "TimedOut"],
+	] as const)("keeps persisted %s/%s candidate behind a matching successful outcome", (status, category) => {
+		expect(
+			selectCallbackIntent({
+				job: {
+					...job,
+					callbackCandidate: { status, category },
+				},
+				outcome: {
+					request: job.request,
+					generation: job.generation,
+					sourceRevision: job.sourceRevision,
+					status: "reviewed",
+					checkStatus: "completed",
+				},
+			}),
+		).toEqual({ status: "success", category: "ReviewSucceeded" });
+	});
+
 	it("does not let merge or close overwrite completing jobs or existing failure intents", () => {
 		expect(
 			selectCallbackIntent({

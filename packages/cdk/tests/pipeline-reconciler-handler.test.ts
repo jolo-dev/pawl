@@ -84,6 +84,44 @@ describe("pipeline review reconciler", () => {
 		expect(store.jobs.get("reviewed")?.state).toBe("SUCCEEDED");
 	});
 
+	test("fails a persisted superseded job despite a late successful outcome", async () => {
+		const store = new FakePipelineCoordinationStore();
+		const transport = new RecordingResultTransport();
+		await store.registerJob(
+			pendingJob("superseded-with-outcome", {
+				callbackCandidate: {
+					status: "failure",
+					category: "Superseded",
+				},
+			}),
+		);
+		await store.recordOutcome({
+			request,
+			generation: 3,
+			sourceRevision: "a".repeat(40),
+			cycle: 1,
+			status: "reviewed",
+			checkStatus: "completed",
+		});
+		const reconcile = buildPipelineReconciler({
+			store,
+			transport,
+			clock: () => new Date(now),
+		});
+
+		await reconcile("superseded-with-outcome");
+
+		expect(transport.successes).toEqual([]);
+		expect(transport.failures).toEqual([
+			{
+				jobId: "superseded-with-outcome",
+				category: "Superseded",
+				message: "Superseded",
+			},
+		]);
+		expect(store.jobs.get("superseded-with-outcome")?.state).toBe("FAILED");
+	});
+
 	test("fails blocked, configuration, superseded, and timed-out jobs", async () => {
 		const store = new FakePipelineCoordinationStore();
 		const transport = new RecordingResultTransport();

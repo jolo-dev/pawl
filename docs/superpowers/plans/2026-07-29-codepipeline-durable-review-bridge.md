@@ -10,7 +10,7 @@
 
 ## Completion status (verified 2026-07-31)
 
-- **52 of 52 plan steps complete.** The focused bridge suite passes 38 tests, the broader reviewer/Lambda/CodePipeline suite passes 293 tests, and the scoped Biome gate reports no issues.
+- **52 of 52 plan steps complete.** The expanded focused bridge suite passes 132 tests, the broader reviewer/Lambda/CodePipeline suite passes 309 tests, and the scoped Biome gate reports no issues.
 - `@pawl/lambda` and `@pawl/cdk` builds pass.
 - The CodePipeline integration suite runs against LocalStack through `@testcontainers/localstack`; 10 integration tests pass with the authentication token loaded from AWS SSM Parameter Store and injected only into the container.
 - Real-AWS exact-revision validation was performed. The bridge recovered generation 1 to generation 2, started exactly one pipeline execution/job, and completed `AIReview` with the documented terminal `TimedOut` result after the durable reviewer failed to record an outcome.
@@ -444,7 +444,7 @@
 - [x] **Step 1: Run targeted reviewer suite**
 
   ```bash
-  bun test packages/cdk/tests/pipeline-coordination-store.test.ts packages/cdk/tests/pipeline-bridge.test.ts packages/cdk/tests/pipeline-reconciler.test.ts packages/cdk/tests/pipeline-review-common.test.ts packages/cdk/tests/codepipeline.test.ts packages/lambda/tests/codepipeline-handler.test.ts
+  bun test packages/cdk/tests/pipeline-coordination-store.test.ts packages/cdk/tests/pipeline-bridge.test.ts packages/cdk/tests/pipeline-reconciler.test.ts packages/cdk/tests/pipeline-reconciler-handler.test.ts packages/cdk/tests/pipeline-review-common.test.ts packages/cdk/tests/pipeline-review-dispatcher.test.ts packages/cdk/tests/pipeline-review-cycle-observer.test.ts packages/cdk/tests/codepipeline-transport.test.ts packages/cdk/tests/codepipeline.test.ts packages/cdk/tests/reviewer/unit/handlers/router.test.ts packages/cdk/tests/reviewer/unit/handlers/reviewer.test.ts packages/cdk/tests/reviewer/unit/workflows/reviewer-workflow.test.ts packages/lambda/tests/codepipeline-handler.test.ts
   ```
   Expected: pass.
 

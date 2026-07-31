@@ -148,8 +148,11 @@ describe("DynamoDbPipelineCoordinationStore", () => {
 			expiresAt: Math.floor(new Date(now).getTime() / 1_000) + 2_592_000,
 		});
 		expect(put.input.ConditionExpression).toBe(
-			"attribute_not_exists(pk) OR observedAt < :observedAt OR (observedAt = :observedAt AND eventId < :eventId)",
+			"attribute_not_exists(pk) OR observedAt < :observedAt",
 		);
+		expect(put.input.ExpressionAttributeValues).toEqual({
+			":observedAt": now,
+		});
 		expect(get.input).toMatchObject({ Key: key, ConsistentRead: true });
 	});
 

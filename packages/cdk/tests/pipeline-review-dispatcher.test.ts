@@ -3,7 +3,11 @@ import { ConditionalCheckFailedException } from "@aws-sdk/client-dynamodb";
 import type { StartReviewPipelineExecution } from "../src/reviewer/adapters/codepipeline-transport";
 import type { ReviewRequest } from "../src/reviewer/domain/review-request";
 import type { CallbackIntent } from "../src/reviewer/pipeline/pipeline-coordination-store";
-import { PipelineReviewDispatcher } from "../src/reviewer/pipeline-review-common";
+import {
+	AuthoritativeRevisionArbitrationExhaustedError,
+	PipelineReviewDispatcher,
+} from "../src/reviewer/pipeline-review-common";
+import { classifyRetryError } from "../src/reviewer/services/retry-policy";
 import { FakePipelineCoordinationStore } from "./pipeline-coordination-fakes";
 
 const request = {
@@ -33,6 +37,37 @@ class RecordingKick {
 	count = 0;
 	async invoke(): Promise<void> {
 		this.count += 1;
+	}
+}
+
+class ContendedRevisionStore extends FakePipelineCoordinationStore {
+	readonly proposals: Array<{
+		readonly sourceRevision: string;
+		readonly observedAt: string;
+		readonly eventId: string;
+	}> = [];
+	conflictsRemaining: number;
+
+	constructor(conflictsRemaining: number) {
+		super();
+		this.conflictsRemaining = conflictsRemaining;
+	}
+
+	override async recordAuthoritativeRevision(
+		marker: Parameters<
+			FakePipelineCoordinationStore["recordAuthoritativeRevision"]
+		>[0],
+	) {
+		this.proposals.push(marker);
+		if (this.conflictsRemaining > 0) {
+			this.conflictsRemaining -= 1;
+			return {
+				...marker,
+				sourceRevision: "a".repeat(40),
+				eventId: `contender-${this.conflictsRemaining}`,
+			};
+		}
+		return super.recordAuthoritativeRevision(marker);
 	}
 }
 
@@ -102,6 +137,7 @@ describe("PipelineReviewDispatcher", () => {
 			generation: 3,
 			observedAt: "2026-07-29T12:00:00.000Z",
 			eventId: "revision-new",
+			refetchSnapshot: async () => snapshot,
 		});
 
 		expect(store.jobs.get("old")?.callbackCandidate).toEqual({
@@ -243,8 +279,87 @@ describe("PipelineReviewDispatcher", () => {
 		expect(kick.count).toBe(1);
 	});
 
-	test("orders authoritative revisions and only dispatches the logical winner", async () => {
+	test.each([
+		["event-z", "event-a"],
+		["event-a", "event-z"],
+	] as const)("arbitrates equal-time different revisions without ordering opaque event ids (%s vs %s)", async (candidateEventId, winnerEventId) => {
 		const store = new FakePipelineCoordinationStore();
+		await store.recordAuthoritativeRevision({
+			request,
+			generation: 3,
+			sourceRevision: "a".repeat(40),
+			observedAt: "2026-07-29T12:00:00.000Z",
+			eventId: winnerEventId,
+		});
+		const transport = new RecordingPipelineTransport();
+		const dispatcher = new PipelineReviewDispatcher({
+			pipelineName: "pipeline",
+			transport,
+			store,
+			reconciler: new RecordingKick(),
+			clock: () => new Date("2026-07-29T11:00:00.000Z"),
+		});
+
+		await dispatcher.startReviewPipeline({
+			snapshot,
+			generation: 3,
+			observedAt: "2026-07-29T12:00:00.000Z",
+			eventId: candidateEventId,
+			refetchSnapshot: async () => snapshot,
+		});
+
+		expect(transport.starts.map((input) => input.sourceRevision)).toEqual([
+			snapshot.sourceRevision,
+		]);
+		expect(await store.getAuthoritativeRevision(request, 3)).toMatchObject({
+			sourceRevision: snapshot.sourceRevision,
+			observedAt: "2026-07-29T12:00:00.001Z",
+			eventId: candidateEventId,
+		});
+	});
+
+	test("authorizes an exact-revision idempotent start for equal-time different event ids", async () => {
+		const store = new FakePipelineCoordinationStore();
+		await store.recordAuthoritativeRevision({
+			request,
+			generation: 3,
+			sourceRevision: snapshot.sourceRevision,
+			observedAt: "2026-07-29T12:00:00.000Z",
+			eventId: "first-id",
+		});
+		const transport = new RecordingPipelineTransport();
+		let refetches = 0;
+		const dispatcher = new PipelineReviewDispatcher({
+			pipelineName: "pipeline",
+			transport,
+			store,
+			reconciler: new RecordingKick(),
+		});
+
+		await dispatcher.startReviewPipeline({
+			snapshot,
+			generation: 3,
+			observedAt: "2026-07-29T12:00:00.000Z",
+			eventId: "second-id",
+			refetchSnapshot: async () => {
+				refetches += 1;
+				return snapshot;
+			},
+		});
+
+		expect(refetches).toBe(0);
+		expect(transport.starts).toHaveLength(1);
+	});
+
+	test("rejects an older revision and accepts a newer revision", async () => {
+		const store = new FakePipelineCoordinationStore();
+		await store.recordAuthoritativeRevision({
+			request,
+			generation: 3,
+			sourceRevision: "a".repeat(40),
+			observedAt: "2026-07-29T12:00:01.000Z",
+			eventId: "winner",
+		});
 		const transport = new RecordingPipelineTransport();
 		const dispatcher = new PipelineReviewDispatcher({
 			pipelineName: "pipeline",
@@ -252,70 +367,192 @@ describe("PipelineReviewDispatcher", () => {
 			store,
 			reconciler: new RecordingKick(),
 		});
-		const start = (input: {
-			readonly revision: string;
-			readonly generation?: number;
-			readonly observedAt: string;
-			readonly eventId: string;
-		}) =>
-			dispatcher.startReviewPipeline({
-				snapshot: { ...snapshot, sourceRevision: input.revision },
-				generation: input.generation ?? 3,
-				observedAt: input.observedAt,
-				eventId: input.eventId,
-			});
+		const refetchSnapshot = async () => snapshot;
 
-		await start({
-			revision: "b".repeat(40),
-			observedAt: "2026-07-29T12:00:01.000Z",
-			eventId: "event-b",
-		});
-		await start({
-			revision: "a".repeat(40),
+		await dispatcher.startReviewPipeline({
+			snapshot,
+			generation: 3,
 			observedAt: "2026-07-29T12:00:00.000Z",
-			eventId: "event-a",
+			eventId: "older",
+			refetchSnapshot,
 		});
-		await start({
-			revision: "b".repeat(40),
-			observedAt: "2026-07-29T12:00:01Z",
-			eventId: "event-b",
-		});
-		await start({
-			revision: "c".repeat(40),
-			observedAt: "2026-07-29T12:00:01.000Z",
-			eventId: "event-a",
-		});
-		await start({
-			revision: "d".repeat(40),
-			observedAt: "2026-07-29T12:00:01.000Z",
-			eventId: "event-b",
-		});
-		await start({
-			revision: "e".repeat(40),
-			observedAt: "2026-07-29T12:00:01.000Z",
-			eventId: "event-c",
-		});
-		await start({
-			revision: "f".repeat(40),
-			generation: 4,
-			observedAt: "2026-07-29T11:00:00.000Z",
-			eventId: "generation-four",
+		await dispatcher.startReviewPipeline({
+			snapshot,
+			generation: 3,
+			observedAt: "2026-07-29T12:00:02.000Z",
+			eventId: "newer",
+			refetchSnapshot,
 		});
 
-		expect(transport.starts.map((input) => input.sourceRevision)).toEqual([
-			"b".repeat(40),
-			"b".repeat(40),
-			"e".repeat(40),
-			"f".repeat(40),
+		expect(transport.starts).toHaveLength(1);
+	});
+
+	test.each([
+		["winner", "open", "a", false],
+		["candidate", "open", "b", true],
+		["third", "open", "d", true],
+		["terminal", "closed", "b", false],
+	] as const)("uses an authoritative %s refetch during equal-time arbitration", async (_case, status, revisionPrefix, starts) => {
+		const store = new FakePipelineCoordinationStore();
+		await store.recordAuthoritativeRevision({
+			request,
+			generation: 3,
+			sourceRevision: "a".repeat(40),
+			observedAt: "2026-07-29T12:00:00.000Z",
+			eventId: "winner",
+		});
+		const transport = new RecordingPipelineTransport();
+		const dispatcher = new PipelineReviewDispatcher({
+			pipelineName: "pipeline",
+			transport,
+			store,
+			reconciler: new RecordingKick(),
+			clock: () => new Date("2026-07-29T12:00:05.000Z"),
+		});
+		const authoritative = {
+			...snapshot,
+			status,
+			sourceRevision: revisionPrefix.repeat(40),
+			destinationRevision: "e".repeat(40),
+		};
+
+		await dispatcher.startReviewPipeline({
+			snapshot,
+			generation: 3,
+			observedAt: "2026-07-29T12:00:00.000Z",
+			eventId: "candidate",
+			refetchSnapshot: async () => authoritative,
+		});
+
+		expect(transport.starts).toHaveLength(starts ? 1 : 0);
+		if (starts) {
+			expect(transport.starts[0]).toMatchObject({
+				sourceRevision: authoritative.sourceRevision,
+				destinationRevision: authoritative.destinationRevision,
+			});
+			expect(await store.getAuthoritativeRevision(request, 3)).toMatchObject({
+				sourceRevision: authoritative.sourceRevision,
+				observedAt: "2026-07-29T12:00:00.001Z",
+				eventId: "candidate",
+			});
+		}
+	});
+
+	test("does not let a far-future wall clock suppress a delayed newer revision", async () => {
+		const store = new FakePipelineCoordinationStore();
+		await store.recordAuthoritativeRevision({
+			request,
+			generation: 3,
+			sourceRevision: "a".repeat(40),
+			observedAt: "2026-07-29T12:00:00.000Z",
+			eventId: "winner",
+		});
+		const transport = new RecordingPipelineTransport();
+		const dispatcher = new PipelineReviewDispatcher({
+			pipelineName: "pipeline",
+			transport,
+			store,
+			reconciler: new RecordingKick(),
+			clock: () => new Date("2027-07-29T12:00:00.000Z"),
+		});
+		const delayedNewerSnapshot = {
+			...snapshot,
+			sourceRevision: "d".repeat(40),
+			destinationRevision: "e".repeat(40),
+		};
+
+		await dispatcher.startReviewPipeline({
+			snapshot,
+			generation: 3,
+			observedAt: "2026-07-29T12:00:00.000Z",
+			eventId: "equal-time-candidate",
+			refetchSnapshot: async () => snapshot,
+		});
+		await dispatcher.startReviewPipeline({
+			snapshot: delayedNewerSnapshot,
+			generation: 3,
+			observedAt: "2026-07-29T12:00:01.000Z",
+			eventId: "delayed-newer",
+			refetchSnapshot: async () => delayedNewerSnapshot,
+		});
+
+		expect(transport.starts).toEqual([
+			expect.objectContaining({
+				sourceRevision: snapshot.sourceRevision,
+				destinationRevision: snapshot.destinationRevision,
+			}),
+			expect.objectContaining({
+				sourceRevision: delayedNewerSnapshot.sourceRevision,
+				destinationRevision: delayedNewerSnapshot.destinationRevision,
+			}),
 		]);
 		expect(await store.getAuthoritativeRevision(request, 3)).toMatchObject({
-			sourceRevision: "e".repeat(40),
+			sourceRevision: delayedNewerSnapshot.sourceRevision,
 			observedAt: "2026-07-29T12:00:01.000Z",
-			eventId: "event-c",
+			eventId: "delayed-newer",
 		});
-		expect(await store.getAuthoritativeRevision(request, 4)).toMatchObject({
-			sourceRevision: "f".repeat(40),
+	});
+
+	test("retries multiple equal-time contentions and starts the final exact snapshot", async () => {
+		const store = new ContendedRevisionStore(2);
+		const transport = new RecordingPipelineTransport();
+		const dispatcher = new PipelineReviewDispatcher({
+			pipelineName: "pipeline",
+			transport,
+			store,
+			reconciler: new RecordingKick(),
+			clock: () => new Date("2026-07-29T11:00:00.000Z"),
 		});
+		const third = {
+			...snapshot,
+			sourceRevision: "d".repeat(40),
+			destinationRevision: "e".repeat(40),
+		};
+
+		await dispatcher.startReviewPipeline({
+			snapshot,
+			generation: 3,
+			observedAt: "2026-07-29T12:00:00.000Z",
+			eventId: "opaque-event",
+			refetchSnapshot: async () => third,
+		});
+
+		expect(store.proposals.map((marker) => marker.observedAt)).toEqual([
+			"2026-07-29T12:00:00.000Z",
+			"2026-07-29T12:00:00.001Z",
+			"2026-07-29T12:00:00.002Z",
+		]);
+		expect(transport.starts[0]).toMatchObject({
+			sourceRevision: third.sourceRevision,
+			destinationRevision: third.destinationRevision,
+		});
+	});
+
+	test("throws a typed retryable error when bounded arbitration is exhausted", async () => {
+		const store = new ContendedRevisionStore(10);
+		const transport = new RecordingPipelineTransport();
+		const dispatcher = new PipelineReviewDispatcher({
+			pipelineName: "pipeline",
+			transport,
+			store,
+			reconciler: new RecordingKick(),
+			clock: () => new Date("2026-07-29T11:00:00.000Z"),
+		});
+
+		await expect(
+			dispatcher.startReviewPipeline({
+				snapshot,
+				generation: 3,
+				observedAt: "2026-07-29T12:00:00.000Z",
+				eventId: "opaque-event",
+				refetchSnapshot: async () => snapshot,
+			}),
+		).rejects.toBeInstanceOf(AuthoritativeRevisionArbitrationExhaustedError);
+		expect(store.proposals).toHaveLength(4);
+		expect(transport.starts).toHaveLength(0);
+		expect(
+			classifyRetryError(new AuthoritativeRevisionArbitrationExhaustedError()),
+		).toBe("retryable");
 	});
 
 	test("does not start a pipeline for a terminal snapshot", async () => {
@@ -331,6 +568,7 @@ describe("PipelineReviewDispatcher", () => {
 			generation: 3,
 			observedAt: "2026-07-29T12:00:00.000Z",
 			eventId: "terminal",
+			refetchSnapshot: async () => snapshot,
 		});
 		expect(transport.starts).toHaveLength(0);
 	});

@@ -334,10 +334,9 @@ export class DynamoDbPipelineCoordinationStore
 							Math.floor(this.#clock().getTime() / 1_000) + this.#ttlSeconds,
 					},
 					ConditionExpression:
-						"attribute_not_exists(pk) OR observedAt < :observedAt OR (observedAt = :observedAt AND eventId < :eventId)",
+						"attribute_not_exists(pk) OR observedAt < :observedAt",
 					ExpressionAttributeValues: {
 						":observedAt": marker.observedAt,
-						":eventId": marker.eventId,
 					},
 				}),
 			);

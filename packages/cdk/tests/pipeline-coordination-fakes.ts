@@ -130,18 +130,11 @@ export class FakePipelineCoordinationStore
 		const marker = authoritativeRevisionRecordSchema.parse(markerInput);
 		const key = authoritativeRevisionKey(marker.request, marker.generation);
 		const current = this.authoritativeRevisions.get(key);
-		if (current !== undefined) {
-			const instantOrder =
-				Date.parse(marker.observedAt) - Date.parse(current.observedAt);
-			const eventOrder =
-				marker.eventId === current.eventId
-					? 0
-					: marker.eventId > current.eventId
-						? 1
-						: -1;
-			if (instantOrder < 0 || (instantOrder === 0 && eventOrder <= 0)) {
-				return current;
-			}
+		if (
+			current !== undefined &&
+			Date.parse(marker.observedAt) <= Date.parse(current.observedAt)
+		) {
+			return current;
 		}
 		this.authoritativeRevisions.set(key, marker);
 		return marker;

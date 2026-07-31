@@ -28,6 +28,7 @@ export type RetryResult<T> =
 
 const RETRYABLE_NAMES = new Set([
 	"AbortError",
+	"AuthoritativeRevisionArbitrationExhaustedError",
 	"InternalFailure",
 	"InternalServerException",
 	"PriorRequestNotComplete",

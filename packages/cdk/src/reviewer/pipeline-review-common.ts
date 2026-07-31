@@ -209,12 +209,25 @@ export interface PrPipelineDispatcher {
 		readonly generation: number;
 		readonly observedAt: string;
 		readonly eventId: string;
+		readonly refetchSnapshot: () => Promise<ReviewRequest>;
 	}): Promise<void>;
 	completeTerminalRequest(input: {
 		readonly request: RequestKey;
 		readonly generation: number;
 		readonly status: "merged" | "closed";
 	}): Promise<void>;
+}
+
+const MAX_AUTHORITATIVE_REVISION_ATTEMPTS = 4;
+
+/** Retryable failure raised when concurrent revision arbitration cannot settle. */
+export class AuthoritativeRevisionArbitrationExhaustedError extends Error {
+	readonly retryable = true;
+
+	constructor() {
+		super("authoritative revision arbitration did not settle");
+		this.name = "AuthoritativeRevisionArbitrationExhaustedError";
+	}
 }
 
 export class PipelineReviewDispatcher implements PrPipelineDispatcher {
@@ -246,47 +259,64 @@ export class PipelineReviewDispatcher implements PrPipelineDispatcher {
 		readonly generation: number;
 		readonly observedAt: string;
 		readonly eventId: string;
+		readonly refetchSnapshot: () => Promise<ReviewRequest>;
 	}): Promise<void> {
 		if (input.snapshot.status !== "open") return;
-		const candidate = authoritativeRevisionRecordSchema.parse({
-			request: input.snapshot.key,
-			generation: input.generation,
-			sourceRevision: input.snapshot.sourceRevision,
-			observedAt: input.observedAt,
-			eventId: input.eventId,
-		});
-		const winner = await this.#store.recordAuthoritativeRevision(candidate);
-		if (
-			winner.request.provider !== candidate.request.provider ||
-			winner.request.repository !== candidate.request.repository ||
-			winner.request.requestId !== candidate.request.requestId ||
-			winner.generation !== candidate.generation ||
-			winner.sourceRevision !== candidate.sourceRevision ||
-			winner.observedAt !== candidate.observedAt ||
-			winner.eventId !== candidate.eventId
+		let workingSnapshot = input.snapshot;
+		let proposalObservedAt = input.observedAt;
+		let authorized = false;
+		for (
+			let attempt = 0;
+			attempt < MAX_AUTHORITATIVE_REVISION_ATTEMPTS;
+			attempt += 1
 		) {
-			return;
+			const candidate = authoritativeRevisionRecordSchema.parse({
+				request: workingSnapshot.key,
+				generation: input.generation,
+				sourceRevision: workingSnapshot.sourceRevision,
+				observedAt: proposalObservedAt,
+				eventId: input.eventId,
+			});
+			const winner = await this.#store.recordAuthoritativeRevision(candidate);
+			if (winner.sourceRevision === candidate.sourceRevision) {
+				authorized = true;
+				break;
+			}
+			const winnerTime = Date.parse(winner.observedAt);
+			const candidateTime = Date.parse(candidate.observedAt);
+			if (winnerTime > candidateTime) return;
+			if (winnerTime !== candidateTime) continue;
+
+			const authoritativeSnapshot = await input.refetchSnapshot();
+			if (authoritativeSnapshot.status !== "open") return;
+			if (authoritativeSnapshot.sourceRevision === winner.sourceRevision)
+				return;
+			workingSnapshot = authoritativeSnapshot;
+			proposalObservedAt = new Date(winnerTime + 1).toISOString();
+		}
+		if (!authorized) {
+			throw new AuthoritativeRevisionArbitrationExhaustedError();
 		}
 		await this.#markOlderJobsSuperseded(
-			input.snapshot.key,
+			workingSnapshot.key,
 			input.generation,
-			input.snapshot.sourceRevision,
+			workingSnapshot.sourceRevision,
 		);
 		const { executionId } = await this.#transport.startExecution({
 			pipelineName: this.#pipelineName,
 			sourceActionName: this.#sourceActionName,
-			sourceRevision: input.snapshot.sourceRevision,
-			destinationRevision: input.snapshot.destinationRevision,
-			request: input.snapshot.key,
+			sourceRevision: workingSnapshot.sourceRevision,
+			destinationRevision: workingSnapshot.destinationRevision,
+			request: workingSnapshot.key,
 			generation: input.generation,
 		});
 		const mapping: PipelineExecutionMapping = {
 			executionId,
 			pipelineName: this.#pipelineName,
-			request: input.snapshot.key,
+			request: workingSnapshot.key,
 			generation: input.generation,
-			sourceRevision: input.snapshot.sourceRevision,
-			destinationRevision: input.snapshot.destinationRevision,
+			sourceRevision: workingSnapshot.sourceRevision,
+			destinationRevision: workingSnapshot.destinationRevision,
 			createdAt: this.#clock().toISOString(),
 		};
 		await this.#store.putExecutionMapping(mapping);

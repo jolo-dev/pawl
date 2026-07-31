@@ -298,6 +298,10 @@ export class EventRouter {
 				generation: result.generation,
 				observedAt: normalized.occurredAt,
 				eventId: normalized.id,
+				refetchSnapshot: () =>
+					this.#retrySnapshot(() =>
+						this.#provider.getRequest(normalized.request),
+					),
 			});
 		} else if (
 			normalized.type === "request-merged" ||

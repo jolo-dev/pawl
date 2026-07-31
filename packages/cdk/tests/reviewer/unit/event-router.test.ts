@@ -295,8 +295,69 @@ test("passes the normalized event timestamp and id to pipeline dispatch", async 
 			generation: 1,
 			observedAt: "2026-01-01T00:00:00.000Z",
 			eventId: "revision-event-1",
+			refetchSnapshot: expect.any(Function),
 		},
 	]);
+});
+
+test("supplies pipeline arbitration with a retry-wrapped authoritative refetch", async () => {
+	const store = new InMemoryStateStore();
+	let providerCalls = 0;
+	let refetchedRevision: string | undefined;
+	const router = new EventRouter({
+		stateStore: store,
+		reviewerFunctionName: "reviewer",
+		reviewerArn: "arn:reviewer",
+		retryPolicy: new RetryPolicy({
+			baseDelayMs: 0,
+			maxDelayMs: 0,
+			maxAttempts: 2,
+			sleep: async () => undefined,
+		}),
+		provider: {
+			getRequest: async () => {
+				providerCalls += 1;
+				if (providerCalls === 2) {
+					throw Object.assign(new Error("retry refetch"), {
+						name: "ThrottlingException",
+					});
+				}
+				return {
+					key: request,
+					title: "Review",
+					status: "open",
+					sourceBranch: "feature",
+					destinationBranch: "main",
+					sourceRevision: providerCalls === 1 ? "source-1" : "source-2",
+					destinationRevision: "base-123",
+				};
+			},
+		} as never,
+		pipelineDispatcher: {
+			startReviewPipeline: async (input) => {
+				refetchedRevision = (await input.refetchSnapshot()).sourceRevision;
+			},
+			completeTerminalRequest: async () => undefined,
+		},
+		lambda: { send: async () => ({ DurableExecutionArn: "arn:execution" }) },
+	});
+
+	await router.routeCodeCommit({
+		id: "revision-event-refetch",
+		time: "2026-01-01T00:00:00.000Z",
+		source: "aws.codecommit",
+		"detail-type": "CodeCommit Pull Request State Change",
+		detail: {
+			repositoryName: "repo",
+			pullRequestId: "7",
+			event: "pullRequestSourceBranchUpdated",
+			sourceCommit: "source-1",
+			destinationCommit: "base-123",
+		},
+	});
+
+	expect(providerCalls).toBe(3);
+	expect(refetchedRevision).toBe("source-2");
 });
 
 test("records permanent provider refetch failures accurately", async () => {

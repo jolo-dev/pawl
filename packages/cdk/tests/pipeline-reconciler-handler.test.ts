@@ -129,19 +129,21 @@ describe("pipeline review reconciler", () => {
 			reconciler: { invoke: async () => undefined },
 			clock: () => new Date(now),
 		});
+		const authoritativeSnapshot = {
+			key: request,
+			title: "Review",
+			status: "open" as const,
+			sourceBranch: "feature",
+			destinationBranch: "main",
+			sourceRevision: "b".repeat(40),
+			destinationRevision: "c".repeat(40),
+		};
 		await dispatcher.startReviewPipeline({
-			snapshot: {
-				key: request,
-				title: "Review",
-				status: "open",
-				sourceBranch: "feature",
-				destinationBranch: "main",
-				sourceRevision: "b".repeat(40),
-				destinationRevision: "c".repeat(40),
-			},
+			snapshot: authoritativeSnapshot,
 			generation: 3,
 			observedAt: now,
 			eventId: "new-revision",
+			refetchSnapshot: async () => authoritativeSnapshot,
 		});
 		await store.registerJob(
 			pendingJob("late-old", {

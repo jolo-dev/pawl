@@ -179,7 +179,7 @@ Zod schemas enforce exact ownership combinations at runtime.
 - `create: false` imports an existing repository by literal name.
 - `repository` reuses an existing `IRepository` construct.
 - `repository` cannot be combined with `create` or `sync`.
-- When both `repository` and the optional literal `repositoryName` fallback are supplied, a concretely resolved `repository.repositoryName` must equal the fallback. A mismatch fails before pipeline or review resources are created. Tokenized construct names cannot be compared and therefore use the explicit fallback as the review/event identity.
+- When both `repository` and the optional literal `repositoryName` fallback are supplied, a concretely resolved `repository.repositoryName` must equal the fallback. Because the base pipeline is created eagerly in the constructor, a mismatch fails during `.source()` before any source stage, source action, or review resources are created. Tokenized construct names cannot be compared and therefore use the explicit fallback as the review/event identity.
 - `branchName` defaults to `main`.
 - The source action is named `Source`.
 - The source artifact is named `SourceOutput`.
@@ -529,7 +529,7 @@ The migration mapping also includes:
 
 - Every valid source ownership branch compiles and parses.
 - Conflicting source fields fail at compile time where possible and through Zod at runtime.
-- Supplied repository and fallback names must agree when the construct name is concrete; tokenized names use the fallback.
+- Supplied repository and fallback names must agree when the construct name is concrete; tokenized names use the fallback. A mismatch leaves the already-created base pipeline intact but creates no source-stage or review children.
 - Each action discriminant exposes only its specified properties, including compile-time checks for CodeBuild outputs, Lambda no-input mode, CloudFormation artifact references, and the CloudFormation permissions XOR.
 - `userParameters` and `userParametersString` are mutually exclusive in both TypeScript and Zod validation.
 - Non-admin CloudFormation deployment without a role and custom actions with unnamed artifacts are rejected.

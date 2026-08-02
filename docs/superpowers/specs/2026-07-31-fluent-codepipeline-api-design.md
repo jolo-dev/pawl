@@ -28,30 +28,40 @@ new CodePipeline(this, "Pipeline", {
 		branchName: "main",
 		sync: "../orders-service",
 	})
-	.stage("Checks", [
-		{
-			name: "Test",
-			type: "codebuild",
-			project: testProject,
-		},
-		{
-			name: "Lint",
-			type: "codebuild",
-			project: lintProject,
-		},
-	])
-	.stage("Approval", [
-		{
-			name: "ProductionApproval",
-			type: "approval",
-			description: "Approve production deployment",
-		},
-	])
+	.stage({
+		name: "Checks",
+		actions: [
+			{
+				name: "Test",
+				type: "codebuild",
+				project: testProject,
+			},
+			{
+				name: "Lint",
+				type: "codebuild",
+				project: lintProject,
+			},
+		],
+	})
 	.stage([
 		{
-			name: "Deploy",
-			type: "s3Deploy",
-			bucket: deploymentBucket,
+			name: "Approval",
+			actions: [
+				{
+					name: "ProductionApproval",
+					type: "approval",
+					description: "Approve production deployment",
+				},
+			],
+		},
+		{
+			actions: [
+				{
+					name: "Deploy",
+					type: "s3Deploy",
+					bucket: deploymentBucket,
+				},
+			],
 		},
 	]);
 ```
@@ -64,7 +74,8 @@ The first release does not:
 - implement GitHub or S3 sources;
 - continuously synchronize a local directory after deployment;
 - infer ordering between actions in the same stage;
-- support sequential `runOrder` values within one stage; or
+- support sequential `runOrder` values within one stage;
+- define a CLI serialization format for arbitrary pipeline actions; or
 - replace Pawl constructs with raw `aws-cdk-lib` resources in consumer code.
 
 GitHub can be added later as another `origin` member without changing the fluent method.
@@ -90,8 +101,6 @@ export interface CodePipelineProps
 	readonly pipelineNaming?: CodePipelineNaming;
 	readonly reviewCoordinationDeploymentPhase?: ReviewCoordinationDeploymentPhase;
 	readonly reviewActionTimeoutMinutes?: number;
-	readonly team?: string;
-	readonly stage?: string;
 }
 ```
 
@@ -105,7 +114,7 @@ The precise implementation may need to omit and reintroduce additional AWS prope
 - A supplied artifact bucket is used directly.
 - If no artifact bucket is supplied, Pawl creates a retained KMS-encrypted bucket.
 - `artifactEncryptionKey` is valid only when Pawl creates the bucket.
-- `team` and `stage` remain top-level overrides for AutoReviewer naming and tagging; existing CDK-context fallback behavior remains unchanged.
+- `team` and deployment `stage` are not `CodePipelineProps`; `BasicConstruct` owns context lookup and tag injection for those values.
 - The old constructor-level `source` and `stages` properties are removed.
 - The old `autoReview` property is renamed to `autoReviewer` as part of the same breaking change.
 
@@ -114,19 +123,26 @@ When an external artifact bucket is used, the public `artifactBucket` property i
 ### Fluent methods
 
 ```ts
+export interface PipelineStageDefinition {
+	readonly name?: string;
+	readonly actions: readonly [
+		PipelineActionDefinition,
+		...PipelineActionDefinition[],
+	];
+}
+
 source(source: CodeCommitPipelineSource): this;
 
-stage(
-	name: string,
-	actions: readonly PipelineActionDefinition[],
-): this;
+stage(stage: PipelineStageDefinition): this;
 
-stage(actions: readonly PipelineActionDefinition[]): this;
+stage(
+	stages: readonly [PipelineStageDefinition, ...PipelineStageDefinition[]],
+): this;
 ```
 
-Method order is pipeline order. `.source()` must be called exactly once and before `.stage()`. Every `.stage()` call creates one AWS CodePipeline stage. Actions in the supplied array have the same run order and therefore run in parallel.
+Method order is pipeline order. `.source()` must be called exactly once and before `.stage()`. A single stage object adds one AWS stage. An outer non-empty array adds its stage objects sequentially in list order. Each stage object's non-empty `actions` array has one run order and therefore runs in parallel.
 
-Sequential work uses separate stage calls. A manual approval and its protected deployment must not share a stage.
+Sequential work uses separate stage objects, whether passed through separate calls or one outer array. A manual approval and its protected deployment must not share a stage object. Before mutating the construct tree, `.stage([...])` validates and plans the complete batch, including cross-stage artifact flow; one invalid definition prevents every stage in that call from being added.
 
 ## Construction lifecycle
 
@@ -204,9 +220,9 @@ Content changes produce a new seed asset identity during deployment. Existing re
 
 ### Stage names
 
-An explicit stage name is used as supplied after AWS-compatible validation.
+Each stage is represented by a `PipelineStageDefinition` object. Its `actions` tuple is non-empty at the TypeScript boundary and through Zod runtime validation. An explicit `name` is used as supplied after AWS-compatible validation.
 
-When no name is supplied, Pawl:
+When `name` is omitted, Pawl:
 
 1. reads each action's effective name;
 2. joins names with `-`;
@@ -316,7 +332,7 @@ export type PipelineActionDefinition =
 	  };
 ```
 
-Pawl owns `actionName`, raw `Artifact` objects, and run order. Version one does not expose `runOrder`; all actions in one `.stage()` call remain parallel. Where an AWS action does not support a common field, its adapter rejects the field rather than silently dropping it.
+Pawl owns `actionName`, raw `Artifact` objects, and run order. Version one does not expose `runOrder`; all actions in one stage definition remain parallel. Where an AWS action does not support a common field, its adapter rejects the field rather than silently dropping it.
 
 Action-specific behavior is:
 
@@ -360,18 +376,24 @@ This makes approval stages transparent to artifact flow while making parallel bu
 ### Ambiguity example
 
 ```ts
-.stage("Builds", [
-	{ name: "Web", type: "codebuild", project: webProject },
-	{ name: "Api", type: "codebuild", project: apiProject },
-])
-.stage("DeployWeb", [
-	{
-		name: "DeployWeb",
-		type: "s3Deploy",
-		bucket: webBucket,
-		input: "WebOutput",
-	},
-]);
+.stage({
+	name: "Builds",
+	actions: [
+		{ name: "Web", type: "codebuild", project: webProject },
+		{ name: "Api", type: "codebuild", project: apiProject },
+	],
+})
+.stage({
+	name: "DeployWeb",
+	actions: [
+		{
+			name: "DeployWeb",
+			type: "s3Deploy",
+			bucket: webBucket,
+			input: "WebOutput",
+		},
+	],
+});
 ```
 
 Omitting `input` from `DeployWeb` is invalid because the frontier contains `WebOutput` and `ApiOutput`.
@@ -396,7 +418,7 @@ Additional rules:
 - Every PR-routed pipeline declares and receives the same six protected `PAWL_*` variables: provider, repository, request ID, generation, source revision, and destination revision.
 - The router without AutoReviewer uses the same exact-revision transport and metadata contract, including deterministic client tokens; the variables remain execution metadata even when no bridge consumes them.
 - User variables are merged, and reserved-name collisions fail.
-- `team` and `stage` top-level overrides continue to feed reviewer naming/tagging, with existing context fallback.
+- `team` and deployment `stage` are resolved from the same CDK context used by `BasicConstruct` tagging. `CodePipeline` neither accepts nor forwards duplicate overrides.
 - The bridge, reconciler, DynamoDB coordination state, timeout, IAM grants, and EventBridge rules retain their current behavior.
 - Preparation deployment phases create coordination resources without adding `AIReview`.
 - In the active phase, `AIReview` is inserted into the first user stage as a parallel action and consumes `SourceOutput`.
@@ -504,13 +526,16 @@ new CodePipeline(this, "Pipeline", props)
 		repository,
 		branchName: "main",
 	})
-	.stage("Build", [
-		{
-			name: "Build",
-			type: "codebuild",
-			project,
-		},
-	]);
+	.stage({
+		name: "Build",
+		actions: [
+			{
+				name: "Build",
+				type: "codebuild",
+				project,
+			},
+		],
+	});
 ```
 
 All examples, tests, generated CLI templates, and documentation must migrate in the same release. No runtime compatibility parser or deprecated overload remains.
@@ -518,10 +543,52 @@ All examples, tests, generated CLI templates, and documentation must migrate in 
 The migration mapping also includes:
 
 - `autoReview` becomes `autoReviewer` with the same reviewer configuration semantics;
-- top-level `team` and `stage` remain top-level and retain context fallback;
+- `team` and deployment `stage` are removed from `CodePipelineProps`; consuming apps keep them in CDK context for `BasicConstruct` tags and reviewer identity;
 - `onPullRequest` remains top-level but now provisions PR execution independently of AutoReviewer and always uses the complete six-variable PR execution contract;
 - raw `PipelineProps.stages` and `PipelineProps.triggers` are unavailable; stages are fluent, and triggers remain unavailable until a compatible non-CodeCommit source is designed; and
 - old action `manualApproval` becomes `approval`, while CloudFormation `actionMode: "REPLACE_ON_FAILURE"` becomes `replaceOnFailure: true`.
+
+## CLI integration
+
+`packages/cli` is part of the breaking migration, not a follow-up. The existing `pawl init codepipeline` generator currently emits constructor-level `source`, uses the old `autoReview` property, relies on the implicit default stage, and parses a `--pipeline-stage` value that it never consumes.
+
+The generator must instead emit:
+
+```ts
+new CodePipeline(this, "Pipeline", {
+	onPullRequest: true,
+	autoReviewer: { modelId },
+})
+	.source({
+		origin: "codecommit",
+		create: false,
+		repositoryName,
+		branchName,
+	})
+	.stage({
+		name: "Approval",
+		actions: [
+			{
+				name: "Approve",
+				type: "approval",
+				description: "Approve pipeline execution",
+			},
+		],
+	});
+```
+
+The actual generated properties remain conditional on the selected CLI options. In particular, `onPullRequest` and `autoReviewer` are omitted when disabled.
+
+CLI requirements:
+
+- Generated CodeCommit sources import by name through `create: false`; the generated stack no longer imports raw `Repository` solely to construct the source.
+- Every generated pipeline contains one editable Approval stage so it satisfies synthesis completeness without inventing a deployment target or CodeBuild project.
+- Generated `cdk.json` retains `team` and deployment `stage` context for `BasicConstruct` tags and reviewer identity; those values are not emitted into `CodePipelineProps`.
+- The unused `--pipeline-stage` flag is removed from `CodePipelineInitFlags`, argument parsing, help, `packages/cli/README.md`, and tests. Arbitrary CLI stage serialization is a separate future design.
+- `runCodePipelineInit` no longer accepts and silently drops parsed pipeline-stage values; no arbitrary stage field is added to `CodePipelineGeneratorConfig`.
+- Generator tests assert the fluent source and Approval stage shape, conditional PR/reviewer properties, absence of the old constructor source and `autoReview`, and synthesis of the generated project.
+- CLI command tests assert that the removed flag is rejected and that context values remain in generated `cdk.json`.
+- The separate `pawl init codecommit` command retains `autoReview`; that property belongs to the `CodeCommit` construct and is outside this rename.
 
 ## Testing strategy
 
@@ -543,6 +610,8 @@ The migration mapping also includes:
 - Automatic input selection and multi-output ambiguity.
 - Explicit inputs to earlier registered artifacts.
 - Default, renamed, multiple, and disabled CodeBuild outputs.
+- Single-stage objects and non-empty stage lists produce identical definitions where equivalent.
+- Stage-list order, complete-batch validation, and artifact-frontier progression across multiple stage objects.
 - Stage and default-artifact naming sanitization, the fixed SHA-256 truncation suffix, and collision errors.
 - Stable error codes and paths.
 - All four `onPullRequest`/`autoReviewer` combinations and their selected trigger/router behavior.
@@ -555,7 +624,8 @@ The migration mapping also includes:
 - Every built-in action type.
 - Custom action validation and artifact discovery, including rejection of unnamed artifacts and non-default run order.
 - CloudFormation administrative mode and explicit least-privilege deployment-role mode.
-- Parallel actions share one stage and sequential calls create distinct stages.
+- Parallel actions share one stage object, while separate objects in one list or separate calls create sequential stages.
+- Empty stage lists and empty `actions` arrays are rejected through types and runtime validation.
 - Flattened pipeline name, bucket, role, execution, and restart properties.
 - Forced V2 and variable merging.
 - Secure default artifact bucket behavior.

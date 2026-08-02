@@ -314,7 +314,7 @@ Action-specific behavior is:
 - Lambda accepts ordinary `LambdaFunction` and continues rejecting direct durable functions. It consumes the unambiguous frontier input by default; `inputs: false` explicitly requests no input. It has no default output, and a handler requesting outputs is responsible for uploading them.
 - `userParameters` and `userParametersString` are mutually exclusive.
 - S3 deploy requires one input, selected automatically only when unambiguous.
-- CloudFormation deploy requires `input` plus `templatePath`. `templateConfiguration.input` and `extraInputs` are artifact names that Pawl converts to AWS `ArtifactPath` and `Artifact` values. `adminPermissions` defaults to `false`.
+- CloudFormation deploy requires one input artifact and `templatePath`. When `input` is omitted, Pawl selects the sole frontier artifact; omission is an ambiguity error when the frontier has multiple artifacts. `templateConfiguration.input` and `extraInputs` are artifact names that Pawl converts to AWS `ArtifactPath` and `Artifact` values. `adminPermissions` defaults to `false`.
 - CloudFormation creates an output only when `output.fileName` is present; `output.name` defaults through the artifact naming rule.
 - A custom action's effective name must agree with `action.actionProperties.actionName`. Custom actions with a non-default run order are rejected. Pawl reads their declared inputs and outputs for registry validation.
 

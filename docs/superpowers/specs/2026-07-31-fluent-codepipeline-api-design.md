@@ -179,6 +179,7 @@ Zod schemas enforce exact ownership combinations at runtime.
 - `create: false` imports an existing repository by literal name.
 - `repository` reuses an existing `IRepository` construct.
 - `repository` cannot be combined with `create` or `sync`.
+- When both `repository` and the optional literal `repositoryName` fallback are supplied, a concretely resolved `repository.repositoryName` must equal the fallback. A mismatch fails before pipeline or review resources are created. Tokenized construct names cannot be compared and therefore use the explicit fallback as the review/event identity.
 - `branchName` defaults to `main`.
 - The source action is named `Source`.
 - The source artifact is named `SourceOutput`.
@@ -238,6 +239,16 @@ type LambdaUserParameters =
 			readonly userParametersString: string;
 	  };
 
+type CloudFormationPermissions =
+	| {
+			readonly adminPermissions: true;
+			readonly deploymentRole?: never;
+	  }
+	| {
+			readonly adminPermissions?: false;
+			readonly deploymentRole: IRole;
+	  };
+
 export type PipelineActionDefinition =
 	| (PipelineActionBase & {
 			readonly type: "codebuild";
@@ -278,27 +289,26 @@ export type PipelineActionDefinition =
 			readonly cacheControl?: readonly CacheControl[];
 			readonly encryptionKey?: IKey;
 	  })
-	| (PipelineActionBase & {
-			readonly type: "cloudFormationDeploy";
-			readonly stackName: string;
-			readonly input?: string;
-			readonly templatePath: string;
-			readonly templateConfiguration?: {
+	| (PipelineActionBase &
+			CloudFormationPermissions & {
+				readonly type: "cloudFormationDeploy";
+				readonly stackName: string;
 				readonly input?: string;
-				readonly path: string;
-			};
-			readonly extraInputs?: readonly string[];
-			readonly deploymentRole?: IRole;
-			readonly capabilities?: readonly CfnCapabilities[];
-			readonly adminPermissions?: boolean;
-			readonly parameterOverrides?: Readonly<Record<string, unknown>>;
-			readonly replaceOnFailure?: boolean;
-			readonly output?: {
-				readonly name?: string;
-				readonly fileName: string;
-			};
-			readonly account?: string;
-	  })
+				readonly templatePath: string;
+				readonly templateConfiguration?: {
+					readonly input?: string;
+					readonly path: string;
+				};
+				readonly extraInputs?: readonly string[];
+				readonly capabilities?: readonly CfnCapabilities[];
+				readonly parameterOverrides?: Readonly<Record<string, unknown>>;
+				readonly replaceOnFailure?: boolean;
+				readonly output?: {
+					readonly name?: string;
+					readonly fileName: string;
+				};
+				readonly account?: string;
+			})
 	| {
 			readonly type: "custom";
 			readonly name: string;
@@ -314,9 +324,10 @@ Action-specific behavior is:
 - Lambda accepts ordinary `LambdaFunction` and continues rejecting direct durable functions. It consumes the unambiguous frontier input by default; `inputs: false` explicitly requests no input. It has no default output, and a handler requesting outputs is responsible for uploading them.
 - `userParameters` and `userParametersString` are mutually exclusive.
 - S3 deploy requires one input, selected automatically only when unambiguous.
-- CloudFormation deploy requires one input artifact and `templatePath`. When `input` is omitted, Pawl selects the sole frontier artifact; omission is an ambiguity error when the frontier has multiple artifacts. `templateConfiguration.input` and `extraInputs` are artifact names that Pawl converts to AWS `ArtifactPath` and `Artifact` values. `adminPermissions` defaults to `false`.
+- CloudFormation deploy requires one input artifact and `templatePath`. When `input` is omitted, Pawl selects the sole frontier artifact; omission is an ambiguity error when the frontier has multiple artifacts. `templateConfiguration.input` and `extraInputs` are artifact names that Pawl converts to AWS `ArtifactPath` and `Artifact` values.
+- CloudFormation permissions are an XOR: `adminPermissions: true` lets AWS CDK create its administrative role, while the default/non-admin path requires an explicit `deploymentRole` that the consumer has already granted. Pawl never creates an unusable zero-permission deployment role.
 - CloudFormation creates an output only when `output.fileName` is present; `output.name` defaults through the artifact naming rule.
-- A custom action's effective name must agree with `action.actionProperties.actionName`. Custom actions with a non-default run order are rejected. Pawl reads their declared inputs and outputs for registry validation.
+- A custom action's effective name must agree with `action.actionProperties.actionName`. Custom actions with a non-default run order are rejected. Every declared custom input and output must already have a concrete, AWS-valid `artifactName`; unnamed custom artifacts are rejected before stage mutation because CDK names them too late for deterministic planning.
 
 ## Artifact planning
 
@@ -338,7 +349,8 @@ Artifact resolution is isolated in a pure planner. The construct maintains:
 - A CodeBuild action produces `<SanitizedActionName>Output` by default.
 - Default artifact names replace characters outside `[A-Za-z0-9_-]` with `-`, collapse and trim separators, and use the same fixed SHA-256 suffix rule when the result would exceed 100 characters. For example, `Build.App` produces `Build-AppOutput`.
 - Explicit artifact names must already satisfy AWS artifact-name constraints; Pawl does not rewrite them.
-- CodeBuild outputs can be renamed, expanded to multiple named outputs, or disabled explicitly.
+- CodeBuild outputs can be renamed, expanded to multiple named outputs, or disabled explicitly. `outputs: []` is invalid; use `outputs: false` to disable output creation.
+- Lambda `inputs: []` is invalid; use `inputs: false` for no input. Lambda `outputs: []` is also invalid; omit `outputs` for no output. Lambda enforces AWS's maximum of five inputs and five outputs.
 - Actions that do not naturally produce artifacts do not receive synthetic outputs.
 - If a stage produces at least one output, those outputs become the next frontier.
 - If a stage produces no outputs, the previous frontier carries through unchanged.
@@ -402,8 +414,12 @@ Compatible AWS `PipelineProps` are forwarded directly when the underlying pipeli
 - `triggers` is omitted and rejected in the CodeCommit-only release because the pinned AWS property supports only CodeStar Connections. `onPullRequest` is the sole CodeCommit trigger-mode property.
 - `variables` are merged by variable name.
 - `artifactBucket`, `pipelineName`, `role`, `executionMode`, and `restartExecutionOnUpdate` remain user-controlled.
-- Existing Pawl naming modes continue to own or derive `pipelineName` only when the user has not supplied an incompatible explicit AWS value.
-- Conflicting naming modes and `pipelineName` fail validation.
+- With neither property, `pipelineNaming` defaults to Pawl naming.
+- `pipelineName` alone is accepted as the explicit AWS name.
+- `pipelineNaming.mode: "cloudFormation"` cannot be combined with `pipelineName`.
+- `pipelineNaming.mode: "pawl"` cannot be combined with `pipelineName` because both own the physical name.
+- `pipelineNaming.mode: "explicit"` may be combined with `pipelineName` only when the two names are exactly equal; mismatches fail validation.
+- Existing coordination-name requirements for CloudFormation-owned names remain unchanged.
 - Existing cross-account and encryption constraints are validated rather than silently overridden.
 
 The implementation plan must inventory the exact `PipelineProps` version in the pinned `aws-cdk-lib` and document every omitted or normalized key.
@@ -513,8 +529,10 @@ The migration mapping also includes:
 
 - Every valid source ownership branch compiles and parses.
 - Conflicting source fields fail at compile time where possible and through Zod at runtime.
-- Each action discriminant exposes only its specified properties, including compile-time checks for CodeBuild outputs, Lambda no-input mode, and CloudFormation artifact references.
+- Supplied repository and fallback names must agree when the construct name is concrete; tokenized names use the fallback.
+- Each action discriminant exposes only its specified properties, including compile-time checks for CodeBuild outputs, Lambda no-input mode, CloudFormation artifact references, and the CloudFormation permissions XOR.
 - `userParameters` and `userParametersString` are mutually exclusive in both TypeScript and Zod validation.
+- Non-admin CloudFormation deployment without a role and custom actions with unnamed artifacts are rejected.
 - Raw durable Lambda handlers remain invalid pipeline Lambda actions.
 - Flattened AWS properties retain their upstream types, while `pipelineType`, `stages`, and `triggers` are compile-time errors.
 
@@ -535,7 +553,8 @@ The migration mapping also includes:
 - Source creation, import by name, and supplied repository reuse.
 - Seed asset path and replacement-safe identity.
 - Every built-in action type.
-- Custom action validation and artifact discovery.
+- Custom action validation and artifact discovery, including rejection of unnamed artifacts and non-default run order.
+- CloudFormation administrative mode and explicit least-privilege deployment-role mode.
 - Parallel actions share one stage and sequential calls create distinct stages.
 - Flattened pipeline name, bucket, role, execution, and restart properties.
 - Forced V2 and variable merging.

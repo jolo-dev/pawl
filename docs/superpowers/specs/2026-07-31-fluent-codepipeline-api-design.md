@@ -79,7 +79,10 @@ The Pawl properties flatten ordinary AWS `PipelineProps` rather than nesting an 
 
 ```ts
 export interface CodePipelineProps
-	extends Omit<PipelineProps, "pipelineType" | "triggers" | "variables"> {
+	extends Omit<
+		PipelineProps,
+		"pipelineType" | "stages" | "triggers" | "variables"
+	> {
 	readonly variables?: readonly Variable[];
 	readonly autoReviewer?: AutoReviewConfig;
 	readonly onPullRequest?: boolean;
@@ -225,6 +228,16 @@ interface PipelineActionBase {
 	readonly variablesNamespace?: string;
 }
 
+type LambdaUserParameters =
+	| {
+			readonly userParameters?: Readonly<Record<string, unknown>>;
+			readonly userParametersString?: never;
+	  }
+	| {
+			readonly userParameters?: never;
+			readonly userParametersString: string;
+	  };
+
 export type PipelineActionDefinition =
 	| (PipelineActionBase & {
 			readonly type: "codebuild";
@@ -248,14 +261,13 @@ export type PipelineActionDefinition =
 			readonly externalEntityLink?: string;
 			readonly timeout?: Duration;
 	  })
-	| (PipelineActionBase & {
-			readonly type: "lambda";
-			readonly handler: LambdaFunction;
-			readonly inputs?: readonly string[] | false;
-			readonly outputs?: readonly string[];
-			readonly userParameters?: Readonly<Record<string, unknown>>;
-			readonly userParametersString?: string;
-	  })
+	| (PipelineActionBase &
+			LambdaUserParameters & {
+				readonly type: "lambda";
+				readonly handler: LambdaFunction;
+				readonly inputs?: readonly string[] | false;
+				readonly outputs?: readonly string[];
+			})
 	| (PipelineActionBase & {
 			readonly type: "s3Deploy";
 			readonly bucket: IBucket;
@@ -369,7 +381,8 @@ Additional rules:
 
 - `autoReviewer` is valid only for a CodeCommit source.
 - `onPullRequest: true` disables the native source trigger and always provisions the PR execution router.
-- Active PR-gated review declares the six protected `PAWL_*` variables.
+- Every PR-routed pipeline declares and receives the same six protected `PAWL_*` variables: provider, repository, request ID, generation, source revision, and destination revision.
+- The router without AutoReviewer uses the same exact-revision transport and metadata contract, including deterministic client tokens; the variables remain execution metadata even when no bridge consumes them.
 - User variables are merged, and reserved-name collisions fail.
 - `team` and `stage` top-level overrides continue to feed reviewer naming/tagging, with existing context fallback.
 - The bridge, reconciler, DynamoDB coordination state, timeout, IAM grants, and EventBridge rules retain their current behavior.
@@ -385,6 +398,7 @@ The AIReview injection is planned before the first stage is mutated, so an inval
 Compatible AWS `PipelineProps` are forwarded directly when the underlying pipeline is created. Pawl reserves or normalizes only fields required for its invariants.
 
 - `pipelineType` is always V2.
+- `stages` is omitted and rejected; fluent `.stage()` is the only user-stage API.
 - `triggers` is omitted and rejected in the CodeCommit-only release because the pinned AWS property supports only CodeStar Connections. `onPullRequest` is the sole CodeCommit trigger-mode property.
 - `variables` are merged by variable name.
 - `artifactBucket`, `pipelineName`, `role`, `executionMode`, and `restartExecutionOnUpdate` remain user-controlled.
@@ -489,8 +503,8 @@ The migration mapping also includes:
 
 - `autoReview` becomes `autoReviewer` with the same reviewer configuration semantics;
 - top-level `team` and `stage` remain top-level and retain context fallback;
-- `onPullRequest` remains top-level but now provisions PR execution independently of AutoReviewer;
-- raw `PipelineProps.triggers` is unavailable until a compatible non-CodeCommit source is designed; and
+- `onPullRequest` remains top-level but now provisions PR execution independently of AutoReviewer and always uses the complete six-variable PR execution contract;
+- raw `PipelineProps.stages` and `PipelineProps.triggers` are unavailable; stages are fluent, and triggers remain unavailable until a compatible non-CodeCommit source is designed; and
 - old action `manualApproval` becomes `approval`, while CloudFormation `actionMode: "REPLACE_ON_FAILURE"` becomes `replaceOnFailure: true`.
 
 ## Testing strategy
@@ -502,7 +516,7 @@ The migration mapping also includes:
 - Each action discriminant exposes only its specified properties, including compile-time checks for CodeBuild outputs, Lambda no-input mode, and CloudFormation artifact references.
 - `userParameters` and `userParametersString` are mutually exclusive in both TypeScript and Zod validation.
 - Raw durable Lambda handlers remain invalid pipeline Lambda actions.
-- Flattened AWS properties retain their upstream types, while `pipelineType` and `triggers` are compile-time errors.
+- Flattened AWS properties retain their upstream types, while `pipelineType`, `stages`, and `triggers` are compile-time errors.
 
 ### Pure unit tests
 
@@ -514,6 +528,7 @@ The migration mapping also includes:
 - Stage and default-artifact naming sanitization, the fixed SHA-256 truncation suffix, and collision errors.
 - Stable error codes and paths.
 - All four `onPullRequest`/`autoReviewer` combinations and their selected trigger/router behavior.
+- The no-review PR router declares and sends the complete six-variable metadata contract with an exact source revision and deterministic client token.
 
 ### CDK synthesis tests
 

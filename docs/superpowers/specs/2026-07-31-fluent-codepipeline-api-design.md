@@ -79,7 +79,7 @@ The Pawl properties flatten ordinary AWS `PipelineProps` rather than nesting an 
 
 ```ts
 export interface CodePipelineProps
-	extends Omit<PipelineProps, "pipelineType" | "variables"> {
+	extends Omit<PipelineProps, "pipelineType" | "triggers" | "variables"> {
 	readonly variables?: readonly Variable[];
 	readonly autoReviewer?: AutoReviewConfig;
 	readonly onPullRequest?: boolean;
@@ -87,18 +87,22 @@ export interface CodePipelineProps
 	readonly pipelineNaming?: CodePipelineNaming;
 	readonly reviewCoordinationDeploymentPhase?: ReviewCoordinationDeploymentPhase;
 	readonly reviewActionTimeoutMinutes?: number;
+	readonly team?: string;
+	readonly stage?: string;
 }
 ```
 
 The precise implementation may need to omit and reintroduce additional AWS properties whose types conflict with Pawl ownership, but the public behavior is fixed:
 
 - `pipelineType` is always V2 and cannot be supplied.
+- Raw AWS `triggers` are omitted in the CodeCommit-only release; `onPullRequest` owns CodeCommit trigger behavior.
 - User variables are accepted and merged with Pawl variables.
 - Names beginning with the reserved `PAWL_` prefix are rejected.
 - `pipelineName`, `artifactBucket`, role, execution mode, restart behavior, and other compatible AWS properties pass through.
 - A supplied artifact bucket is used directly.
 - If no artifact bucket is supplied, Pawl creates a retained KMS-encrypted bucket.
 - `artifactEncryptionKey` is valid only when Pawl creates the bucket.
+- `team` and `stage` remain top-level overrides for AutoReviewer naming and tagging; existing CDK-context fallback behavior remains unchanged.
 - The old constructor-level `source` and `stages` properties are removed.
 - The old `autoReview` property is renamed to `autoReviewer` as part of the same breaking change.
 
@@ -204,52 +208,103 @@ When no name is supplied, Pawl:
 2. joins names with `-`;
 3. replaces unsupported characters with `-`;
 4. collapses and trims separators;
-5. appends a deterministic hash suffix when truncation is needed; and
+5. when the result exceeds AWS's 100-character limit, keeps the first 91 characters and appends `-` plus the first eight lowercase hexadecimal characters of the SHA-256 digest of the complete sanitized name; and
 6. validates uniqueness against all existing stage names.
 
-An empty action list cannot produce a stage. Explicit and derived name collisions fail rather than receiving numeric suffixes.
+Hash input, algorithm, suffix length, and truncation boundary are part of the compatibility contract so synthesized names do not drift between implementations. An empty action list cannot produce a stage. Explicit and derived name collisions fail rather than receiving numeric suffixes.
 
 ### Action union
 
-```ts
-export type PipelineActionDefinition =
-	| CodeBuildPipelineAction
-	| ApprovalPipelineAction
-	| LambdaPipelineAction
-	| S3DeployPipelineAction
-	| CloudFormationDeployPipelineAction
-	| CustomPipelineAction;
-```
-
-Every built-in action has a required `name` and discriminating `type`:
-
-- `codebuild`
-- `approval`
-- `lambda`
-- `s3Deploy`
-- `cloudFormationDeploy`
-- `custom`
-
-Built-in definitions expose the safe, relevant options from their AWS action type. Pawl owns `actionName`, artifact objects, and run order. Version one does not expose a built-in `runOrder`; all actions in one `.stage()` call remain parallel.
-
-Pawl action definitions reference Pawl abstractions:
-
-- CodeBuild actions accept `CodeBuildProject`.
-- Lambda actions accept ordinary `LambdaFunction` and continue rejecting direct durable functions.
-- S3 deploy actions accept `IBucket`.
-- CloudFormation deploy actions accept stack/template configuration and least-privilege role options.
-
-A custom definition accepts an existing `IAction`:
+The built-in contract is fixed rather than described as a passthrough:
 
 ```ts
-{
-	name: "SecurityScan",
-	type: "custom",
-	action: securityAction,
+interface PipelineActionBase {
+	readonly name: string;
+	readonly role?: IRole;
+	readonly region?: string;
+	readonly variablesNamespace?: string;
 }
+
+export type PipelineActionDefinition =
+	| (PipelineActionBase & {
+			readonly type: "codebuild";
+			readonly project: CodeBuildProject;
+			readonly input?: string;
+			readonly extraInputs?: readonly string[];
+			readonly outputs?: readonly string[] | false;
+			readonly actionType?: CodeBuildActionType;
+			readonly environmentVariables?: Readonly<
+				Record<string, BuildEnvironmentVariable>
+			>;
+			readonly checkSecretsInPlainTextEnvVariables?: boolean;
+			readonly executeBatchBuild?: boolean;
+			readonly combineBatchBuildArtifacts?: boolean;
+	  })
+	| (PipelineActionBase & {
+			readonly type: "approval";
+			readonly description?: string;
+			readonly notificationTopic?: ITopic;
+			readonly notifyEmails?: readonly string[];
+			readonly externalEntityLink?: string;
+			readonly timeout?: Duration;
+	  })
+	| (PipelineActionBase & {
+			readonly type: "lambda";
+			readonly handler: LambdaFunction;
+			readonly inputs?: readonly string[] | false;
+			readonly outputs?: readonly string[];
+			readonly userParameters?: Readonly<Record<string, unknown>>;
+			readonly userParametersString?: string;
+	  })
+	| (PipelineActionBase & {
+			readonly type: "s3Deploy";
+			readonly bucket: IBucket;
+			readonly input?: string;
+			readonly extract?: boolean;
+			readonly objectKey?: string;
+			readonly accessControl?: BucketAccessControl;
+			readonly cacheControl?: readonly CacheControl[];
+			readonly encryptionKey?: IKey;
+	  })
+	| (PipelineActionBase & {
+			readonly type: "cloudFormationDeploy";
+			readonly stackName: string;
+			readonly input?: string;
+			readonly templatePath: string;
+			readonly templateConfiguration?: {
+				readonly input?: string;
+				readonly path: string;
+			};
+			readonly extraInputs?: readonly string[];
+			readonly deploymentRole?: IRole;
+			readonly capabilities?: readonly CfnCapabilities[];
+			readonly adminPermissions?: boolean;
+			readonly parameterOverrides?: Readonly<Record<string, unknown>>;
+			readonly replaceOnFailure?: boolean;
+			readonly output?: {
+				readonly name?: string;
+				readonly fileName: string;
+			};
+			readonly account?: string;
+	  })
+	| {
+			readonly type: "custom";
+			readonly name: string;
+			readonly action: IAction;
+	  };
 ```
 
-The effective action name must agree with the custom action's declared action name. Custom actions with a non-default run order are rejected in version one. Pawl reads their declared input and output artifacts for registry validation.
+Pawl owns `actionName`, raw `Artifact` objects, and run order. Version one does not expose `runOrder`; all actions in one `.stage()` call remain parallel. Where an AWS action does not support a common field, its adapter rejects the field rather than silently dropping it.
+
+Action-specific behavior is:
+
+- CodeBuild accepts `CodeBuildProject`; `actionType` avoids colliding with the `type` discriminant.
+- Lambda accepts ordinary `LambdaFunction` and continues rejecting direct durable functions. It consumes the unambiguous frontier input by default; `inputs: false` explicitly requests no input. It has no default output, and a handler requesting outputs is responsible for uploading them.
+- `userParameters` and `userParametersString` are mutually exclusive.
+- S3 deploy requires one input, selected automatically only when unambiguous.
+- CloudFormation deploy requires `input` plus `templatePath`. `templateConfiguration.input` and `extraInputs` are artifact names that Pawl converts to AWS `ArtifactPath` and `Artifact` values. `adminPermissions` defaults to `false`.
+- CloudFormation creates an output only when `output.fileName` is present; `output.name` defaults through the artifact naming rule.
+- A custom action's effective name must agree with `action.actionProperties.actionName`. Custom actions with a non-default run order are rejected. Pawl reads their declared inputs and outputs for registry validation.
 
 ## Artifact planning
 
@@ -268,7 +323,9 @@ Artifact resolution is isolated in a pure planner. The construct maintains:
 - Explicit inputs may reference any previously registered artifact.
 - Unknown inputs fail before stage mutation.
 - Artifact names are globally unique.
-- A CodeBuild action produces `<ActionName>Output` by default.
+- A CodeBuild action produces `<SanitizedActionName>Output` by default.
+- Default artifact names replace characters outside `[A-Za-z0-9_-]` with `-`, collapse and trim separators, and use the same fixed SHA-256 suffix rule when the result would exceed 100 characters. For example, `Build.App` produces `Build-AppOutput`.
+- Explicit artifact names must already satisfy AWS artifact-name constraints; Pawl does not rewrite them.
 - CodeBuild outputs can be renamed, expanded to multiple named outputs, or disabled explicitly.
 - Actions that do not naturally produce artifacts do not receive synthetic outputs.
 - If a stage produces at least one output, those outputs become the next frontier.
@@ -295,14 +352,26 @@ This makes approval stages transparent to artifact flow while making parallel bu
 
 Omitting `input` from `DeployWeb` is invalid because the frontier contains `WebOutput` and `ApiOutput`.
 
-## Auto-review integration
+## Pull-request execution and auto-review
 
-Auto-review creation is deferred until `.source()` because it requires CodeCommit identity. Existing durable bridge behavior remains unchanged.
+`onPullRequest` and `autoReviewer` are independent options. Source and reviewer creation are deferred until `.source()` because both need CodeCommit identity.
+
+| `onPullRequest` | `autoReviewer` | Behavior |
+|---|---|---|
+| false or absent | absent | Native CodeCommit default-branch pipeline trigger |
+| true | absent | PR execution router starts exact-revision pipeline runs; no AI reviewer is deployed |
+| false or absent | present | Native default-branch pipeline plus standalone AI reviewer |
+| true | present | PR execution router plus durable AI-review bridge inside the pipeline |
+
+The PR execution router is therefore not owned by or conditional on AutoReviewer. Refactoring must separate reusable exact-revision PR execution routing from AI review resources while preserving current deterministic execution-token and revision behavior.
+
+Additional rules:
 
 - `autoReviewer` is valid only for a CodeCommit source.
-- `onPullRequest: true` preserves exact-revision PR-gated execution.
+- `onPullRequest: true` disables the native source trigger and always provisions the PR execution router.
 - Active PR-gated review declares the six protected `PAWL_*` variables.
 - User variables are merged, and reserved-name collisions fail.
+- `team` and `stage` top-level overrides continue to feed reviewer naming/tagging, with existing context fallback.
 - The bridge, reconciler, DynamoDB coordination state, timeout, IAM grants, and EventBridge rules retain their current behavior.
 - Preparation deployment phases create coordination resources without adding `AIReview`.
 - In the active phase, `AIReview` is inserted into the first user stage as a parallel action and consumes `SourceOutput`.
@@ -316,8 +385,9 @@ The AIReview injection is planned before the first stage is mutated, so an inval
 Compatible AWS `PipelineProps` are forwarded directly when the underlying pipeline is created. Pawl reserves or normalizes only fields required for its invariants.
 
 - `pipelineType` is always V2.
+- `triggers` is omitted and rejected in the CodeCommit-only release because the pinned AWS property supports only CodeStar Connections. `onPullRequest` is the sole CodeCommit trigger-mode property.
 - `variables` are merged by variable name.
-- `artifactBucket`, `pipelineName`, `role`, `executionMode`, `restartExecutionOnUpdate`, and compatible trigger settings remain user-controlled.
+- `artifactBucket`, `pipelineName`, `role`, `executionMode`, and `restartExecutionOnUpdate` remain user-controlled.
 - Existing Pawl naming modes continue to own or derive `pipelineName` only when the user has not supplied an incompatible explicit AWS value.
 - Conflicting naming modes and `pipelineName` fail validation.
 - Existing cross-account and encryption constraints are validated rather than silently overridden.
@@ -415,15 +485,24 @@ new CodePipeline(this, "Pipeline", props)
 
 All examples, tests, generated CLI templates, and documentation must migrate in the same release. No runtime compatibility parser or deprecated overload remains.
 
+The migration mapping also includes:
+
+- `autoReview` becomes `autoReviewer` with the same reviewer configuration semantics;
+- top-level `team` and `stage` remain top-level and retain context fallback;
+- `onPullRequest` remains top-level but now provisions PR execution independently of AutoReviewer;
+- raw `PipelineProps.triggers` is unavailable until a compatible non-CodeCommit source is designed; and
+- old action `manualApproval` becomes `approval`, while CloudFormation `actionMode: "REPLACE_ON_FAILURE"` becomes `replaceOnFailure: true`.
+
 ## Testing strategy
 
 ### Type and schema tests
 
 - Every valid source ownership branch compiles and parses.
 - Conflicting source fields fail at compile time where possible and through Zod at runtime.
-- Each action discriminant exposes only its relevant properties.
+- Each action discriminant exposes only its specified properties, including compile-time checks for CodeBuild outputs, Lambda no-input mode, and CloudFormation artifact references.
+- `userParameters` and `userParametersString` are mutually exclusive in both TypeScript and Zod validation.
 - Raw durable Lambda handlers remain invalid pipeline Lambda actions.
-- Flattened AWS properties retain their upstream types.
+- Flattened AWS properties retain their upstream types, while `pipelineType` and `triggers` are compile-time errors.
 
 ### Pure unit tests
 
@@ -432,8 +511,9 @@ All examples, tests, generated CLI templates, and documentation must migrate in 
 - Automatic input selection and multi-output ambiguity.
 - Explicit inputs to earlier registered artifacts.
 - Default, renamed, multiple, and disabled CodeBuild outputs.
-- Stage-name derivation, sanitization, deterministic truncation, and collision errors.
+- Stage and default-artifact naming sanitization, the fixed SHA-256 truncation suffix, and collision errors.
 - Stable error codes and paths.
+- All four `onPullRequest`/`autoReviewer` combinations and their selected trigger/router behavior.
 
 ### CDK synthesis tests
 

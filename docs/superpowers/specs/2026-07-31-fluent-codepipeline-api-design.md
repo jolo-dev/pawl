@@ -581,13 +581,15 @@ The actual generated properties remain conditional on the selected CLI options. 
 
 CLI requirements:
 
+- The CLI accepts only `--source codecommit` in this release. Presence alone is insufficient: any other value fails before layout creation or file generation.
 - Generated CodeCommit sources import by name through `create: false`; the generated stack no longer imports raw `Repository` solely to construct the source.
 - Every generated pipeline contains one editable Approval stage so it satisfies synthesis completeness without inventing a deployment target or CodeBuild project.
 - Generated `cdk.json` retains `team` and deployment `stage` context for `BasicConstruct` tags and reviewer identity; those values are not emitted into `CodePipelineProps`.
 - The unused `--pipeline-stage` flag is removed from `CodePipelineInitFlags`, argument parsing, help, `packages/cli/README.md`, and tests. Arbitrary CLI stage serialization is a separate future design.
 - `runCodePipelineInit` no longer accepts and silently drops parsed pipeline-stage values; no arbitrary stage field is added to `CodePipelineGeneratorConfig`.
-- Generator tests assert the fluent source and Approval stage shape, conditional PR/reviewer properties, absence of the old constructor source and `autoReview`, and synthesis of the generated project.
-- CLI command tests assert that the removed flag is rejected and that context values remain in generated `cdk.json`.
+- Generator tests assert the fluent source and Approval stage shape, conditional PR/reviewer properties, and absence of the old constructor source and `autoReview`.
+- A host-side integration test executes synthesis against generated output with local package resolution; emitting an unexecuted test file is not synthesis evidence.
+- CLI command tests assert that non-CodeCommit source values and the removed stage flag are rejected and that context values remain in generated `cdk.json`.
 - The separate `pawl init codecommit` command retains `autoReview`; that property belongs to the `CodeCommit` construct and is outside this rename.
 
 ## Testing strategy

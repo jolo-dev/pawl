@@ -1,6 +1,6 @@
-import { lstatSync, realpathSync } from "node:fs";
+import { lstatSync } from "node:fs";
 import { access, constants } from "node:fs/promises";
-import { dirname, resolve, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 
 export interface CodePipelineInitLayout {
 	readonly projectDir: string;
@@ -16,14 +16,17 @@ export async function resolveCodePipelineInitLayout(
 	try {
 		await access(parent, constants.R_OK);
 	} catch {
-		throw new Error(`Output parent directory "${parent}" does not exist or is not readable`);
+		throw new Error(
+			`Output parent directory "${parent}" does not exist or is not readable`,
+		);
 	}
 	// Check destination doesn't exist
 	try {
 		lstatSync(projectDir);
 		throw new Error(`Destination "${projectDir}" already exists`);
 	} catch (error: unknown) {
-		if (error instanceof Error && error.message.includes("already exists")) throw error;
+		if (error instanceof Error && error.message.includes("already exists"))
+			throw error;
 		// ENOENT is expected — destination should not exist
 	}
 	return { projectDir };

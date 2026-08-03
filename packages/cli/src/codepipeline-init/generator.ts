@@ -1,6 +1,6 @@
 import {
-	mkdtempSync,
 	mkdirSync,
+	mkdtempSync,
 	renameSync,
 	rmSync,
 	writeFileSync,
@@ -34,10 +34,6 @@ export function getCodePipelineTemplateManifest(): { files: string[] } {
 	};
 }
 
-function esc(value: string): string {
-	return JSON.stringify(value).slice(1, -1);
-}
-
 export function renderCodePipelineTemplateFiles(
 	config: CodePipelineGeneratorConfig,
 ): Array<{ path: string; content: string }> {
@@ -49,7 +45,7 @@ export function renderCodePipelineTemplateFiles(
 		if (filePath === "stacks/codepipeline-stack.ts") {
 			content = renderStack(config);
 		} else if (filePath === "tests/codepipeline-stack.test.ts") {
-			content = renderTest(config);
+			content = renderTest();
 		} else if (filePath === "package.json") {
 			content = renderPackageJson(config);
 		} else if (filePath === "tsconfig.json") {
@@ -59,7 +55,8 @@ export function renderCodePipelineTemplateFiles(
 		} else if (filePath === "index.ts") {
 			content = renderIndex();
 		} else if (filePath === ".gitignore") {
-			content = "node_modules/\ncdk.out/\ndist/\n.env\n.env.*\n!.env.example\n.DS_Store\n";
+			content =
+				"node_modules/\ncdk.out/\ndist/\n.env\n.env.*\n!.env.example\n.DS_Store\n";
 		} else if (filePath === "README.md") {
 			content = renderReadme(config);
 		}
@@ -69,39 +66,46 @@ export function renderCodePipelineTemplateFiles(
 }
 
 function renderStack(config: CodePipelineGeneratorConfig): string {
-	const repoName = JSON.stringify(config.sourceName);
-	const branchName = JSON.stringify(config.sourceBranch);
-	const onPr = config.onPullRequest ? ",\n      onPullRequest: true" : "";
-	const autoReview = config.autoReviewer
-		? `,\n      autoReview: { modelId: ${JSON.stringify(config.modelId ?? "")} }`
+	const onPullRequest = config.onPullRequest
+		? "\n      onPullRequest: true,"
+		: "";
+	const autoReviewer = config.autoReviewer
+		? `\n      autoReviewer: { modelId: ${JSON.stringify(config.modelId ?? "")} },`
 		: "";
 
 	return `import {
-  App,
   CodePipeline,
   type Construct,
   Stack,
 } from "@pawl/cdk";
-import { Repository } from "aws-cdk-lib/aws-codecommit";
 
 export class CodePipelineStack extends Stack {
   constructor(scope: Construct, id: string) {
     super(scope, id);
-    const repository = Repository.fromRepositoryName(this, "Repo", ${repoName});
-    new CodePipeline(this, "Pipeline", {
-      source: {
-        type: "codecommit",
-        repository,
-        branchName: ${branchName},
-      }${onPr}${autoReview},
-    });
+    new CodePipeline(this, "Pipeline", {${onPullRequest}${autoReviewer}
+    })
+      .source({
+        origin: "codecommit",
+        create: false,
+        repositoryName: ${JSON.stringify(config.sourceName)},
+        branchName: ${JSON.stringify(config.sourceBranch)},
+      })
+      .stage({
+        name: "Approval",
+        actions: [
+          {
+            name: "Approve",
+            type: "approval",
+            description: "Approve pipeline execution",
+          },
+        ],
+      });
   }
 }
 `;
 }
 
-function renderTest(config: CodePipelineGeneratorConfig): string {
-	const repoName = esc(config.sourceName);
+function renderTest(): string {
 	return `import { describe, expect, test } from "bun:test";
 import { App, Template } from "@pawl/cdk";
 import { CodePipelineStack } from "../stacks/codepipeline-stack";
@@ -118,51 +122,63 @@ describe("CodePipelineStack", () => {
 }
 
 function renderPackageJson(config: CodePipelineGeneratorConfig): string {
-	return JSON.stringify({
-		name: `${config.sourceName}-pipeline`,
-		version: "1.0.0",
-		type: "module",
-		description: "A Pawl CodePipeline project",
-		scripts: {
-			deploy: `AWS_PROFILE=${config.awsProfile ?? "default"} bunx cdk deploy --all`,
-			remove: `AWS_PROFILE=${config.awsProfile ?? "default"} bunx cdk destroy --all`,
-			synth: "bunx cdk synth",
-			test: "bun test",
+	return JSON.stringify(
+		{
+			name: `${config.sourceName}-pipeline`,
+			version: "1.0.0",
+			type: "module",
+			description: "A Pawl CodePipeline project",
+			scripts: {
+				deploy: `AWS_PROFILE=${config.awsProfile ?? "default"} bunx cdk deploy --all`,
+				remove: `AWS_PROFILE=${config.awsProfile ?? "default"} bunx cdk destroy --all`,
+				synth: "bunx cdk synth",
+				test: "bun test",
+			},
+			devDependencies: {
+				"@pawl/cdk": "^0.1.0",
+				"@types/bun": "^1.3.14",
+				"aws-cdk": "^2.1124.1",
+				typescript: "^5.9.3",
+			},
 		},
-		devDependencies: {
-			"@pawl/cdk": "^0.1.0",
-			"@types/bun": "^1.3.14",
-			"aws-cdk": "^2.1124.1",
-			typescript: "^5.9.3",
-		},
-	}, null, "\t");
+		null,
+		"\t",
+	);
 }
 
 function renderTsconfig(): string {
-	return JSON.stringify({
-		compilerOptions: {
-			target: "ES2022",
-			module: "ESNext",
-			moduleResolution: "bundler",
-			strict: true,
-			esModuleInterop: true,
-			skipLibCheck: true,
-			forceConsistentCasingInFileNames: true,
-			resolveJsonModule: true,
-			types: ["bun"],
+	return JSON.stringify(
+		{
+			compilerOptions: {
+				target: "ES2022",
+				module: "ESNext",
+				moduleResolution: "bundler",
+				strict: true,
+				esModuleInterop: true,
+				skipLibCheck: true,
+				forceConsistentCasingInFileNames: true,
+				resolveJsonModule: true,
+				types: ["bun"],
+			},
+			include: ["index.ts", "stacks/**/*.ts", "tests/**/*.ts"],
 		},
-		include: ["index.ts", "stacks/**/*.ts", "tests/**/*.ts"],
-	}, null, "\t");
+		null,
+		"\t",
+	);
 }
 
 function renderCdkJson(config: CodePipelineGeneratorConfig): string {
-	return JSON.stringify({
-		app: "bun ./index.ts",
-		context: {
-			team: config.team,
-			stage: config.stage,
+	return JSON.stringify(
+		{
+			app: "bun ./index.ts",
+			context: {
+				team: config.team,
+				stage: config.stage,
+			},
 		},
-	}, null, "\t");
+		null,
+		"\t",
+	);
 }
 
 function renderIndex(): string {
@@ -203,7 +219,7 @@ AWS_PROFILE=<profile> AWS_REGION=<region> bunx cdk deploy --all
 
 - **Source:** CodeCommit repository "${config.sourceName}", branch "${config.sourceBranch}"
 - **Trigger:** ${config.onPullRequest ? "PR-gated (starts on pull request events)" : "Push-triggered (starts on branch pushes)"}
-${config.autoReviewer ? "- **Auto-review:** Enabled with model " + (config.modelId ?? "") + "\n" : ""}
+${config.autoReviewer ? `- **Auto-review:** Enabled with model ${config.modelId ?? ""}\n` : ""}
 `;
 }
 

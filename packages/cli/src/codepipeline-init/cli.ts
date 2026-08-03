@@ -4,7 +4,6 @@ export interface CodePipelineInitFlags {
 	readonly source?: string;
 	readonly sourceName?: string;
 	readonly sourceBranch?: string;
-	readonly pipelineStage?: readonly string[];
 	readonly onPullRequest?: true;
 	readonly autoReviewer?: true;
 	readonly noAutoReviewer?: true;
@@ -33,7 +32,6 @@ const options = {
 	source: { type: "string" },
 	"source-name": { type: "string" },
 	"source-branch": { type: "string" },
-	"pipeline-stage": { type: "string", multiple: true },
 	"on-pr": { type: "boolean" },
 	"on-pull-request": { type: "boolean" },
 	autoreviewer: { type: "boolean" },
@@ -54,7 +52,9 @@ export function parseCodePipelineInitArgs(
 	argv: readonly string[],
 ): CodePipelineInitParseResult {
 	const commandArgs =
-		argv[0] === "init" && argv[1] === "codepipeline" ? argv.slice(2) : [...argv];
+		argv[0] === "init" && argv[1] === "codepipeline"
+			? argv.slice(2)
+			: [...argv];
 	const parsed = parseArgs({
 		args: commandArgs,
 		options,
@@ -66,35 +66,46 @@ export function parseCodePipelineInitArgs(
 		return { kind: "help", text: formatCodePipelineInitHelp() };
 	}
 
-	const onPr = parsed.values["on-pr"] === true || parsed.values["on-pull-request"] === true;
+	const onPr =
+		parsed.values["on-pr"] === true ||
+		parsed.values["on-pull-request"] === true;
 
 	return {
-		...(parsed.values.source === undefined ? {} : { source: parsed.values.source }),
+		...(parsed.values.source === undefined
+			? {}
+			: { source: parsed.values.source }),
 		...(parsed.values["source-name"] === undefined
 			? {}
 			: { sourceName: parsed.values["source-name"] }),
 		...(parsed.values["source-branch"] === undefined
 			? {}
 			: { sourceBranch: parsed.values["source-branch"] }),
-		...(parsed.values["pipeline-stage"] === undefined
-			? {}
-			: { pipelineStage: parsed.values["pipeline-stage"] }),
 		...(onPr ? { onPullRequest: true as const } : {}),
-		...(parsed.values.autoreviewer === true ? { autoReviewer: true as const } : {}),
+		...(parsed.values.autoreviewer === true
+			? { autoReviewer: true as const }
+			: {}),
 		...(parsed.values["no-autoreviewer"] === true
 			? { noAutoReviewer: true as const }
 			: {}),
-		...(parsed.values.model === undefined ? {} : { modelId: parsed.values.model }),
+		...(parsed.values.model === undefined
+			? {}
+			: { modelId: parsed.values.model }),
 		...(parsed.values.team === undefined ? {} : { team: parsed.values.team }),
-		...(parsed.values.stage === undefined ? {} : { stage: parsed.values.stage }),
+		...(parsed.values.stage === undefined
+			? {}
+			: { stage: parsed.values.stage }),
 		...(parsed.values.install === true ? { install: true as const } : {}),
-		...(parsed.values["no-install"] === true ? { noInstall: true as const } : {}),
+		...(parsed.values["no-install"] === true
+			? { noInstall: true as const }
+			: {}),
 		...(parsed.values.deploy === true ? { deploy: true as const } : {}),
 		...(parsed.values["no-deploy"] === true ? { noDeploy: true as const } : {}),
 		...(parsed.values["aws-profile"] === undefined
 			? {}
 			: { awsProfile: parsed.values["aws-profile"] }),
-		...(parsed.values.region === undefined ? {} : { region: parsed.values.region }),
+		...(parsed.values.region === undefined
+			? {}
+			: { region: parsed.values.region }),
 	};
 }
 
@@ -107,7 +118,6 @@ Options:
   --source <type>              Source type: codecommit (required)
   --source-name <name>         CodeCommit repository name (import existing)
   --source-branch <name>       Source branch (default: main)
-  --pipeline-stage <spec>      Repeatable. Pipeline stage action.
   --on-pr / --on-pull-request  PR-gated mode: trigger on PR events only
   --autoreviewer               Enable durable auto-review
   --no-autoreviewer            Disable auto-review

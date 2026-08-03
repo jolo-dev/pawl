@@ -1,7 +1,13 @@
-import { parseCodePipelineInitArgs, formatCodePipelineInitHelp } from "./cli";
+import {
+	deployCodeCommitProject,
+	installCodeCommitProject,
+} from "../codecommit-init/deploy";
+import { parseCodePipelineInitArgs } from "./cli";
+import {
+	type CodePipelineGeneratorConfig,
+	generateCodePipelineProject,
+} from "./generator";
 import { resolveCodePipelineInitLayout } from "./layout";
-import { generateCodePipelineProject, type CodePipelineGeneratorConfig } from "./generator";
-import { installCodeCommitProject, deployCodeCommitProject, formatDeployRetryCommand } from "../codecommit-init/deploy";
 
 export interface CodePipelineInitResult {
 	readonly repositoryName: string;
@@ -23,13 +29,22 @@ export async function runCodePipelineInit(options: {
 	}
 	const flags = parseResult;
 
+	if (flags.source !== undefined && flags.source !== "codecommit") {
+		throw new Error(
+			`Unsupported --source "${flags.source}"; expected "codecommit"`,
+		);
+	}
+
 	// Non-TTY: validate required flags
 	if (!options.isTTY) {
 		if (!flags.source) throw new Error("--source is required in non-TTY mode");
-		if (!flags.sourceName) throw new Error("--source-name is required in non-TTY mode");
+		if (!flags.sourceName)
+			throw new Error("--source-name is required in non-TTY mode");
 		if (!flags.team) throw new Error("--team is required in non-TTY mode");
 		if (flags.autoReviewer === undefined && flags.noAutoReviewer === undefined)
-			throw new Error("Exactly one of --autoreviewer/--no-autoreviewer is required");
+			throw new Error(
+				"Exactly one of --autoreviewer/--no-autoreviewer is required",
+			);
 		if (flags.install === undefined && flags.noInstall === undefined)
 			throw new Error("Exactly one of --install/--no-install is required");
 		if (flags.deploy === undefined && flags.noDeploy === undefined)
@@ -48,7 +63,10 @@ export async function runCodePipelineInit(options: {
 	const deploy = flags.deploy === true;
 
 	// Resolve layout
-	const layout = await resolveCodePipelineInitLayout(options.cwd, repositoryName);
+	const layout = await resolveCodePipelineInitLayout(
+		options.cwd,
+		repositoryName,
+	);
 
 	// Generate project
 	const generatorConfig: CodePipelineGeneratorConfig = {
@@ -70,9 +88,14 @@ export async function runCodePipelineInit(options: {
 
 	// Optional deploy
 	if (deploy && flags.awsProfile && flags.region) {
-		await deployCodeCommitProject(layout.projectDir, flags.awsProfile, flags.region, {
-			autoReviewer,
-		});
+		await deployCodeCommitProject(
+			layout.projectDir,
+			flags.awsProfile,
+			flags.region,
+			{
+				autoReviewer,
+			},
+		);
 	}
 
 	return {
@@ -85,7 +108,9 @@ export async function runCodePipelineInit(options: {
 	};
 }
 
-export function printCodePipelineInitResult(result: CodePipelineInitResult): string {
+export function printCodePipelineInitResult(
+	result: CodePipelineInitResult,
+): string {
 	const lines: string[] = [
 		`Created CodePipeline project for "${result.repositoryName}" in ${result.projectDir}`,
 		`  Trigger: ${result.onPullRequest ? "PR-gated" : "push"}`,
@@ -95,7 +120,9 @@ export function printCodePipelineInitResult(result: CodePipelineInitResult): str
 		lines.push(`  Next: cd ${result.projectDir} && bun install`);
 	}
 	if (!result.deploy) {
-		lines.push(`  Deploy: AWS_PROFILE=<profile> AWS_REGION=<region> bunx cdk deploy --all`);
+		lines.push(
+			`  Deploy: AWS_PROFILE=<profile> AWS_REGION=<region> bunx cdk deploy --all`,
+		);
 	}
 	return lines.join("\n");
 }

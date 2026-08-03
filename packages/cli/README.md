@@ -94,7 +94,6 @@ pawl init codepipeline --source codecommit --source-name my-repo --on-pr --autor
 | `--source <type>` | Source type: `codecommit` (required) |
 | `--source-name <name>` | CodeCommit repository name (import existing) |
 | `--source-branch <name>` | Source branch (default: `main`) |
-| `--pipeline-stage <spec>` | Repeatable. Pipeline stage action |
 | `--on-pr` / `--on-pull-request` | PR-gated mode: trigger on PR events only |
 | `--autoreviewer` / `--no-autoreviewer` | Enable/disable auto-review |
 | `--model <model-id>` | Anthropic Bedrock model ID for auto-review |

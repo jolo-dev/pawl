@@ -35,6 +35,7 @@ import {
 import type { CodeBuildProject } from "./codebuild-project";
 import { CodeCommitAutoReviewer } from "./codecommit-auto-reviewer";
 import type { LambdaFunction } from "./lambda-function";
+import { PullRequestRouter } from "./pipeline/pull-request-router";
 import {
 	type ReviewCoordinationDeploymentPhase,
 	ReviewCoordinationDeploymentPhaseSchema,
@@ -246,6 +247,8 @@ export class CodePipeline extends BasicConstruct {
 		super(scope, id);
 		const prGatedAutoReview =
 			props.onPullRequest === true && props.autoReview !== undefined;
+		const prGatedWithoutAutoReview =
+			props.onPullRequest === true && props.autoReview === undefined;
 		if (
 			props.reviewCoordinationDeploymentPhase !== undefined &&
 			!prGatedAutoReview
@@ -292,14 +295,15 @@ export class CodePipeline extends BasicConstruct {
 		const reviewActionTimeoutMinutes = reviewCoordinationActive
 			? reviewActionTimeoutSchema.parse(props.reviewActionTimeoutMinutes ?? 15)
 			: undefined;
-		const reviewVariables = reviewCoordinationActive
-			? new Map(
-					PAWL_PIPELINE_VARIABLE_NAMES.map((name) => [
-						name,
-						new Variable({ variableName: name, defaultValue: "UNSET" }),
-					]),
-				)
-			: undefined;
+		const reviewVariables =
+			reviewCoordinationActive || prGatedWithoutAutoReview
+				? new Map(
+						PAWL_PIPELINE_VARIABLE_NAMES.map((name) => [
+							name,
+							new Variable({ variableName: name, defaultValue: "UNSET" }),
+						]),
+					)
+				: undefined;
 
 		// 1. Artifact bucket with KMS encryption
 		this.artifactEncryptionKey =
@@ -329,6 +333,18 @@ export class CodePipeline extends BasicConstruct {
 
 		// 3. Source stage
 		const sourceArtifact = this.addSourceStage(props);
+		if (prGatedWithoutAutoReview) {
+			if (props.source.type !== "codecommit") {
+				throw new Error(
+					"Pull-request routing is only supported with CodeCommit source",
+				);
+			}
+			new PullRequestRouter(scope, `${id}PullRequest`, {
+				repository: props.source.repository,
+				pipeline: this.pipeline,
+				sourceActionName: "Source",
+			});
+		}
 
 		// 4. Auto-review infrastructure (if enabled) — created BEFORE stages so
 		//    the reviewer Lambda can be injected as a parallel pipeline action.

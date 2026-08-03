@@ -1,5 +1,4 @@
-import { CodePipeline, stacks } from "@pawl/cdk";
-import { Repository } from "aws-cdk-lib/aws-codecommit";
+import { CodePipeline, Stack, stacks } from "@pawl/cdk";
 import { resolveScope } from "../../src/stack-function";
 import { createLocalStackSetup } from "./localstack.setup";
 
@@ -7,21 +6,34 @@ import { createLocalStackSetup } from "./localstack.setup";
 
 const REPO_NAME = "codepipeline-integ-test-repo";
 const STACK_NAME = "CodePipelineIntegStack";
+const PAWL_VARIABLES = [
+	"PAWL_PROVIDER",
+	"PAWL_REPOSITORY",
+	"PAWL_REQUEST_ID",
+	"PAWL_GENERATION",
+	"PAWL_SOURCE_REVISION",
+	"PAWL_DESTINATION_REVISION",
+] as const;
 
 // ── Stack function (runs during synth) ──────────────────────────────
 
-function CodePipelineIntegStack() {
-	const scope = resolveScope();
-	const repo = new Repository(scope, "Repo", { repositoryName: REPO_NAME });
-	new CodePipeline(scope, "Pipeline", {
-		autoReviewer: { modelId: "eu.amazon.nova-2-lite-v1:0" },
-		onPullRequest: true,
-	})
+function addIntegrationPipeline(
+	scope: Stack,
+	repositoryName: string,
+	reviewed: boolean,
+): void {
+	const pipeline = reviewed
+		? new CodePipeline(scope, "Pipeline", {
+				autoReviewer: { modelId: "eu.amazon.nova-2-lite-v1:0" },
+				onPullRequest: true,
+			})
+		: new CodePipeline(scope, "Pipeline", { onPullRequest: true });
+	pipeline
 		.source({
 			origin: "codecommit",
-			repository: repo,
+			create: true,
+			repositoryName,
 			branchName: "main",
-			repositoryName: REPO_NAME,
 		})
 		.stage({
 			name: "Build",
@@ -29,10 +41,136 @@ function CodePipelineIntegStack() {
 		});
 }
 
+function CodePipelineIntegStack() {
+	addIntegrationPipeline(resolveScope(), REPO_NAME, true);
+}
+
 // ── Integration tests (run during bun test) ─────────────────────────
 
 if (!stacks(CodePipelineIntegStack)) {
 	const { describe, expect, it, beforeAll } = await import("bun:test");
+	const { App } = await import("aws-cdk-lib");
+	const { Template } = await import("aws-cdk-lib/assertions");
+
+	describe("synth:codepipeline LocalStack fixture", () => {
+		it("covers pull-request gating without deploying a second reviewer", () => {
+			const app = new App({ context: { stage: "dev", team: "foo" } });
+			const stack = new Stack(app, "CodePipelineNoReviewerSynthStack");
+			addIntegrationPipeline(
+				stack,
+				"codepipeline-no-reviewer-synth-repo",
+				false,
+			);
+
+			const template = Template.fromStack(stack);
+			const [pipeline] = Object.values(
+				template.findResources("AWS::CodePipeline::Pipeline"),
+			);
+			if (!pipeline) throw new Error("Expected a synthesized pipeline");
+			const properties = pipeline.Properties as {
+				Stages: Array<{
+					Name: string;
+					Actions: Array<{
+						Name: string;
+						Configuration?: Record<string, unknown>;
+					}>;
+				}>;
+				Variables?: Array<{ Name: string; DefaultValue: string }>;
+			};
+
+			expect(properties.Stages.map(({ Name }) => Name)).toEqual([
+				"Source",
+				"Build",
+			]);
+			expect(properties.Stages[0]?.Actions[0]).toMatchObject({
+				Name: "Source",
+				Configuration: {
+					BranchName: "main",
+					PollForSourceChanges: false,
+				},
+			});
+			expect(properties.Stages[1]?.Actions.map(({ Name }) => Name)).toEqual([
+				"Approve",
+			]);
+			expect(properties.Variables).toEqual(
+				PAWL_VARIABLES.map((Name) => ({ Name, DefaultValue: "UNSET" })),
+			);
+			expect(
+				Object.keys(template.findResources("AWS::Lambda::Function")),
+			).toHaveLength(1);
+			const serialized = JSON.stringify(template.toJSON());
+			expect(serialized).not.toContain("AIReview");
+			expect(serialized).not.toContain("Reviewer-lambda");
+			expect(serialized).not.toContain("LOCALSTACK_AUTH_TOKEN");
+		});
+
+		it("synthesizes the reviewed managed source and parallel review action", () => {
+			const app = new App({ context: { stage: "dev", team: "foo" } });
+			const stack = new Stack(app, "CodePipelineReviewedSynthStack");
+			addIntegrationPipeline(stack, REPO_NAME, true);
+
+			const template = Template.fromStack(stack);
+			const [pipeline] = Object.values(
+				template.findResources("AWS::CodePipeline::Pipeline"),
+			);
+			if (!pipeline) throw new Error("Expected a synthesized pipeline");
+			const properties = pipeline.Properties as {
+				Stages: Array<{
+					Name: string;
+					Actions: Array<{
+						Name: string;
+						RunOrder?: number;
+						InputArtifacts?: Array<{ Name: string }>;
+						OutputArtifacts?: Array<{ Name: string }>;
+					}>;
+				}>;
+				Variables: Array<{ Name: string; DefaultValue: string }>;
+			};
+			const [source, build] = properties.Stages;
+
+			expect(properties.Stages.map(({ Name }) => Name)).toEqual([
+				"Source",
+				"Build",
+			]);
+			expect(source?.Actions[0]).toMatchObject({
+				Name: "Source",
+				OutputArtifacts: [{ Name: "SourceOutput" }],
+			});
+			expect(build?.Actions.map(({ Name }) => Name)).toEqual([
+				"Approve",
+				"AIReview",
+			]);
+			expect(build?.Actions.map(({ RunOrder }) => RunOrder ?? 1)).toEqual([
+				1, 1,
+			]);
+			expect(build?.Actions[1]?.InputArtifacts).toEqual([
+				{ Name: "SourceOutput" },
+			]);
+			expect(properties.Variables).toEqual(
+				PAWL_VARIABLES.map((Name) => ({ Name, DefaultValue: "UNSET" })),
+			);
+
+			const [repository] = Object.values(
+				template.findResources("AWS::CodeCommit::Repository"),
+			);
+			expect(repository?.Properties).toMatchObject({
+				RepositoryName: REPO_NAME,
+			});
+			expect(JSON.stringify(repository)).not.toContain("LOCALSTACK_AUTH_TOKEN");
+			const serialized = JSON.stringify(template.toJSON());
+			expect(serialized).toContain("Reviewer-lambda");
+			expect(serialized).toContain("Router-lambda");
+			expect(
+				Object.keys(template.findResources("AWS::DynamoDB::GlobalTable")),
+			).toHaveLength(1);
+			expect(
+				Object.keys(template.findResources("AWS::Events::Rule")).length,
+			).toBeGreaterThanOrEqual(2);
+			expect(
+				Object.keys(template.findResources("AWS::IAM::Role")).length,
+			).toBeGreaterThanOrEqual(4);
+		});
+	});
 
 	const { CloudFormationClient, DescribeStackResourcesCommand } = await import(
 		"@aws-sdk/client-cloudformation"
@@ -63,7 +201,7 @@ if (!stacks(CodePipelineIntegStack)) {
 
 		// Physical resource names discovered from CloudFormation
 		let pipelineName: string;
-		let _repoPhysicalName: string;
+		let repoPhysicalName: string;
 		let reviewerFnName: string;
 		let routerFnName: string;
 		let stateTableName: string;
@@ -96,10 +234,10 @@ if (!stacks(CodePipelineIntegStack)) {
 			pipelineName = pipelineResource?.PhysicalResourceId ?? "";
 
 			// CodeCommit repository name
-			const repoResource = res.find((r) =>
-				r.LogicalResourceId?.startsWith("Repo"),
+			const repoResource = res.find(
+				(r) => r.ResourceType === "AWS::CodeCommit::Repository",
 			);
-			_repoPhysicalName = repoResource?.PhysicalResourceId ?? "";
+			repoPhysicalName = repoResource?.PhysicalResourceId ?? "";
 
 			// Lambda function names
 			const lambdaResources = res.filter(
@@ -133,75 +271,102 @@ if (!stacks(CodePipelineIntegStack)) {
 
 		// ── Pipeline structure ───────────────────────────────────
 
-		it("deploys a pipeline with Source and Build stages", () => {
+		it("deploys Source followed by the Build user stage", async () => {
 			expect(pipelineName).toBeTruthy();
+			const { pipeline } = await cp.send(
+				new GetPipelineCommand({ name: pipelineName }),
+			);
+			expect(pipeline.stages?.map(({ name }) => name)).toEqual([
+				"Source",
+				"Build",
+			]);
 		});
 
-		it("configures CodeCommit source action", async () => {
+		it("configures the managed CodeCommit source and SourceOutput", async () => {
 			const { pipeline } = await cp.send(
 				new GetPipelineCommand({ name: pipelineName }),
 			);
 			const sourceActions = pipeline.stages?.[0]?.actions ?? [];
-			expect(sourceActions.length).toBe(1);
-			// AWS SDK returns lowercase keys: category, provider, owner, version
-			expect(sourceActions[0].actionTypeId).toMatchObject({
+			expect(sourceActions).toHaveLength(1);
+			const source = sourceActions[0];
+			expect(source?.name).toBe("Source");
+			expect(source?.actionTypeId).toMatchObject({
 				category: "Source",
 				provider: "CodeCommit",
 			});
-			// Note: RepositoryName resolves to "unknown" in LocalStack
-			// due to CloudFormation not resolving CodeCommit physical IDs.
-			// On real AWS this resolves to the actual repository name.
+			expect(source?.outputArtifacts).toEqual([{ name: "SourceOutput" }]);
+			const sourceConfiguration = source?.configuration ?? {};
+			expect(sourceConfiguration).toEqual({
+				BranchName: "main",
+				PollForSourceChanges: "false",
+				RepositoryName: REPO_NAME,
+			});
+			expect(Object.keys(sourceConfiguration)).not.toContain(
+				"LOCALSTACK_AUTH_TOKEN",
+			);
 		});
 
-		it("injects AIReview Lambda action in Build stage", async () => {
+		it("injects AIReview parallel with approval in the first user stage", async () => {
 			const { pipeline } = await cp.send(
 				new GetPipelineCommand({ name: pipelineName }),
 			);
-			const buildStage = (pipeline.stages ?? []).find(
-				(s) => s.name === "Build",
-			);
-			if (!buildStage) throw new Error("Build stage not found");
-			expect(buildStage.actions ?? []).not.toBeEmpty();
-			const aiReview = (buildStage.actions ?? []).find(
-				(a) => a.name === "AIReview",
-			);
-			expect(aiReview).toBeDefined();
-			// Check action type using lowercase keys (AWS SDK v3 casing)
-			expect(aiReview?.actionTypeId?.category).toBe("Invoke");
-			expect(aiReview?.actionTypeId?.provider).toBe("Lambda");
-			// The action targets the ordinary bridge by function name. The bridge
-			// coordinates the durable reviewer through persisted outcomes.
+			const buildStage = pipeline.stages?.[1];
+			if (buildStage?.name !== "Build")
+				throw new Error("Build stage not found");
+			const actions = buildStage.actions ?? [];
+			expect(actions.map(({ name }) => name)).toEqual(["Approve", "AIReview"]);
+			expect(actions.map(({ runOrder }) => runOrder ?? 1)).toEqual([1, 1]);
+
+			const approval = actions[0];
+			expect(approval?.actionTypeId).toMatchObject({
+				category: "Approval",
+				provider: "Manual",
+			});
+			const aiReview = actions[1];
+			expect(aiReview?.actionTypeId).toMatchObject({
+				category: "Invoke",
+				provider: "Lambda",
+			});
+			expect(aiReview?.inputArtifacts).toEqual([{ name: "SourceOutput" }]);
 			const fnName = aiReview?.configuration?.FunctionName ?? "";
 			expect(fnName).toContain("Bridge-lambda");
 			expect(fnName.startsWith("arn:")).toBeFalse();
 			expect(fnName).not.toContain("$LATEST");
-			expect(aiReview?.configuration?.UserParameters).toContain(
-				"PAWL_SOURCE_REVISION",
+
+			const userParameters = JSON.parse(
+				aiReview?.configuration?.UserParameters ?? "{}",
+			) as Record<string, unknown>;
+			expect(userParameters).toMatchObject({
+				provider: "#{variables.PAWL_PROVIDER}",
+				repository: "#{variables.PAWL_REPOSITORY}",
+				requestId: "#{variables.PAWL_REQUEST_ID}",
+				generation: "#{variables.PAWL_GENERATION}",
+				sourceRevision: "#{variables.PAWL_SOURCE_REVISION}",
+				destinationRevision: "#{variables.PAWL_DESTINATION_REVISION}",
+			});
+		});
+
+		it("declares all six review coordination variables", async () => {
+			const { pipeline } = await cp.send(
+				new GetPipelineCommand({ name: pipelineName }),
+			);
+			expect(pipeline.variables).toEqual(
+				PAWL_VARIABLES.map((name) => ({ name, defaultValue: "UNSET" })),
 			);
 		});
 
 		// ── CodeCommit repository ────────────────────────────────
 
-		it("creates the CodeCommit repository", async () => {
-			// LocalStack's CloudFormation doesn't always create CodeCommit
-			// repos properly. Create the repo if it doesn't exist yet.
-			const cc = lsClient(CodeCommitClient);
-			const { CreateRepositoryCommand } = await import(
-				"@aws-sdk/client-codecommit"
-			);
-			try {
-				await cc.send(
-					new CreateRepositoryCommand({ repositoryName: REPO_NAME }),
-				);
-			} catch {
-				// Repo already exists from CloudFormation; fine.
-			}
-			// Now verify it exists
-			const { repositoryMetadata } = await cc.send(
+		it("creates and deploys the managed CodeCommit repository", async () => {
+			expect(repoPhysicalName).toBe(REPO_NAME);
+			const { repositoryMetadata } = await lsClient(CodeCommitClient).send(
 				new GetRepositoryCommand({ repositoryName: REPO_NAME }),
 			);
 			expect(repositoryMetadata?.repositoryName).toBe(REPO_NAME);
 			expect(repositoryMetadata?.cloneUrlHttp).toContain(REPO_NAME);
+			expect(Object.keys(repositoryMetadata ?? {})).not.toContain(
+				"LOCALSTACK_AUTH_TOKEN",
+			);
 		});
 
 		// ── Auto-review Lambda functions ─────────────────────────
@@ -249,7 +414,7 @@ if (!stacks(CodePipelineIntegStack)) {
 				new ListRolesCommand({}),
 			);
 			const names = (Roles ?? []).map((r) => r.RoleName ?? "");
-			// Should have at least 4 roles: reviewer, router, source action, build action
+			// Pipeline and review infrastructure should create several scoped roles.
 			expect(names.length).toBeGreaterThanOrEqual(4);
 		});
 

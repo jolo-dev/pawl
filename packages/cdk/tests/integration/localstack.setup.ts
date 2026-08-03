@@ -32,6 +32,16 @@ export interface LocalStackChildEnvConfig {
 	readonly extraEnv?: Readonly<Record<string, string>>;
 }
 
+export function createLocalStackContainerEnv(
+	parentEnv: Readonly<Record<string, string | undefined>>,
+): Record<string, string> {
+	return {
+		LOCALSTACK_AUTH_TOKEN:
+			parentEnv.LOCALSTACK_AUTH_TOKEN ??
+			throwError("LOCALSTACK_AUTH_TOKEN is missing"),
+	};
+}
+
 export function createLocalStackChildEnv(
 	config: LocalStackChildEnvConfig,
 ): Record<string, string> {
@@ -71,11 +81,7 @@ export function createLocalStackSetup(
 		const image =
 			process.env.LOCALSTACK_IMAGE || "localstack/localstack:2026.5.0";
 		localstack = await new LocalstackContainer(image)
-			.withEnvironment({
-				LOCALSTACK_AUTH_TOKEN:
-					process.env.LOCALSTACK_AUTH_TOKEN ??
-					throwError("LOCALSTACK_AUTH_TOKEN is missing"),
-			})
+			.withEnvironment(createLocalStackContainerEnv(process.env))
 			.withBindMounts([
 				{
 					source: "/var/run/docker.sock",

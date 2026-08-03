@@ -3,9 +3,12 @@ import type { ReviewRequest } from "../domain/review-request";
 import type { PrPipelineDispatcher } from "../pipeline-review-common";
 import type { SourceControlProvider } from "../ports/source-control-provider";
 import {
+	type ClaimedEvents,
+	type FailAndRequeueClaimResult,
 	type ReviewStateStore,
 	sanitizedPipelineRoutingFailure,
 } from "../ports/state-store";
+import { RetryPolicy } from "../services/retry-policy";
 import type { NormalizedCodeCommitEvent } from "./codecommit-event-normalizer";
 import {
 	type CodeCommitEventFilterOptions,
@@ -21,6 +24,7 @@ export interface PipelineEventRouterOptions {
 	readonly reviewerArn?: string;
 	readonly botArnPatterns?: readonly (string | RegExp)[];
 	readonly clock?: () => Date;
+	readonly retryPolicy?: RetryPolicy;
 }
 
 export interface PipelineRouteResult {
@@ -44,6 +48,8 @@ export class PipelineRoutingError extends Error {
 		this.name = "PipelineRoutingError";
 	}
 }
+
+class OwnedPipelineRoutingError extends PipelineRoutingError {}
 
 function reviewEvent(normalized: NormalizedCodeCommitEvent): ReviewEvent {
 	if (normalized.type === "revision-updated") {
@@ -110,6 +116,7 @@ export class PipelineEventRouter {
 	readonly #dispatcher: PrPipelineDispatcher;
 	readonly #filters: CodeCommitEventFilterOptions;
 	readonly #clock: () => Date;
+	readonly #retry: RetryPolicy;
 
 	constructor(options: PipelineEventRouterOptions) {
 		this.#store = options.stateStore;
@@ -120,6 +127,9 @@ export class PipelineEventRouter {
 			botArnPatterns: options.botArnPatterns,
 		};
 		this.#clock = options.clock ?? (() => new Date());
+		this.#retry =
+			options.retryPolicy ??
+			new RetryPolicy({ baseDelayMs: 25, maxDelayMs: 1_000, maxAttempts: 3 });
 	}
 
 	async dispatchReviewedEvent(
@@ -205,26 +215,12 @@ export class PipelineEventRouter {
 			}
 		}
 
-		try {
-			const started = await this.#drain(event, generation, leaseVersion);
-			return {
-				appended: appended.appended,
-				started,
-				generation,
-			};
-		} catch (error) {
-			if (error instanceof PipelineRoutingError) throw error;
-			try {
-				await this.#store.complete(event.request, generation, {
-					type: "failed",
-					failure: sanitizedPipelineRoutingFailure(1),
-					ownership: { kind: "lease", leaseVersion },
-				});
-			} catch (completionError) {
-				if (!isStaleState(completionError)) throw completionError;
-			}
-			throw new PipelineRoutingError();
-		}
+		const started = await this.#drain(event, generation, leaseVersion);
+		return {
+			appended: appended.appended,
+			started,
+			generation,
+		};
 	}
 
 	async #drain(
@@ -232,13 +228,41 @@ export class PipelineEventRouter {
 		generation: number,
 		leaseVersion: number,
 	): Promise<boolean> {
+		try {
+			return await this.#drainOwned(initialEvent, generation, leaseVersion);
+		} catch (error) {
+			if (error instanceof OwnedPipelineRoutingError) throw error;
+			throw new OwnedPipelineRoutingError();
+		}
+	}
+
+	async #drainOwned(
+		initialEvent: ReviewEvent,
+		generation: number,
+		leaseVersion: number,
+	): Promise<boolean> {
 		let started = false;
+		let replayableClaim: readonly ReviewEvent[] | undefined;
 		let completion: "clean" | "merged" | "closed" = "clean";
 		for (let stage = 0; stage < MAX_DRAIN_STAGES; stage += 1) {
-			const claimed = await this.#store.claimEvents(
-				initialEvent.request,
-				generation,
-			);
+			let claimed: ClaimedEvents;
+			try {
+				claimed = await this.#store.claimEvents(
+					initialEvent.request,
+					generation,
+				);
+			} catch {
+				if (replayableClaim !== undefined) {
+					await this.#requeueClaim(
+						initialEvent,
+						generation,
+						leaseVersion,
+						replayableClaim,
+						stage + 1,
+					);
+				}
+				throw new OwnedPipelineRoutingError();
+			}
 			if (claimed.events.length === 0) {
 				try {
 					await this.#store.complete(initialEvent.request, generation, {
@@ -248,46 +272,79 @@ export class PipelineEventRouter {
 				} catch (error) {
 					if (isPendingWork(error)) continue;
 					if (isStaleState(error)) return started;
-					throw error;
+					if (replayableClaim !== undefined) {
+						await this.#requeueClaim(
+							initialEvent,
+							generation,
+							leaseVersion,
+							replayableClaim,
+							stage + 1,
+						);
+					}
+					throw new OwnedPipelineRoutingError();
 				}
 			}
 
+			replayableClaim = claimed.events;
+			let outcome: {
+				readonly started: boolean;
+				readonly terminal?: "merged" | "closed";
+			};
 			try {
-				const outcome = await this.#dispatchClaimed(claimed.events, generation);
-				started = started || outcome.started;
-				if (outcome.started) completion = "clean";
-				if (outcome.terminal !== undefined) {
-					completion = outcome.terminal;
-					try {
-						await this.#store.complete(initialEvent.request, generation, {
-							type: outcome.terminal,
-						});
-						return started;
-					} catch (error) {
-						if (isPendingWork(error)) continue;
-						if (isStaleState(error)) return started;
-						throw error;
-					}
-				}
-			} catch (error) {
-				if (isPendingWork(error)) continue;
-				if (isStaleState(error)) return started;
-				const requeue = await this.#store.failAndRequeueClaim({
-					request: initialEvent.request,
+				outcome = await this.#dispatchClaimed(claimed.events, generation);
+			} catch {
+				const requeue = await this.#requeueClaim(
+					initialEvent,
 					generation,
 					leaseVersion,
-					events: claimed.events,
-					failedAt: this.#clock().toISOString(),
-					failure: sanitizedPipelineRoutingFailure(stage + 1),
-				});
+					claimed.events,
+					stage + 1,
+				);
 				if (!requeue.requeued) return started;
-				throw new PipelineRoutingError();
+				throw new OwnedPipelineRoutingError();
+			}
+			started = started || outcome.started;
+			if (outcome.started) completion = "clean";
+			if (outcome.terminal !== undefined) {
+				completion = outcome.terminal;
+				try {
+					await this.#store.complete(initialEvent.request, generation, {
+						type: outcome.terminal,
+					});
+					return started;
+				} catch (error) {
+					if (isPendingWork(error)) continue;
+					if (isStaleState(error)) return started;
+					const requeue = await this.#requeueClaim(
+						initialEvent,
+						generation,
+						leaseVersion,
+						claimed.events,
+						stage + 1,
+					);
+					if (!requeue.requeued) return started;
+					throw new OwnedPipelineRoutingError();
+				}
 			}
 		}
-		let overflow = await this.#store.claimEvents(
-			initialEvent.request,
-			generation,
-		);
+		let overflow: ClaimedEvents;
+		try {
+			overflow = await this.#store.claimEvents(
+				initialEvent.request,
+				generation,
+			);
+		} catch {
+			if (replayableClaim !== undefined) {
+				await this.#requeueClaim(
+					initialEvent,
+					generation,
+					leaseVersion,
+					replayableClaim,
+					MAX_DRAIN_STAGES,
+				);
+			}
+			throw new OwnedPipelineRoutingError();
+		}
 		if (overflow.events.length === 0) {
 			try {
 				await this.#store.complete(initialEvent.request, generation, {
@@ -296,25 +353,73 @@ export class PipelineEventRouter {
 				return started;
 			} catch (error) {
 				if (isStaleState(error)) return started;
-				if (!isPendingWork(error)) throw error;
-				overflow = await this.#store.claimEvents(
-					initialEvent.request,
-					generation,
-				);
+				if (!isPendingWork(error)) {
+					if (replayableClaim !== undefined) {
+						await this.#requeueClaim(
+							initialEvent,
+							generation,
+							leaseVersion,
+							replayableClaim,
+							MAX_DRAIN_STAGES,
+						);
+					}
+					throw new OwnedPipelineRoutingError();
+				}
+				try {
+					overflow = await this.#store.claimEvents(
+						initialEvent.request,
+						generation,
+					);
+				} catch {
+					if (replayableClaim !== undefined) {
+						await this.#requeueClaim(
+							initialEvent,
+							generation,
+							leaseVersion,
+							replayableClaim,
+							MAX_DRAIN_STAGES,
+						);
+					}
+					throw new OwnedPipelineRoutingError();
+				}
 			}
 		}
 		if (overflow.events.length > 0) {
-			const requeue = await this.#store.failAndRequeueClaim({
-				request: initialEvent.request,
+			const requeue = await this.#requeueClaim(
+				initialEvent,
 				generation,
 				leaseVersion,
-				events: overflow.events,
-				failedAt: this.#clock().toISOString(),
-				failure: sanitizedPipelineRoutingFailure(MAX_DRAIN_STAGES),
-			});
+				overflow.events,
+				MAX_DRAIN_STAGES,
+			);
 			if (!requeue.requeued) return started;
 		}
-		throw new PipelineRoutingError();
+		throw new OwnedPipelineRoutingError();
+	}
+
+	async #requeueClaim(
+		initialEvent: ReviewEvent,
+		generation: number,
+		leaseVersion: number,
+		events: readonly ReviewEvent[],
+		attempts: number,
+	): Promise<FailAndRequeueClaimResult> {
+		try {
+			const retried = await this.#retry.execute("pipeline-claim-requeue", () =>
+				this.#store.failAndRequeueClaim({
+					request: initialEvent.request,
+					generation,
+					leaseVersion,
+					events,
+					failedAt: this.#clock().toISOString(),
+					failure: sanitizedPipelineRoutingFailure(attempts),
+				}),
+			);
+			if (!retried.ok) throw new OwnedPipelineRoutingError();
+			return retried.value;
+		} catch {
+			throw new OwnedPipelineRoutingError();
+		}
 	}
 
 	async #dispatchClaimed(

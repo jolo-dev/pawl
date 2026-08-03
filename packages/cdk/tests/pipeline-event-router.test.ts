@@ -6,7 +6,12 @@ import {
 	PipelineReviewDispatcher,
 	type PrPipelineDispatcher,
 } from "../src/reviewer/pipeline-review-common";
+import type {
+	CompletionReason,
+	FailAndRequeueClaimInput,
+} from "../src/reviewer/ports/state-store";
 import { PipelineEventRouter } from "../src/reviewer/router/pipeline-event-router";
+import { RetryPolicy } from "../src/reviewer/services/retry-policy";
 import { FakePipelineCoordinationStore } from "./pipeline-coordination-fakes";
 import { InMemoryStateStore } from "./reviewer/fakes/in-memory-state-store";
 
@@ -152,11 +157,72 @@ class FaultInjectingReconciler {
 	}
 }
 
+class FaultInjectingStateStore extends InMemoryStateStore {
+	claimCalls = 0;
+	failClaimAt?: number;
+	failCompletionType?: "clean" | "closed";
+	requeueFailuresRemaining = 0;
+	failedCompletions = 0;
+	requeueCalls = 0;
+
+	override async claimEvents(
+		...args: Parameters<InMemoryStateStore["claimEvents"]>
+	) {
+		this.claimCalls += 1;
+		if (this.claimCalls === this.failClaimAt) {
+			throw Object.assign(new Error("secret claim failure"), {
+				name: "TimeoutError",
+				stack: "secret claim stack",
+			});
+		}
+		return super.claimEvents(...args);
+	}
+
+	override async complete(
+		requestKey: Parameters<InMemoryStateStore["complete"]>[0],
+		generation: number,
+		reason: CompletionReason,
+	): Promise<void> {
+		if (reason.type === "failed") this.failedCompletions += 1;
+		if (reason.type === this.failCompletionType) {
+			this.failCompletionType = undefined;
+			throw Object.assign(new Error("secret completion failure"), {
+				name: "TimeoutError",
+				stack: "secret completion stack",
+			});
+		}
+		await super.complete(requestKey, generation, reason);
+	}
+
+	override async failAndRequeueClaim(input: FailAndRequeueClaimInput) {
+		this.requeueCalls += 1;
+		if (this.requeueFailuresRemaining > 0) {
+			this.requeueFailuresRemaining -= 1;
+			throw Object.assign(new Error("secret requeue failure"), {
+				name: "TimeoutError",
+				stack: "secret requeue stack",
+			});
+		}
+		return super.failAndRequeueClaim(input);
+	}
+}
+
+function immediateRetryPolicy(maxAttempts = 3): RetryPolicy {
+	return new RetryPolicy({
+		baseDelayMs: 0,
+		maxDelayMs: 0,
+		maxAttempts,
+		random: () => 0,
+		sleep: async () => {},
+	});
+}
+
 function productionRouter(options: {
 	readonly stateStore?: InMemoryStateStore;
 	readonly transport?: IdempotentTransport;
 	readonly coordinationStore?: FaultInjectingCoordinationStore;
 	readonly reconciler?: FaultInjectingReconciler;
+	readonly retryPolicy?: RetryPolicy;
 }) {
 	const stateStore =
 		options.stateStore ??
@@ -181,6 +247,7 @@ function productionRouter(options: {
 				clock: () => new Date(now),
 			}),
 			clock: () => new Date(now),
+			retryPolicy: options.retryPolicy,
 		}),
 	};
 }
@@ -414,6 +481,154 @@ describe("PipelineEventRouter", () => {
 			pendingEventCount: 1,
 			lastPipelineRoutingFailure: { attempts: 4 },
 		});
+	});
+
+	test("requeues the dispatched page when the next claim fails without terminalizing", async () => {
+		const stateStore = new FaultInjectingStateStore({
+			clock: () => new Date(now),
+		});
+		stateStore.failClaimAt = 2;
+		const { router, transport } = productionRouter({
+			stateStore,
+			retryPolicy: immediateRetryPolicy(),
+		});
+
+		await expect(
+			router.routePipelineOnly(revisionEvent("next-claim-failure", sourceOne)),
+		).rejects.toThrow("Pipeline routing failed");
+
+		expect(stateStore.failedCompletions).toBe(0);
+		expect(stateStore.requeueCalls).toBe(1);
+		expect(stateStore.inspectRequest(request)).toMatchObject({
+			lifecycleState: "STARTING",
+			generation: 1,
+			pendingEventCount: 1,
+		});
+		expect(transport.starts).toHaveLength(1);
+		await expect(
+			router.routePipelineOnly(revisionEvent("next-claim-failure", sourceOne)),
+		).resolves.toMatchObject({ generation: 1, started: true });
+		expect(transport.starts).toHaveLength(2);
+		expect(
+			pipelineClientRequestToken(
+				transport.starts[0] as StartReviewPipelineExecution,
+			),
+		).toBe(
+			pipelineClientRequestToken(
+				transport.starts[1] as StartReviewPipelineExecution,
+			),
+		);
+		expect(JSON.stringify(stateStore.inspectRequest(request))).not.toContain(
+			"secret",
+		);
+	});
+
+	test("requeues the dispatched page when final completion fails without terminalizing", async () => {
+		const stateStore = new FaultInjectingStateStore({
+			clock: () => new Date(now),
+		});
+		stateStore.failCompletionType = "clean";
+		const { router, transport } = productionRouter({
+			stateStore,
+			retryPolicy: immediateRetryPolicy(),
+		});
+
+		await expect(
+			router.routePipelineOnly(revisionEvent("completion-failure", sourceOne)),
+		).rejects.toThrow("Pipeline routing failed");
+
+		expect(stateStore.failedCompletions).toBe(0);
+		expect(stateStore.requeueCalls).toBe(1);
+		expect(stateStore.inspectRequest(request)).toMatchObject({
+			lifecycleState: "STARTING",
+			generation: 1,
+			pendingEventCount: 1,
+		});
+		await expect(
+			router.routePipelineOnly(revisionEvent("completion-failure", sourceOne)),
+		).resolves.toMatchObject({ generation: 1, started: true });
+		expect(transport.starts).toHaveLength(2);
+		expect(
+			pipelineClientRequestToken(
+				transport.starts[0] as StartReviewPipelineExecution,
+			),
+		).toBe(
+			pipelineClientRequestToken(
+				transport.starts[1] as StartReviewPipelineExecution,
+			),
+		);
+		expect(transport.executionsByToken).toHaveLength(1);
+		expect(JSON.stringify(stateStore.inspectRequest(request))).not.toContain(
+			"secret",
+		);
+	});
+
+	test("requeues a terminal page when terminal completion fails", async () => {
+		const stateStore = new FaultInjectingStateStore({
+			clock: () => new Date(now),
+		});
+		stateStore.failCompletionType = "closed";
+		const dispatcher = new RecordingDispatcher();
+		const router = new PipelineEventRouter({
+			stateStore,
+			provider: { getRequest: async () => snapshot() },
+			pipelineDispatcher: dispatcher,
+			retryPolicy: immediateRetryPolicy(),
+			clock: () => new Date(now),
+		});
+
+		await expect(
+			router.routePipelineOnly(closedEvent("terminal-failure")),
+		).rejects.toThrow("Pipeline routing failed");
+
+		expect(stateStore.failedCompletions).toBe(0);
+		expect(stateStore.requeueCalls).toBe(1);
+		expect(stateStore.inspectRequest(request)).toMatchObject({
+			lifecycleState: "STARTING",
+			generation: 1,
+			pendingEventCount: 1,
+		});
+		expect(JSON.stringify(stateStore.inspectRequest(request))).not.toContain(
+			"secret",
+		);
+	});
+
+	test("bounds transient requeue retries without terminalizing claimed work", async () => {
+		const stateStore = new FaultInjectingStateStore({
+			clock: () => new Date(now),
+		});
+		stateStore.requeueFailuresRemaining = 3;
+		const transport = new IdempotentTransport();
+		transport.failAfterAccepted = true;
+		const { router } = productionRouter({
+			stateStore,
+			transport,
+			retryPolicy: immediateRetryPolicy(),
+		});
+
+		await expect(
+			router.routePipelineOnly(revisionEvent("requeue-failure", sourceOne)),
+		).rejects.toThrow("Pipeline routing failed");
+
+		expect(stateStore.requeueCalls).toBe(3);
+		expect(stateStore.failedCompletions).toBe(0);
+		expect(stateStore.inspectRequest(request)).toMatchObject({
+			lifecycleState: "RUNNING",
+			generation: 1,
+			leaseVersion: 1,
+			pendingEventCount: 0,
+		});
+		expect(stateStore.inspectRequest(request)?.lastPipelineRoutingFailure).toBe(
+			undefined,
+		);
+		expect(transport.starts[0]).toMatchObject({
+			generation: 1,
+			sourceRevision: sourceOne,
+		});
+		expect(transport.executionsByToken).toHaveLength(1);
+		expect(JSON.stringify(stateStore.inspectRequest(request))).not.toContain(
+			"secret",
+		);
 	});
 
 	test("persists only the fixed sanitized pipeline routing failure", async () => {

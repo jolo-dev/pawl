@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { App, Lazy, Token } from "aws-cdk-lib";
 import { Template } from "aws-cdk-lib/assertions";
-import { Repository } from "aws-cdk-lib/aws-codecommit";
+import { type IRepository, Repository } from "aws-cdk-lib/aws-codecommit";
 import { PipelineDefinitionError } from "../src/pipeline/errors";
 import {
 	parseCodeCommitPipelineSource,
@@ -96,6 +96,19 @@ describe("CodeCommit pipeline source parsing", () => {
 				repositoryName: "supplied-repository",
 			}),
 		).toMatchObject({ repository });
+	});
+
+	test("rejects a cast object that only resembles a repository", () => {
+		const repository = {
+			repositoryName: "fake-repository",
+		} as IRepository;
+
+		expectSourceError(() =>
+			planCodeCommitSource(
+				{ origin: "codecommit", repository },
+				{ requiresConcreteName: false },
+			),
+		);
 	});
 
 	test("rejects extra, conflicting, and missing ownership fields through casts", () => {

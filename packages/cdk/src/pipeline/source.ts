@@ -2,6 +2,7 @@ import { lstatSync } from "node:fs";
 import path from "node:path";
 import { Token } from "aws-cdk-lib";
 import type { IRepository } from "aws-cdk-lib/aws-codecommit";
+import { Construct } from "constructs";
 import { z } from "zod";
 import { CodeCommit } from "../codecommit";
 import {
@@ -42,14 +43,18 @@ export type CodeCommitPipelineSource = StrictUnion<
 	  }
 >;
 
-const repositorySchema = z.custom<IRepository>(
-	(value) =>
-		typeof value === "object" &&
-		value !== null &&
-		"repositoryName" in value &&
-		typeof value.repositoryName === "string",
-	"repository must be an AWS CodeCommit IRepository",
-);
+const repositorySchema = z.custom<IRepository>((value) => {
+	if (!Construct.isConstruct(value)) return false;
+	const repository = value as Partial<IRepository>;
+	return (
+		typeof repository.repositoryName === "string" &&
+		repository.repositoryName.trim().length > 0 &&
+		typeof repository.repositoryArn === "string" &&
+		repository.repositoryArn.trim().length > 0 &&
+		typeof repository.grantRead === "function" &&
+		typeof repository.onCommit === "function"
+	);
+}, "repository must be an AWS CodeCommit IRepository construct");
 
 const syncSchema = z
 	.string()

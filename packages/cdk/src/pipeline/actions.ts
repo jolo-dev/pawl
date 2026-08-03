@@ -38,10 +38,7 @@ export interface PipelineActionBase {
 	readonly variablesNamespace?: string;
 }
 
-type AwsActionBase = Pick<
-	PipelineActionBase,
-	"name" | "role" | "variablesNamespace"
->;
+type AwsActionBase = PipelineActionBase;
 
 type CloudFormationActionBase = PipelineActionBase;
 
@@ -272,6 +269,7 @@ const artifactNames = z.array(artifactName).min(1);
 const commonAwsFields = {
 	name: nonemptyString,
 	role: roleSchema.optional(),
+	region: nonemptyString.optional(),
 	variablesNamespace: nonemptyString.optional(),
 };
 const environmentVariableSchema = z
@@ -287,7 +285,7 @@ const codeBuildSchema = z
 		...commonAwsFields,
 		project: projectSchema,
 		input: artifactName.optional(),
-		extraInputs: artifactNames.max(4).optional(),
+		extraInputs: z.array(artifactName).max(4).optional(),
 		outputs: z.union([artifactNames.max(5), z.literal(false)]).optional(),
 		actionType: z.nativeEnum(CodeBuildActionType).optional(),
 		environmentVariables: z
@@ -305,7 +303,7 @@ const approvalSchema = z
 		...commonAwsFields,
 		description: z.string().optional(),
 		notificationTopic: topicSchema.optional(),
-		notifyEmails: z.array(nonemptyString).min(1).optional(),
+		notifyEmails: z.array(nonemptyString).optional(),
 		externalEntityLink: nonemptyString.optional(),
 		timeout: z
 			.custom<Duration>((value) => value instanceof Duration)
@@ -362,7 +360,6 @@ const s3DeploySchema = z
 const cloudFormationBaseFields = {
 	type: z.literal("cloudFormationDeploy"),
 	...commonAwsFields,
-	region: nonemptyString.optional(),
 	stackName: nonemptyString,
 	input: artifactName.optional(),
 	templatePath: nonemptyString,
@@ -370,7 +367,7 @@ const cloudFormationBaseFields = {
 		.object({ input: artifactName.optional(), path: nonemptyString })
 		.strict()
 		.optional(),
-	extraInputs: artifactNames.optional(),
+	extraInputs: z.array(artifactName).optional(),
 	capabilities: z.array(z.nativeEnum(CfnCapabilities)).optional(),
 	parameterOverrides: z.record(z.string(), z.unknown()).optional(),
 	replaceOnFailure: z.boolean().optional(),
@@ -833,6 +830,16 @@ export function planPipelineAction(
 	path: string,
 ): PlannedActionAdapter {
 	const parsed = parsePipelineActionDefinition(definition, path);
+	if (
+		parsed.type !== "cloudFormationDeploy" &&
+		parsed.type !== "custom" &&
+		parsed.region !== undefined
+	) {
+		throw definitionError(
+			`The ${parsed.type} action does not support region`,
+			`${path}.region`,
+		);
+	}
 	validateActionName(parsed.name, `${path}.name`);
 	switch (parsed.type) {
 		case "codebuild":

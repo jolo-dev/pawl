@@ -1,13 +1,19 @@
 import type { IRepository } from "aws-cdk-lib/aws-codecommit";
-import type { Artifact } from "aws-cdk-lib/aws-codepipeline";
+import type { Artifact, IAction } from "aws-cdk-lib/aws-codepipeline";
 import type { IRole } from "aws-cdk-lib/aws-iam";
+import type { IBucket } from "aws-cdk-lib/aws-s3";
 import type { CodeBuildProject } from "../src/codebuild-project";
 import type { DurableLambdaFunction } from "../src/durable-lambda-function";
 import type { LambdaFunction } from "../src/lambda-function";
 import type {
+	ApprovalActionDefinition,
 	CloudFormationDeployActionDefinition,
 	CodeBuildActionDefinition,
+	CustomActionDefinition,
 	LambdaActionDefinition,
+	PipelineActionBase,
+	PipelineActionDefinition,
+	S3DeployActionDefinition,
 } from "../src/pipeline/actions";
 import type { CodeCommitPipelineSource } from "../src/pipeline/source";
 
@@ -70,15 +76,50 @@ function verifyPipelineActionTypes(
 	durable: DurableLambdaFunction,
 	deploymentRole: IRole,
 	artifact: Artifact,
+	bucket: IBucket,
+	action: IAction,
 ): void {
+	const common: PipelineActionBase = {
+		name: "Common",
+		role: deploymentRole,
+		region: "eu-west-1",
+		variablesNamespace: "CommonVariables",
+	};
 	const build: CodeBuildActionDefinition = {
 		type: "codebuild",
 		name: "Build",
+		role: deploymentRole,
+		region: "eu-west-1",
+		variablesNamespace: "BuildVariables",
 		project,
+	};
+	const approval: ApprovalActionDefinition = {
+		type: "approval",
+		name: "Approve",
+		role: deploymentRole,
+		region: "eu-west-1",
+		variablesNamespace: "ApprovalVariables",
+		notifyEmails: [],
+	};
+	const s3Deploy: S3DeployActionDefinition = {
+		type: "s3Deploy",
+		name: "Publish",
+		role: deploymentRole,
+		region: "eu-west-1",
+		variablesNamespace: "PublishVariables",
+		bucket,
+	};
+	const custom: CustomActionDefinition = {
+		type: "custom",
+		name: "Custom",
+		action,
 	};
 	const objectParameters: LambdaActionDefinition = {
 		type: "lambda",
 		name: "Invoke",
+		role: deploymentRole,
+		region: "eu-west-1",
+		variablesNamespace: "LambdaVariables",
 		handler,
 		userParameters: { enabled: true },
 	};
@@ -113,10 +154,22 @@ function verifyPipelineActionTypes(
 	const deployment: CloudFormationDeployActionDefinition = {
 		type: "cloudFormationDeploy",
 		name: "DeployWithRole",
+		role: deploymentRole,
+		region: "eu-west-1",
+		variablesNamespace: "DeployVariables",
 		stackName: "Application",
 		templatePath: "template.json",
 		deploymentRole,
+		extraInputs: [],
 	};
+	const allDefinitions: readonly PipelineActionDefinition[] = [
+		build,
+		approval,
+		objectParameters,
+		s3Deploy,
+		deployment,
+		custom,
+	];
 	// @ts-expect-error admin CloudFormation deployments cannot supply a role
 	const adminWithRole: CloudFormationDeployActionDefinition = {
 		type: "cloudFormationDeploy",
@@ -143,7 +196,12 @@ function verifyPipelineActionTypes(
 	};
 
 	void [
+		common,
 		build,
+		approval,
+		s3Deploy,
+		custom,
+		allDefinitions,
 		objectParameters,
 		stringParameters,
 		durableAction,

@@ -119,13 +119,18 @@ function addMaterializedAction(
 	return { action, synthesized };
 }
 
-function expectDefinitionError(callback: () => unknown, path?: string): void {
+function expectDefinitionError(
+	callback: () => unknown,
+	path?: string,
+	code?: PipelineDefinitionError["code"],
+): void {
 	try {
 		callback();
 	} catch (error) {
 		expect(error).toBeInstanceOf(PipelineDefinitionError);
-		if (error instanceof PipelineDefinitionError && path !== undefined) {
-			expect(error.path).toBe(path);
+		if (error instanceof PipelineDefinitionError) {
+			if (path !== undefined) expect(error.path).toBe(path);
+			if (code !== undefined) expect(error.code).toBe(code);
 		}
 		return;
 	}
@@ -178,6 +183,84 @@ describe("pipeline action runtime validation", () => {
 		}
 	});
 
+	test("allows approved empty arrays", () => {
+		const stack = createStack("ApprovedEmptyArraysStack");
+		const deploymentRole = new Role(stack, "DeploymentRole", {
+			assumedBy: new ServicePrincipal("cloudformation.amazonaws.com"),
+		});
+
+		expect(
+			planPipelineAction(
+				{
+					type: "codebuild",
+					name: "Build",
+					project: createProject(stack),
+					extraInputs: [],
+				},
+				"stages[Build].actions[0]",
+			).artifactPlan.additionalInputs,
+		).toEqual([]);
+		expect(
+			planPipelineAction(
+				{
+					type: "cloudFormationDeploy",
+					name: "Deploy",
+					stackName: "Application",
+					templatePath: "template.json",
+					extraInputs: [],
+					deploymentRole,
+				},
+				"stages[Deploy].actions[0]",
+			).artifactPlan.additionalInputs,
+		).toEqual([]);
+		expect(
+			planPipelineAction(
+				{
+					type: "approval",
+					name: "Approve",
+					notifyEmails: [],
+				},
+				"stages[Approve].actions[0]",
+			).artifactPlan,
+		).toMatchObject({ input: { mode: "none" }, outputs: [] });
+	});
+
+	test("rejects unsupported built-in regions at the exact action path", () => {
+		const stack = createStack("UnsupportedRegionStack");
+		const path = "stages[Release].actions[2]";
+		for (const definition of [
+			{
+				type: "codebuild" as const,
+				name: "Build",
+				project: createProject(stack),
+				region: "us-east-1",
+			},
+			{
+				type: "approval" as const,
+				name: "Approve",
+				region: "us-east-1",
+			},
+			{
+				type: "lambda" as const,
+				name: "Invoke",
+				handler: createHandler(stack),
+				region: "us-east-1",
+			},
+			{
+				type: "s3Deploy" as const,
+				name: "Publish",
+				bucket: new Bucket(stack, "Destination"),
+				region: "us-east-1",
+			},
+		]) {
+			expectDefinitionError(
+				() => planPipelineAction(definition, path),
+				`${path}.region`,
+				"PIPELINE_PROP_CONFLICT",
+			);
+		}
+	});
+
 	test("rejects empty artifact lists and invalid cardinality before materialization", () => {
 		const stack = createStack("CardinalityStack");
 		const handler = createHandler(stack);
@@ -192,6 +275,12 @@ describe("pipeline action runtime validation", () => {
 				name: "TooManyInputs",
 				handler,
 				inputs: ["One", "Two", "Three", "Four", "Five", "Six"],
+			},
+			{
+				type: "lambda",
+				name: "TooManyOutputs",
+				handler,
+				outputs: ["One", "Two", "Three", "Four", "Five", "Six"],
 			},
 			{
 				type: "codebuild",

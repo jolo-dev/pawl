@@ -430,7 +430,11 @@ export class CodePipeline extends BasicConstruct {
 		});
 		const reviewerProps = this.reviewerProps(sourcePlan.repositoryName);
 		if (reviewerProps !== undefined) {
-			validateCodeCommitAutoReviewerProps(this.stack, reviewerProps);
+			validateCodeCommitAutoReviewerProps(
+				this.stack,
+				reviewerProps,
+				`${this.node.id}AutoReview`,
+			);
 		}
 		const details = sourcePlan.materialize(this.stack, `${this.node.id}Source`);
 		const sourceArtifact = new Artifact("SourceOutput");

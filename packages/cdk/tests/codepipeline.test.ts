@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { Aspects } from "aws-cdk-lib";
+import { App, Aspects } from "aws-cdk-lib";
 import { Annotations, Match, Template } from "aws-cdk-lib/assertions";
 import { Repository } from "aws-cdk-lib/aws-codecommit";
 import {
@@ -14,6 +14,7 @@ import { Key } from "aws-cdk-lib/aws-kms";
 import { Bucket } from "aws-cdk-lib/aws-s3";
 import { AwsSolutionsChecks } from "cdk-nag";
 import { CodeBuildProject } from "../src/codebuild-project";
+import type { AutoReviewConfig } from "../src/codecommit";
 import {
 	CodePipeline,
 	type CodePipelineProps,
@@ -410,6 +411,94 @@ describe("CodePipeline fluent lifecycle", () => {
 			),
 		).toHaveLength(1);
 	});
+
+	test("preflights prod default reviewer networking and retries after correction", () => {
+		const app = new App({ context: { team: "platform", stage: "prod" } });
+		const stack = new Stack(app, "ProdReviewerPreflightStack", {
+			env: { account: "123456789012", region: "eu-west-1" },
+		});
+		const autoReviewer: AutoReviewConfig = {
+			modelId: "eu.anthropic.claude-sonnet-4-6",
+		};
+		const pipeline = new CodePipeline(stack, "Pipeline", { autoReviewer });
+		const childIdsBefore = stack.node.children.map((child) => child.node.id);
+		const source = {
+			origin: "codecommit" as const,
+			create: false as const,
+			repositoryName: "production-repo",
+		};
+
+		expect(() => pipeline.source(source)).toThrow(/public-test.*prod/i);
+		expect(stack.node.children.map((child) => child.node.id)).toEqual(
+			childIdsBefore,
+		);
+		expect(pipeline.pipeline.stages).toHaveLength(0);
+
+		autoReviewer.codeBuildNetworkPolicy = {
+			mode: "private",
+			vpcId: "vpc-0123456789abcdef0",
+			availabilityZones: ["eu-west-1a"],
+			privateSubnetIds: ["subnet-0123456789abcdef0"],
+			packageAccess: {
+				mode: "codeartifact",
+				domain: "pawl-domain",
+				domainOwner: "123456789012",
+				repository: "approved-packages",
+				endpointSecurityGroupIds: ["sg-0123456789abcdef0"],
+				prefixListIds: [],
+			},
+		};
+		pipeline.source(source).stage({
+			name: "Recovered",
+			actions: [{ type: "approval", name: "Recovered" }],
+		});
+
+		expect(pipeline.pipeline.stages.map(({ stageName }) => stageName)).toEqual([
+			"Source",
+			"Recovered",
+		]);
+		expect(
+			stack.node.children.filter(({ node }) =>
+				node.id.startsWith("PipelineSource"),
+			),
+		).toHaveLength(1);
+	});
+
+	test("accepts a dotted fluent source without leaking it into reviewer build naming", () => {
+		const stack = new Stack(createTestApp(), "DottedFluentSourceStack", {
+			env: { account: "123456789012", region: "eu-west-1" },
+		});
+		const repository = new Repository(stack, "Repo", {
+			repositoryName: "repo.name",
+		});
+		const pipeline = new CodePipeline(stack, "Pipeline", {
+			autoReviewer: { modelId: "eu.anthropic.claude-sonnet-4-6" },
+		});
+
+		expect(() =>
+			pipeline
+				.source({
+					origin: "codecommit",
+					repository,
+					repositoryName: "repo.name",
+				})
+				.stage({
+					name: "Recovered",
+					actions: [{ type: "approval", name: "Recovered" }],
+				}),
+		).not.toThrow();
+		const template = Template.fromStack(stack);
+		const [project] = Object.values(
+			template.findResources("AWS::CodeBuild::Project"),
+		);
+		expect(project?.Properties.Name).toMatch(
+			/Checks-repo-name-[0-9a-f]{8}-codebuild$/,
+		);
+		expect(JSON.stringify(project?.Properties.Source)).toContain("repo.name");
+		expect(JSON.stringify(project?.Properties.Source)).not.toContain(
+			"repo-name-",
+		);
+	});
 });
 
 describe("CodePipeline props and artifact storage", () => {
@@ -508,6 +597,60 @@ describe("CodePipeline props and artifact storage", () => {
 		expect(pipeline.artifactEncryptionKey).toBeUndefined();
 		expect(pipeline.node.tryFindChild("ArtifactBucket")).toBeUndefined();
 		expect(pipeline.node.tryFindChild("ArtifactKey")).toBeUndefined();
+	});
+
+	test.each([
+		[
+			"artifactBucket with cross-region storage",
+			true,
+			false,
+			undefined,
+			undefined,
+			false,
+		],
+		[
+			"artifactEncryptionKey with cross-region storage",
+			false,
+			true,
+			undefined,
+			undefined,
+			false,
+		],
+		["cross-account keys with rotation", false, false, true, true, true],
+		[
+			"rotation without cross-account keys",
+			false,
+			false,
+			undefined,
+			true,
+			false,
+		],
+	] as const)("covers storage compatibility: %s", (_name, withBucket, withKey, crossAccountKeys, enableKeyRotation, valid) => {
+		const stack = new Stack(
+			createTestApp(),
+			`StorageMatrix${withBucket}${withKey}${String(crossAccountKeys)}${String(enableKeyRotation)}`,
+			{
+				env: { account: "123456789012", region: "eu-west-1" },
+			},
+		);
+		const props: CodePipelineProps = {
+			crossRegionReplicationBuckets:
+				withBucket || withKey
+					? { "us-east-1": new Bucket(stack, "ReplicationBucket") }
+					: undefined,
+			artifactBucket: withBucket
+				? new Bucket(stack, "ArtifactBucket")
+				: undefined,
+			artifactEncryptionKey: withKey
+				? new Key(stack, "ArtifactKey")
+				: undefined,
+			crossAccountKeys,
+			enableKeyRotation,
+		};
+		const create = () => new CodePipeline(stack, "Pipeline", props);
+
+		if (valid) expect(create).not.toThrow();
+		else expect(create).toThrow(PipelineDefinitionError);
 	});
 
 	test("validates cross-account key rotation and preserves Pawl rotation", () => {

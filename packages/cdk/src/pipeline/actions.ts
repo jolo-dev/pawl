@@ -34,13 +34,14 @@ export { CodeBuildActionType } from "aws-cdk-lib/aws-codepipeline-actions";
 export interface PipelineActionBase {
 	readonly name: string;
 	readonly role?: IRole;
-	readonly region?: string;
 	readonly variablesNamespace?: string;
 }
 
 type AwsActionBase = PipelineActionBase;
 
-type CloudFormationActionBase = PipelineActionBase;
+type CloudFormationActionBase = PipelineActionBase & {
+	readonly region?: string;
+};
 
 type UnionKeys<T> = T extends T ? keyof T : never;
 type StrictUnionHelper<T, TAll> = T extends unknown
@@ -141,6 +142,7 @@ export type CloudFormationDeployActionDefinition = CloudFormationActionBase &
 export interface CustomActionDefinition {
 	readonly type: "custom";
 	readonly name: string;
+	readonly region?: string;
 	readonly action: IAction;
 }
 
@@ -398,6 +400,7 @@ const customSchema = z
 	.object({
 		type: z.literal("custom"),
 		name: nonemptyString,
+		region: nonemptyString.optional(),
 		action: actionSchema,
 	})
 	.strict();
@@ -857,6 +860,7 @@ export function planPipelineAction(
 	if (
 		parsed.type !== "cloudFormationDeploy" &&
 		parsed.type !== "custom" &&
+		"region" in parsed &&
 		parsed.region !== undefined
 	) {
 		throw definitionError(

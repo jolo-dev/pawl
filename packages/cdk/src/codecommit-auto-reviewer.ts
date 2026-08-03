@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Duration, Token } from "aws-cdk-lib";
@@ -7,9 +8,18 @@ import { LambdaFunction as LambdaEventTarget } from "aws-cdk-lib/aws-events-targ
 import { Effect, PolicyStatement } from "aws-cdk-lib/aws-iam";
 import { NagSuppressions } from "cdk-nag";
 import { z } from "zod";
-import { CodeBuildProject } from "./codebuild-project";
+import {
+	CodeBuildNetworkPolicySchema,
+	CodeBuildProject,
+	CodeBuildProjectConfigSchema,
+	CodeBuildProjectNameSchema,
+} from "./codebuild-project";
+import { CodeCommitRepositoryNameSchema } from "./codecommit-repository";
 import { CodeCommitReviewEvents } from "./codecommit-review-events";
-import { DurableLambdaFunction } from "./durable-lambda-function";
+import {
+	DurableLambdaConfigSchema,
+	DurableLambdaFunction,
+} from "./durable-lambda-function";
 import { DynamoDbTable } from "./dynamodb-table";
 import { LambdaFunction } from "./lambda-function";
 import {
@@ -100,11 +110,6 @@ function parseBedrockModelId(modelId: string): ParsedBedrockModelId {
 	return { kind: "direct-foundation-model", foundationModelId: modelId };
 }
 
-const repositoryNameSchema = nonEmptyString.regex(
-	/^[A-Za-z0-9._-]+$/,
-	"repository names may contain letters, digits, . _ -",
-);
-
 /**
  * Zod-validated configuration for the auto-reviewer.
  *
@@ -114,7 +119,7 @@ const repositoryNameSchema = nonEmptyString.regex(
  */
 export const CodeCommitAutoReviewerConfigSchema = z.object({
 	repositories: z
-		.array(repositoryNameSchema)
+		.array(CodeCommitRepositoryNameSchema)
 		.min(1)
 		.refine(
 			(repositories) => new Set(repositories).size === repositories.length,
@@ -132,25 +137,13 @@ export const CodeCommitAutoReviewerConfigSchema = z.object({
 	reviewerTimeoutMinutes: z.number().int().min(1).max(15).default(15),
 	reviewerMemorySize: z.number().int().min(128).max(10_240).default(512),
 	codeBuildComputeSize: z.enum(["SMALL", "MEDIUM", "LARGE"]).default("SMALL"),
-	codeBuildNetworkPolicy: z
-		.object({
-			mode: z.literal("public-test"),
-			packageAccess: z.object({
-				mode: z.literal("approved-registry"),
-				endpoint: z
-					.string()
-					.trim()
-					.url()
-					.refine((v) => v.startsWith("https://"), "must be HTTPS"),
-			}),
-		})
-		.default({
-			mode: "public-test",
-			packageAccess: {
-				mode: "approved-registry",
-				endpoint: "https://registry.npmjs.org",
-			},
-		}),
+	codeBuildNetworkPolicy: CodeBuildNetworkPolicySchema.default({
+		mode: "public-test",
+		packageAccess: {
+			mode: "approved-registry",
+			endpoint: "https://registry.npmjs.org",
+		},
+	}),
 	botArnPatterns: z.string().default(""),
 });
 
@@ -201,13 +194,38 @@ function configuredRepositoryName(repository: Repository): string {
 interface ValidatedCodeCommitAutoReviewerProps {
 	readonly config: CodeCommitAutoReviewerConfig;
 	readonly repositoryResources?: ReadonlyMap<string, Repository>;
+	readonly repositoryResourceSuffixes: ReadonlyMap<string, string>;
 	readonly reviewCoordinationDeployment?: ReviewCoordinationDeployment;
 	readonly team: string;
 	readonly stage: string;
 }
 
+const lambdaFunctionNameSchema = z
+	.string()
+	.min(1)
+	.max(64)
+	.regex(/^[A-Za-z0-9_-]+$/);
+const dynamoDbTableNameSchema = z
+	.string()
+	.min(3)
+	.max(255)
+	.regex(/^[A-Za-z0-9_.-]+$/);
+
+function repositoryResourceSuffix(repositoryName: string): string {
+	const sanitized = repositoryName
+		.replace(/[^A-Za-z0-9_-]+/g, "-")
+		.replace(/-+/g, "-")
+		.replace(/^[_-]+|[_-]+$/g, "");
+	const hash = createHash("sha256")
+		.update(repositoryName)
+		.digest("hex")
+		.slice(0, 8);
+	return `${sanitized.length === 0 ? "repository" : sanitized}-${hash}`;
+}
+
 function resolveCodeCommitAutoReviewerProps(
 	scope: Stack,
+	id: string,
 	props: CodeCommitAutoReviewerProps,
 ): ValidatedCodeCommitAutoReviewerProps {
 	const {
@@ -219,6 +237,11 @@ function resolveCodeCommitAutoReviewerProps(
 		...configInput
 	} = props;
 	const config = CodeCommitAutoReviewerConfigSchema.parse(configInput);
+	DurableLambdaConfigSchema.parse({
+		executionTimeoutSeconds: config.reviewerExecutionTimeoutSeconds,
+		retentionDays: config.reviewerRetentionDays,
+		aliasName: config.reviewerAlias,
+	});
 	if (
 		pipelineCoordinationInput !== undefined &&
 		reviewCoordinationDeploymentInput !== undefined
@@ -252,16 +275,52 @@ function resolveCodeCommitAutoReviewerProps(
 			);
 		}
 	}
-	const team = teamOverride ?? scope.node.tryGetContext("team");
-	const stage = stageOverride ?? scope.node.tryGetContext("stage");
-	if (!team || !stage) {
-		throw new Error(
-			"CodeCommitAutoReviewer: team and stage are required (set via CDK context or props)",
+	const contextTeam = nonEmptyString.parse(scope.node.tryGetContext("team"));
+	const contextStage = nonEmptyString.parse(scope.node.tryGetContext("stage"));
+	const team = nonEmptyString.parse(teamOverride ?? contextTeam);
+	const stage = nonEmptyString.parse(stageOverride ?? contextStage);
+	const basicPrefix = `${contextTeam}-${contextStage}-`;
+	for (const childId of [
+		`${id}Reviewer`,
+		`${id}Router`,
+		...(reviewCoordinationDeployment?.phase === "active"
+			? [`${id}Reconciler`, `${id}Bridge`]
+			: []),
+	]) {
+		lambdaFunctionNameSchema.parse(`${basicPrefix}${childId}-lambda`);
+	}
+	lambdaFunctionNameSchema.parse(`${team}-${stage}-${id}Reviewer-lambda`);
+	dynamoDbTableNameSchema.parse(`${basicPrefix}${id}State-table`);
+
+	const repositoryResourceSuffixes = new Map<string, string>();
+	for (const repositoryName of config.repositories) {
+		const resourceSuffix = repositoryResourceSuffix(repositoryName);
+		repositoryResourceSuffixes.set(repositoryName, resourceSuffix);
+		const repositoryResource = repositoryResources?.get(repositoryName);
+		const repositoryTarget = repositoryResource
+			? { repository: repositoryResource }
+			: { repositoryName };
+		const codeBuildConfig = CodeBuildProjectConfigSchema.parse({
+			...repositoryTarget,
+			computeSize: config.codeBuildComputeSize,
+			networkPolicy: config.codeBuildNetworkPolicy,
+		});
+		CodeBuildProjectNameSchema.parse(
+			`${basicPrefix}${id}Checks-${resourceSuffix}-codebuild`,
 		);
+		if (
+			codeBuildConfig.networkPolicy.mode === "public-test" &&
+			contextStage === "prod"
+		) {
+			throw new Error(
+				"The public-test CodeBuild network policy is not allowed in prod",
+			);
+		}
 	}
 	return {
 		config,
 		repositoryResources,
+		repositoryResourceSuffixes,
 		reviewCoordinationDeployment,
 		team,
 		stage,
@@ -272,8 +331,9 @@ function resolveCodeCommitAutoReviewerProps(
 export function validateCodeCommitAutoReviewerProps(
 	scope: Stack,
 	props: CodeCommitAutoReviewerProps,
+	id = "AutoReviewer",
 ): void {
-	resolveCodeCommitAutoReviewerProps(scope, props);
+	resolveCodeCommitAutoReviewerProps(scope, id, props);
 }
 
 /**
@@ -303,10 +363,11 @@ export class CodeCommitAutoReviewer {
 		const {
 			config,
 			repositoryResources,
+			repositoryResourceSuffixes,
 			reviewCoordinationDeployment,
 			team,
 			stage,
-		} = resolveCodeCommitAutoReviewerProps(scope, props);
+		} = resolveCodeCommitAutoReviewerProps(scope, id, props);
 		const reviewerFunctionName = `${team}-${stage}-${id}Reviewer-lambda`;
 		const reviewerArn = `arn:aws:lambda:${scope.region}:${scope.account}:function:${reviewerFunctionName}:${config.reviewerAlias}`;
 		const botArnPatterns =
@@ -363,11 +424,21 @@ export class CodeCommitAutoReviewer {
 			const repositoryTarget = repositoryResource
 				? { repository: repositoryResource }
 				: { repositoryName: repo };
-			const codeBuild = new CodeBuildProject(scope, `${id}Checks-${repo}`, {
-				...repositoryTarget,
-				computeSize: config.codeBuildComputeSize,
-				networkPolicy: config.codeBuildNetworkPolicy,
-			});
+			const resourceSuffix = repositoryResourceSuffixes.get(repo);
+			if (resourceSuffix === undefined) {
+				throw new Error(
+					`CodeCommitAutoReviewer: missing resource suffix for ${repo}`,
+				);
+			}
+			const codeBuild = new CodeBuildProject(
+				scope,
+				`${id}Checks-${resourceSuffix}`,
+				{
+					...repositoryTarget,
+					computeSize: config.codeBuildComputeSize,
+					networkPolicy: config.codeBuildNetworkPolicy,
+				},
+			);
 			codeBuildProjects.set(repo, codeBuild);
 			reviewerEnvironment[projectEnvVar(repo)] = codeBuild.projectName;
 		}
@@ -530,10 +601,20 @@ export class CodeCommitAutoReviewer {
 			const repositoryTarget = repositoryResource
 				? { repository: repositoryResource }
 				: { repositoryName: repo };
-			const events = new CodeCommitReviewEvents(scope, `${id}Events-${repo}`, {
-				...repositoryTarget,
-				router,
-			});
+			const resourceSuffix = repositoryResourceSuffixes.get(repo);
+			if (resourceSuffix === undefined) {
+				throw new Error(
+					`CodeCommitAutoReviewer: missing resource suffix for ${repo}`,
+				);
+			}
+			const events = new CodeCommitReviewEvents(
+				scope,
+				`${id}Events-${resourceSuffix}`,
+				{
+					...repositoryTarget,
+					router,
+				},
+			);
 			events.grantRead(router);
 			events.grantConfigRead(router);
 			events.grantRead(reviewer);

@@ -123,6 +123,15 @@ describe("CodeCommitAutoReviewer", () => {
 		expectNoReviewerChildren(stack);
 	});
 
+	test("rejects invalid durable aliases before creating children", () => {
+		const stack = createStack("InvalidReviewerAliasStack");
+
+		expect(() =>
+			createReviewer(stack, { reviewerAlias: "bad.alias" }),
+		).toThrow();
+		expectNoReviewerChildren(stack);
+	});
+
 	test("preserves a supplied repository in build and event constructs", () => {
 		const stack = createStack("SharedRepositoryResourceStack");
 		const repository = new Repository(stack, "Repository", {
@@ -169,6 +178,33 @@ describe("CodeCommitAutoReviewer", () => {
 			repository,
 		);
 		Template.fromStack(stack).resourceCountIs("AWS::CodeBuild::Project", 2);
+	});
+
+	test("retains dotted repository identity while deriving safe deterministic build names", () => {
+		const firstStack = createStack("DottedRepositoryStack");
+		const repository = new Repository(firstStack, "Repository", {
+			repositoryName: "repo.name",
+		});
+		const first = createReviewer(firstStack, {
+			repositories: ["repo.name"],
+			repositoryResources: new Map([["repo.name", repository]]),
+		});
+		const second = createReviewer(createStack("DottedRepositoryRetryStack"), {
+			repositories: ["repo.name"],
+		});
+		const firstBuild = first.codeBuildProjects.get("repo.name");
+		const secondBuild = second.codeBuildProjects.get("repo.name");
+		const [project] = Object.values(
+			Template.fromStack(firstStack).findResources("AWS::CodeBuild::Project"),
+		);
+
+		expect(firstBuild?.repository).toBe(repository);
+		expect(firstBuild?.node.id).toMatch(
+			/^AutoReviewerChecks-repo-name-[0-9a-f]{8}$/,
+		);
+		expect(project?.Properties.Name).not.toContain("repo.name");
+		expect(secondBuild?.node.id).toBe(firstBuild?.node.id);
+		expect(first.eventConstructs.has("repo.name")).toBe(true);
 	});
 
 	test.each([

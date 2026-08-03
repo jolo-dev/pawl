@@ -876,7 +876,12 @@ describe("custom action adapter", () => {
 			outputs: [output],
 		});
 		const planned = planPipelineAction(
-			{ type: "custom", name: "CustomBuild", action },
+			{
+				type: "custom",
+				name: "CustomBuild",
+				region: "eu-west-1",
+				action,
+			},
 			"action",
 		);
 

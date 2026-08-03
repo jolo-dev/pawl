@@ -175,6 +175,41 @@ export type CodeBuildProjectProps =
 				readonly buildSpec?: BuildSpec;
 			});
 
+interface CodeBuildProjectPlan {
+	readonly config: CodeBuildProjectConfig;
+	readonly projectName: string;
+}
+
+/** Validate deterministic CodeBuild configuration without creating children. */
+function planCodeBuildProject(
+	scope: Stack,
+	id: string,
+	props: CodeBuildProjectProps,
+): CodeBuildProjectPlan {
+	const config = CodeBuildProjectConfigSchema.parse(props);
+	const team = scope.node.tryGetContext("team");
+	const stage = scope.node.tryGetContext("stage");
+	if (
+		typeof team !== "string" ||
+		team.trim().length === 0 ||
+		typeof stage !== "string" ||
+		stage.trim().length === 0
+	) {
+		throw new Error(
+			"CodeBuildProject: non-empty team and stage context values are required",
+		);
+	}
+	const projectName = CodeBuildProjectNameSchema.parse(
+		`${team}-${stage}-${id}-codebuild`,
+	);
+	if (config.networkPolicy.mode === "public-test" && stage === "prod") {
+		throw new Error(
+			"The public-test CodeBuild network policy is not allowed in prod",
+		);
+	}
+	return { config, projectName };
+}
+
 function normalizeCodeBuildRepositoryTarget(
 	scope: Construct,
 	id: string,
@@ -218,11 +253,12 @@ export class CodeBuildProject extends BasicConstruct {
 	readonly projectSecurityGroup?: ISecurityGroup;
 
 	constructor(scope: Stack, id: string, props: CodeBuildProjectProps) {
+		const plan = planCodeBuildProject(scope, id, props);
 		super(scope, id);
 
 		const pipelineBuildSpec =
 			"buildSpec" in props ? props.buildSpec : undefined;
-		const { permissions, pipelineMode, ...configInput } = props;
+		const { permissions, pipelineMode } = props;
 		const isPipelineMode = pipelineMode === true;
 
 		if (!isPipelineMode) {
@@ -234,18 +270,7 @@ export class CodeBuildProject extends BasicConstruct {
 		} else {
 			this.repository = undefined as unknown as Repository;
 		}
-		const config = CodeBuildProjectConfigSchema.parse(configInput);
-		const projectName = CodeBuildProjectNameSchema.parse(
-			`${this.prefix}${id}-codebuild`,
-		);
-		if (
-			config.networkPolicy.mode === "public-test" &&
-			scope.node.tryGetContext("stage") === "prod"
-		) {
-			throw new Error(
-				"The public-test CodeBuild network policy is not allowed in prod",
-			);
-		}
+		const { config, projectName } = plan;
 
 		const encryptionKey = new Key(this, "EncryptionKey", {
 			enableKeyRotation: true,

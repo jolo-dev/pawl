@@ -14,6 +14,7 @@ import {
 import { Asset } from "aws-cdk-lib/aws-s3-assets";
 import type { Construct } from "constructs";
 import { z } from "zod";
+import { CodeBuildNetworkPolicySchema } from "./codebuild-project";
 import {
 	BedrockModelIdSchema,
 	CodeCommitAutoReviewer,
@@ -64,25 +65,13 @@ const autoReviewConfigSchema = z.object({
 	reviewerTimeoutMinutes: z.number().int().min(1).max(15).default(15),
 	reviewerMemorySize: z.number().int().min(128).max(10_240).default(512),
 	codeBuildComputeSize: z.enum(["SMALL", "MEDIUM", "LARGE"]).default("SMALL"),
-	codeBuildNetworkPolicy: z
-		.object({
-			mode: z.literal("public-test"),
-			packageAccess: z.object({
-				mode: z.literal("approved-registry"),
-				endpoint: z
-					.string()
-					.trim()
-					.url()
-					.refine((value) => value.startsWith("https://"), "must be HTTPS"),
-			}),
-		})
-		.default({
-			mode: "public-test",
-			packageAccess: {
-				mode: "approved-registry",
-				endpoint: "https://registry.npmjs.org",
-			},
-		}),
+	codeBuildNetworkPolicy: CodeBuildNetworkPolicySchema.default({
+		mode: "public-test",
+		packageAccess: {
+			mode: "approved-registry",
+			endpoint: "https://registry.npmjs.org",
+		},
+	}),
 	botArnPatterns: z.string().default(""),
 });
 

@@ -100,13 +100,13 @@ function verifyPipelineActionTypes(
 	const common: PipelineActionBase = {
 		name: "Common",
 		role: deploymentRole,
-		region: "eu-west-1",
 		variablesNamespace: "CommonVariables",
 	};
 	const build: CodeBuildActionDefinition = {
 		type: "codebuild",
 		name: "Build",
 		role: deploymentRole,
+		// @ts-expect-error CodeBuild actions do not support a region override
 		region: "eu-west-1",
 		variablesNamespace: "BuildVariables",
 		project,
@@ -129,6 +129,7 @@ function verifyPipelineActionTypes(
 		type: "approval",
 		name: "Approve",
 		role: deploymentRole,
+		// @ts-expect-error approval actions do not support a region override
 		region: "eu-west-1",
 		variablesNamespace: "ApprovalVariables",
 		description: "Review the release",
@@ -141,6 +142,7 @@ function verifyPipelineActionTypes(
 		type: "s3Deploy",
 		name: "Publish",
 		role: deploymentRole,
+		// @ts-expect-error S3 deploy actions do not support a region override
 		region: "eu-west-1",
 		variablesNamespace: "PublishVariables",
 		bucket,
@@ -154,12 +156,14 @@ function verifyPipelineActionTypes(
 	const custom: CustomActionDefinition = {
 		type: "custom",
 		name: "Custom",
+		region: "eu-west-1",
 		action,
 	};
 	const objectParameters: LambdaActionDefinition = {
 		type: "lambda",
 		name: "Invoke",
 		role: deploymentRole,
+		// @ts-expect-error Lambda actions do not support a region override
 		region: "eu-west-1",
 		variablesNamespace: "LambdaVariables",
 		handler,

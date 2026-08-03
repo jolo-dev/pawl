@@ -52,6 +52,8 @@
 - Create `packages/cdk/tests/pipeline-source.test.ts`.
 - Create `packages/cdk/tests/pipeline-actions.test.ts`.
 - Create `packages/cdk/tests/pipeline-event-router.test.ts`.
+- Create `packages/cdk/tests/codepipeline-types.test.ts`.
+- Create `packages/cdk/tsconfig.pipeline-types.json`.
 - Modify `packages/cdk/tests/codepipeline.test.ts`.
 - Modify `packages/cdk/tests/codepipeline-explicit-name.test.ts`.
 - Modify `packages/cdk/tests/codepipeline-review-coordination-deployment-phase.test.ts`.
@@ -286,6 +288,8 @@ rtk git commit -m "feat(cdk): plan pipeline artifact flow"
 **Files:**
 - Create: `packages/cdk/src/pipeline/source.ts`
 - Create: `packages/cdk/tests/pipeline-source.test.ts`
+- Create: `packages/cdk/tests/codepipeline-types.test.ts`
+- Create: `packages/cdk/tsconfig.pipeline-types.json`
 - Reference: `packages/cdk/src/codecommit.ts`
 - Reference: `packages/cdk/src/codecommit-repository.ts`
 
@@ -317,7 +321,9 @@ export type CodeCommitPipelineSource =
     };
 ```
 
-Add `// @ts-expect-error` cases for `sync` with imports, `repository` plus `create`, and missing repository ownership. Add runtime casts for the same cases so Zod is proven at runtime.
+Add `// @ts-expect-error` cases for `sync` with imports, `repository` plus `create`, and missing repository ownership to `codepipeline-types.test.ts`. Add runtime casts for the same cases so Zod is proven at runtime.
+
+Create `tsconfig.pipeline-types.json` now with `files: ["tests/codepipeline-types.test.ts"]`, `noEmit: true`, and the package/root strict compiler options. It follows imports into production source while excluding unrelated legacy tests.
 
 - [ ] **Step 2: Add failing materialization tests**
 
@@ -367,7 +373,8 @@ For managed/imported sources, construct the existing Pawl `CodeCommit` abstracti
 Run:
 
 ```bash
-rtk tsc -p packages/cdk/tsconfig.json --noEmit
+rtk tsc -p packages/cdk/tsconfig.build.json --noEmit --types bun
+rtk tsc -p packages/cdk/tsconfig.pipeline-types.json
 rtk test bun test packages/cdk/tests/pipeline-source.test.ts packages/cdk/tests/codecommit.test.ts
 rtk lint bunx biome check packages/cdk/src/pipeline/source.ts packages/cdk/tests/pipeline-source.test.ts
 ```
@@ -377,7 +384,7 @@ Expected: PASS.
 Commit:
 
 ```bash
-rtk git add packages/cdk/src/pipeline/source.ts packages/cdk/tests/pipeline-source.test.ts
+rtk git add packages/cdk/src/pipeline/source.ts packages/cdk/tests/pipeline-source.test.ts packages/cdk/tests/codepipeline-types.test.ts packages/cdk/tsconfig.pipeline-types.json
 rtk git commit -m "feat(cdk): plan CodeCommit pipeline sources"
 ```
 
@@ -388,6 +395,7 @@ rtk git commit -m "feat(cdk): plan CodeCommit pipeline sources"
 **Files:**
 - Create: `packages/cdk/src/pipeline/actions.ts`
 - Create: `packages/cdk/tests/pipeline-actions.test.ts`
+- Modify: `packages/cdk/tests/codepipeline-types.test.ts`
 - Reference: `packages/cdk/src/codebuild-project.ts`
 - Reference: `packages/cdk/src/lambda-function.ts`
 
@@ -429,7 +437,8 @@ Run:
 
 ```bash
 rtk test bun test packages/cdk/tests/pipeline-actions.test.ts
-rtk tsc -p packages/cdk/tsconfig.json --noEmit
+rtk tsc -p packages/cdk/tsconfig.build.json --noEmit --types bun
+rtk tsc -p packages/cdk/tsconfig.pipeline-types.json
 ```
 
 Expected: FAIL because action definitions/adapters do not exist.
@@ -471,7 +480,8 @@ Map common role/region/variables namespace only where AWS supports them. Never s
 Run:
 
 ```bash
-rtk tsc -p packages/cdk/tsconfig.json --noEmit
+rtk tsc -p packages/cdk/tsconfig.build.json --noEmit --types bun
+rtk tsc -p packages/cdk/tsconfig.pipeline-types.json
 rtk test bun test packages/cdk/tests/pipeline-actions.test.ts packages/cdk/tests/pipeline-artifacts.test.ts
 rtk lint bunx biome check packages/cdk/src/pipeline/actions.ts packages/cdk/tests/pipeline-actions.test.ts
 ```
@@ -481,7 +491,7 @@ Expected: PASS.
 Commit:
 
 ```bash
-rtk git add packages/cdk/src/pipeline/actions.ts packages/cdk/tests/pipeline-actions.test.ts
+rtk git add packages/cdk/src/pipeline/actions.ts packages/cdk/tests/pipeline-actions.test.ts packages/cdk/tests/codepipeline-types.test.ts
 rtk git commit -m "feat(cdk): add typed pipeline action adapters"
 ```
 
@@ -494,7 +504,7 @@ rtk git commit -m "feat(cdk): add typed pipeline action adapters"
 - Create: `packages/cdk/tests/pipeline-event-router.test.ts`
 - Modify: `packages/cdk/src/reviewer/router/event-router.ts`
 - Modify: `packages/cdk/src/reviewer/handlers/router.ts`
-- Modify: `packages/cdk/src/reviewer/pipeline-review-common.ts` only if a named no-op reconciler is needed
+- Modify: `packages/cdk/src/reviewer/pipeline-review-common.ts` to expose the exact dispatcher contract needed by both modes
 - Modify: corresponding existing router/dispatcher unit tests
 
 - [ ] **Step 1: Write failing pipeline-only routing tests**
@@ -521,36 +531,62 @@ rtk test bun test packages/cdk/tests/pipeline-event-router.test.ts packages/cdk/
 
 Expected: FAIL because the pipeline flow is still embedded in reviewer routing and requires reviewer environment.
 
-- [ ] **Step 3: Extract `PipelineEventRouter`**
+- [ ] **Step 3: Extract reviewed-event dispatch without adding a second append owner**
 
-Give the extracted service one responsibility: normalize a CodeCommit event, obtain/retain the durable generation, and call `PrPipelineDispatcher` with an authoritative snapshot. Keep exact-revision arbitration in `PipelineReviewDispatcher`; do not duplicate that logic.
+`EventRouter.routeCodeCommit()` remains the only `appendEvent()` owner in reviewed mode. After its existing `route()` call returns, pass the already-normalized event, authoritative snapshot/refetch callback, and returned generation to `PipelineEventRouter.dispatchReviewedEvent(...)`. The extracted service must never append, claim, recover, or complete review state through this entry point.
 
-Pipeline-only mode may reuse `ReviewStateStore.appendEvent` to preserve generation/dedup semantics, but it must complete the generation after dispatch so no fake reviewer lease remains active. The reviewed path must continue to let the real reviewer own completion. Make that ownership explicit in options, for example:
+Keep exact-revision arbitration in `PipelineReviewDispatcher`; do not duplicate it. Existing reviewed routing retains the sequence:
+
+1. normalize once;
+2. append once in `EventRouter.route()`;
+3. let the durable reviewer own claim/completion;
+4. dispatch the pipeline using that same generation.
+
+- [ ] **Step 4: Implement the pipeline-only append/claim/drain owner loop**
+
+For `PipelineEventRouter.routePipelineOnly(value)`, the extracted service is the sole append owner. Implement and test this exact lifecycle:
+
+1. normalize the event and call `appendEvent()` once;
+2. return immediately for a duplicate/non-starting invocation unless `recoveryEligible` permits taking over an expired owner;
+3. when ownership is available, call `claimEvents(request, generation)` before dispatch; this transitions `STARTING` to `RUNNING` and decrements pending events;
+4. coalesce the claimed page to its latest authoritative open/revision signal, refetch the request, and call `PipelineReviewDispatcher` once for that revision;
+5. call `claimEvents()` again until it returns no events, dispatching a newly authoritative revision when concurrent events arrived;
+6. attempt `complete(request, generation, { type: "clean" })` only from `RUNNING` with zero pending events;
+7. if completion loses a conditional race to a concurrent append, claim/drain again instead of dropping the event;
+8. for merged/closed events, call `completeTerminalRequest()` and complete with the matching terminal reason;
+9. use bounded contention/recovery attempts and surface a retryable operational error when they are exhausted.
+
+Do not call `recordExecution()` because there is no durable reviewer execution ARN. Lease recovery must use `recoverLease()` only for `recoveryEligible` results and then re-enter the same claim/drain loop. Add a two-invocation concurrency test proving the non-owner returns while the owner drains the newly appended revision.
+
+On failure, persist only this fixed sanitized envelope through `complete(..., { type: "failed", ... })`; never persist the caught message, stack, custom fields, or transport payload:
 
 ```ts
-export interface PipelineEventRouterOptions {
-  readonly stateStore: ReviewStateStore;
-  readonly provider: SourceControlProvider;
-  readonly dispatcher: PrPipelineDispatcher;
-  readonly lifecycleOwner: "reviewer" | "pipeline";
+{
+  type: "operational-failure",
+  lifecycleState: "FAILED",
+  operation: "pipeline-route",
+  reason: "retry-exhausted",
+  attempts,
+  lastError: {
+    name: "PipelineRoutingError",
+    message: "Pipeline routing failed",
+  },
 }
 ```
 
-- [ ] **Step 4: Refactor `EventRouter` to delegate without changing review behavior**
-
-Keep callback recovery and durable reviewer startup in `EventRouter`. Replace only its embedded pipeline block with the extracted service. Existing reviewer tests must retain their assertions and exact generation values.
+Pass the current append result's lease ownership to `complete`, for example `{ kind: "lease", leaseVersion: append.leaseVersion }`; never invent callback ownership in pipeline-only mode. Rethrow a bounded retryable error after recording failure so EventBridge retry behavior remains observable. Test the adapter/store transition, not only an in-memory happy path.
 
 - [ ] **Step 5: Add pipeline-only handler composition**
 
 In `reviewer/handlers/router.ts`, choose composition from environment:
 
-- reviewed mode requires reviewer function values and optional pipeline values;
-- pipeline-only mode requires `STATE_TABLE_NAME`, `PIPELINE_NAME`, and `PIPELINE_SOURCE_ACTION_NAME`, but no reviewer function;
+- reviewed mode requires reviewer function values and optional pipeline values and delegates append ownership to `EventRouter`;
+- pipeline-only mode requires `STATE_TABLE_NAME`, `PIPELINE_NAME`, and `PIPELINE_SOURCE_ACTION_NAME`, but no reviewer function, and calls `routePipelineOnly` directly;
 - pipeline execution state-change handling must not require `REVIEWER_FUNCTION_ARN` merely to construct `CodeCommitProvider`;
-- use the existing DynamoDB stores and `AwsCodePipelineTransport`;
-- use a no-op reconciler in pipeline-only mode because there are no bridge jobs.
+- use the existing DynamoDB state/coordination stores and `AwsCodePipelineTransport`;
+- provide an inline no-op `PipelineReconcilerInvoker` in pipeline-only composition because there are no bridge jobs.
 
-Keep environment parsing fail-fast and test both composition branches.
+Keep environment parsing fail-fast and test both composition branches. Assert each incoming CodeCommit event has exactly one append owner in each mode.
 
 - [ ] **Step 6: Run regression tests and commit**
 
@@ -585,7 +621,7 @@ For `onPullRequest: true` without `autoReviewer`, assert:
 
 - source detection is disabled;
 - a router Lambda exists but no Reviewer, Bridge, Reconciler, CodeBuild check project, or Bedrock IAM exists;
-- a DynamoDB routing/state table exists;
+- a DynamoDB routing/state table exists with `pk`/`sk` plus GSI2 using `gsi2pk`/`gsi2sk`;
 - PR EventBridge rules target the router;
 - pipeline execution state changes target the same router;
 - the pipeline declares all six `PAWL_*` variables;
@@ -602,7 +638,7 @@ Expected: FAIL because current PR-only mode disables source detection but create
 
 Create only routing resources needed without AI review:
 
-- DynamoDB state/coordination table compatible with the runtime stores;
+- DynamoDB state/coordination table compatible with both runtime stores, including mandatory GSI2 (`gsi2pk` partition key and `gsi2sk` sort key) because `PipelineReviewDispatcher.listRequestJobs()` always queries it;
 - ordinary router Lambda using the shared handler in pipeline-only mode;
 - CodeCommit PR event routing;
 - pipeline execution state-change rule;
@@ -639,6 +675,8 @@ rtk git commit -m "feat(cdk): route PR pipelines without AI review"
 - Modify: `packages/cdk/tests/codepipeline-explicit-name.test.ts`
 - Modify: `packages/cdk/tests/codepipeline-review-coordination-deployment-phase.test.ts`
 - Modify: `packages/cdk/tests/codepipeline-bridge.test.ts`
+- Modify: `packages/cdk/tests/codepipeline-types.test.ts`
+- Modify: `packages/cdk/tsconfig.pipeline-types.json`
 
 - [ ] **Step 1: Add failing public lifecycle and type tests**
 
@@ -657,7 +695,9 @@ stage(stage: PipelineStageDefinition): this;
 stage(stages: readonly [PipelineStageDefinition, ...PipelineStageDefinition[]]): this;
 ```
 
-Add `// @ts-expect-error` checks for empty stage arrays, empty actions, constructor `source`, constructor `stages`, `team`, `stage`, raw `pipelineType`, and raw `triggers`.
+Add `// @ts-expect-error` checks for empty stage arrays, empty actions, constructor `source`, constructor `stages`, `team`, `stage`, raw `pipelineType`, and raw `triggers` in `packages/cdk/tests/codepipeline-types.test.ts`.
+
+Extend the existing `packages/cdk/tsconfig.pipeline-types.json` only if the fluent lifecycle cases need additional compiler options. It must continue to follow imports into production source while excluding every unrelated test, so known legacy test errors cannot mask this contract.
 
 Runtime tests must cover:
 
@@ -676,7 +716,8 @@ Run:
 
 ```bash
 rtk test bun test packages/cdk/tests/codepipeline.test.ts packages/cdk/tests/codepipeline-explicit-name.test.ts packages/cdk/tests/codepipeline-review-coordination-deployment-phase.test.ts packages/cdk/tests/codepipeline-bridge.test.ts
-rtk tsc -p packages/cdk/tsconfig.json --noEmit
+rtk tsc -p packages/cdk/tsconfig.build.json --noEmit --types bun
+rtk tsc -p packages/cdk/tsconfig.pipeline-types.json
 ```
 
 Expected: FAIL against the constructor-defined API.
@@ -703,20 +744,34 @@ export interface CodePipelineProps
 
 Call `super(scope, id)` so `BasicConstruct` remains the sole owner of team/stage context tags. Do not forward duplicate overrides to AutoReviewer.
 
-- [ ] **Step 4: Implement constructor property normalization**
+- [ ] **Step 4: Inventory and normalize every pinned `PipelineProps` key**
 
-Before constructing AWS `Pipeline`, enforce:
+Document this table in `codepipeline.ts` JSDoc and encode it in tests before constructing AWS `Pipeline`:
 
-- V2 always;
-- raw triggers/stages impossible through the type and rejected for JS/spread callers;
-- external artifact bucket accepted and exposed as `IBucket`;
+| Pinned key | Pawl behavior |
+|---|---|
+| `artifactBucket` | pass through; when absent Pawl supplies its retained KMS bucket |
+| `role` | pass through |
+| `restartExecutionOnUpdate` | pass through |
+| `pipelineName` | pass through after the approved `pipelineNaming` conflict matrix |
+| `crossRegionReplicationBuckets` | pass through |
+| `stages` | omit from TypeScript and reject JS/spread callers |
+| `crossAccountKeys` | pass through |
+| `enableKeyRotation` | with external bucket, pass through for CDK-generated cross-region/account keys; with Pawl-owned bucket, allow only `undefined`/`true` because the Pawl key always rotates and reject `false` as a prop conflict |
+| `reuseCrossRegionSupportStacks` | pass through |
+| `pipelineType` | omit/reject; force V2 |
+| `variables` | merge by name, reserving `PAWL_*` |
+| `triggers` | omit/reject for CodeCommit-only scope |
+| `executionMode` | pass through |
+| `usePipelineRoleForActions` | pass through |
+
+Also enforce:
+
+- external artifact bucket is exposed as `IBucket`;
+- `artifactEncryptionKey` conflicts with an external bucket;
 - Pawl creates retained KMS bucket/key only when no bucket is supplied;
-- `artifactEncryptionKey` conflicts with external bucket;
-- user variables merged by name;
-- any user variable beginning `PAWL_` rejected;
-- all six Pawl variables declared for every PR-routed pipeline, reviewed or not;
-- naming matrix from the spec for `pipelineName` and `pipelineNaming`;
-- CloudFormation coordination name required only when the active bridge needs a concrete non-token name.
+- all six Pawl variables are declared for every PR-routed pipeline, reviewed or not;
+- CloudFormation coordination name is required only when the active bridge needs a concrete non-token name.
 
 Preserve existing logical IDs (`ArtifactKey`, `ArtifactBucket`, `Pipeline`) for Pawl-owned resources.
 
@@ -762,7 +817,8 @@ For invalid constructor configuration tests, instantiate first only when constru
 Run:
 
 ```bash
-rtk tsc -p packages/cdk/tsconfig.json --noEmit
+rtk tsc -p packages/cdk/tsconfig.build.json --noEmit --types bun
+rtk tsc -p packages/cdk/tsconfig.pipeline-types.json
 rtk test bun test packages/cdk/tests/pipeline-errors.test.ts packages/cdk/tests/pipeline-naming.test.ts packages/cdk/tests/pipeline-artifacts.test.ts packages/cdk/tests/pipeline-source.test.ts packages/cdk/tests/pipeline-actions.test.ts packages/cdk/tests/codepipeline.test.ts packages/cdk/tests/codepipeline-explicit-name.test.ts packages/cdk/tests/codepipeline-review-coordination-deployment-phase.test.ts packages/cdk/tests/codepipeline-bridge.test.ts
 rtk lint bunx biome check packages/cdk/src/codepipeline.ts packages/cdk/src/pipeline packages/cdk/tests/codepipeline.test.ts packages/cdk/tests/codepipeline-explicit-name.test.ts packages/cdk/tests/codepipeline-review-coordination-deployment-phase.test.ts packages/cdk/tests/codepipeline-bridge.test.ts
 ```
@@ -968,7 +1024,8 @@ rtk git commit -m "feat(cli): generate fluent CodePipeline projects"
 
 **Files:**
 - Modify: `packages/cdk/tests/integration/codepipeline.test.ts`
-- Modify: `packages/cdk/tests/integration/localstack.setup.ts` only if the new generated resources require an additional supported service, never to weaken token containment
+- Verify/modify: `packages/cdk/tests/integration/localstack.setup.ts` only for required service support, never to weaken token containment
+- Modify: `packages/cdk/tests/integration/localstack.setup.test.ts` to retain explicit token-containment regression coverage
 
 - [ ] **Step 1: Migrate the integration stack to fluent source/stages**
 
@@ -1014,13 +1071,14 @@ Without `set -x`, run:
 export LOCALSTACK_AUTH_TOKEN="$(AWS_PROFILE=jolo AWS_REGION=eu-central-1 rtk proxy aws ssm get-parameter --name /pawl/localstack/token --with-decryption --query Parameter.Value --output text)"
 ```
 
-Do not echo, persist, log, or place the token in generated child environments. Confirm `localstack.setup.ts` continues deleting `LOCALSTACK_AUTH_TOKEN` from CDK/AWS child environments and passing it only to `LocalstackContainer.withEnvironment`.
+Do not echo, persist, log, or place the token in generated child environments. Keep `localstack.setup.test.ts` assertions that `LOCALSTACK_AUTH_TOKEN` is deleted from CDK/AWS child environments and passed only to `LocalstackContainer.withEnvironment`; add any new child-process path to that matrix.
 
-- [ ] **Step 4: Run integration and commit**
+- [ ] **Step 4: Run token-containment and integration tests, then commit**
 
 Run:
 
 ```bash
+rtk test bun test packages/cdk/tests/integration/localstack.setup.test.ts
 rtk test bun test packages/cdk/tests/integration/codepipeline.test.ts
 unset LOCALSTACK_AUTH_TOKEN
 ```
@@ -1030,7 +1088,7 @@ Expected: PASS. If Docker/LocalStack is unavailable, capture the exact infrastru
 Commit:
 
 ```bash
-rtk git add packages/cdk/tests/integration/codepipeline.test.ts packages/cdk/tests/integration/localstack.setup.ts
+rtk git add packages/cdk/tests/integration/codepipeline.test.ts packages/cdk/tests/integration/localstack.setup.ts packages/cdk/tests/integration/localstack.setup.test.ts
 rtk git commit -m "test(cdk): validate fluent pipeline in LocalStack"
 ```
 
@@ -1076,9 +1134,11 @@ Do not edit auto-generated TypeDoc content.
 Run:
 
 ```bash
-rtk tsc -p packages/cdk/tsconfig.json --noEmit
+rtk tsc -p packages/cdk/tsconfig.build.json --noEmit --types bun
+rtk tsc -p packages/cdk/tsconfig.pipeline-types.json
 rtk test bun test packages/cdk/tests/pipeline-errors.test.ts packages/cdk/tests/pipeline-naming.test.ts packages/cdk/tests/pipeline-artifacts.test.ts packages/cdk/tests/pipeline-source.test.ts packages/cdk/tests/pipeline-actions.test.ts packages/cdk/tests/pipeline-event-router.test.ts packages/cdk/tests/codepipeline.test.ts packages/cdk/tests/codepipeline-explicit-name.test.ts packages/cdk/tests/codepipeline-review-coordination-deployment-phase.test.ts packages/cdk/tests/codepipeline-bridge.test.ts
 rtk test bun test packages/cdk/tests/reviewer packages/cdk/tests/pipeline-bridge.test.ts packages/cdk/tests/pipeline-coordination-store.test.ts packages/cdk/tests/pipeline-reconciler-handler.test.ts packages/cdk/tests/pipeline-reconciler.test.ts packages/cdk/tests/pipeline-review-dispatcher.test.ts packages/cdk/tests/codepipeline-transport.test.ts
+rtk test bun test packages/cdk/tests/integration/localstack.setup.test.ts
 rtk test bun test packages/cli/tests/codepipeline-init.test.ts packages/cli/tests/codepipeline-init-generator.test.ts packages/cli/tests/codecommit-init-generator.test.ts
 rtk test bun test example/durable-lambda-reviewer/tests/constructs/pipeline-stack.test.ts example/durable-lambda-reviewer/tests/security/synth-security.test.ts
 rtk bun run --filter @pawl/lambda build

@@ -524,7 +524,8 @@ Use fakes for `ReviewStateStore`, `SourceControlProvider`, exact pipeline transp
 - merge/close events complete terminal state without a bridge job;
 - mapped pipeline terminal events post one idempotent CI summary;
 - failures do not leak sensitive exception text into durable records;
-- an adapter-backed dispatch failure atomically returns every claimed event to pending work and a subsequent duplicate EventBridge delivery recovers and dispatches it.
+- an adapter-backed dispatch failure atomically returns every claimed event to pending work and a subsequent duplicate EventBridge delivery recovers the same generation and client token;
+- failures after `startExecution` succeeds—including execution-mapping and reconciler failures—replay with one unique CodePipeline execution.
 
 - [ ] **Step 2: Run and confirm RED**
 
@@ -603,11 +604,17 @@ The pipeline router supplies only this fixed sanitized envelope; never persist t
 }
 ```
 
-Implement `DynamoDbStateStore.failAndRequeueClaim()` as one `TransactWrite`: condition the META update on the adopted generation/lease and `RUNNING`, set terminal `FAILED` metadata with only the supplied sanitized envelope, increment `pendingEventCount` by the claimed event count, increment `leaseVersion`, and remove `claimedGeneration` from each claimed event under a matching-generation condition. `claimEvents()` already caps a page at 99 items, so META plus event updates stay within DynamoDB's 100-item transaction limit. Preserve any events appended concurrently by adding to—never replacing—the pending count.
+Implement `DynamoDbStateStore.failAndRequeueClaim()` as one `TransactWrite`: condition the META update on the adopted generation/lease and `RUNNING`; set lifecycle back to `STARTING` on the **same generation**; set `leaseExpiresAt` to `failedAt` so redelivery can recover immediately; store only the fixed sanitized envelope as non-terminal `lastPipelineRoutingFailure` diagnostic metadata; increment `pendingEventCount` by the claimed event count; increment `leaseVersion`; remove stale execution/callback/claim-cursor fields; and remove `claimedGeneration` from each claimed event under a matching-generation condition. Do not write terminal completion fields. `claimEvents()` already caps a page at 99 items, so META plus event updates stay within DynamoDB's 100-item transaction limit. Preserve events appended concurrently by adding to—never replacing—the pending count.
 
-A successful requeue leaves terminal `FAILED` with pending work. The next duplicate EventBridge append therefore returns `recoveryEligible`; `recoverLease(remoteStatus: "NOT_FOUND")` advances/adopts ownership and replays the event. On a `changed` result, another invocation owns state, so do not overwrite it. If failure occurs before any claim, use ordinary failed completion with the adopted lease because no event has been consumed.
+A successful requeue leaves expired `STARTING` state with pending work and no reviewer execution ARN. The next duplicate EventBridge append returns `recoveryEligible`; `recoverLease(remoteStatus: "NOT_FOUND")` follows its existing STARTING branch, retains the same generation, increments/adopts the lease, and replays the event. Keeping generation stable is mandatory because `pipelineClientRequestToken` hashes generation and source revision. On a `changed` result, another invocation owns state, so do not overwrite it. If failure occurs before any claim or pipeline start, ordinary sanitized failed completion may be used because no prior CodePipeline token was submitted.
 
-Rethrow a bounded retryable error after successful requeue/recording so EventBridge retry behavior remains observable. Add a real DynamoDB-adapter command/condition test and an end-to-end fake replay test proving first dispatch fails, redelivery recovers, and the exact revision starts once. Update the in-memory state-store fake with equivalent atomic semantics.
+Rethrow a bounded retryable error after successful requeue/recording so EventBridge retry behavior remains observable. Add real DynamoDB-adapter command/condition tests and replay tests for three failure boundaries:
+
+1. transport throws after recording that AWS accepted `startExecution`;
+2. `putExecutionMapping` fails after `startExecution` returns;
+3. the injected reconciler fails after mapping.
+
+Each redelivery must recover the same generation, submit the same deterministic client token, converge on the same execution ID/mapping, and observe one unique CodePipeline execution. Update the in-memory state-store fake with equivalent atomic semantics.
 
 - [ ] **Step 5: Add pipeline-only handler composition**
 

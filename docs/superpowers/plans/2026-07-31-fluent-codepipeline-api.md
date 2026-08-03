@@ -505,6 +505,10 @@ rtk git commit -m "feat(cdk): add typed pipeline action adapters"
 - Modify: `packages/cdk/src/reviewer/router/event-router.ts`
 - Modify: `packages/cdk/src/reviewer/handlers/router.ts`
 - Modify: `packages/cdk/src/reviewer/pipeline-review-common.ts` to expose the exact dispatcher contract needed by both modes
+- Modify: `packages/cdk/src/reviewer/ports/state-store.ts`
+- Modify: `packages/cdk/src/reviewer/adapters/dynamodb-state-store.ts`
+- Modify: `packages/cdk/tests/reviewer/fakes/in-memory-state-store.ts`
+- Modify: `packages/cdk/tests/reviewer/unit/dynamodb-state-store.test.ts`
 - Modify: corresponding existing router/dispatcher unit tests
 
 - [ ] **Step 1: Write failing pipeline-only routing tests**
@@ -519,7 +523,8 @@ Use fakes for `ReviewStateStore`, `SourceControlProvider`, exact pipeline transp
 - pipeline-only routing completes its event-store generation without invoking a reviewer Lambda;
 - merge/close events complete terminal state without a bridge job;
 - mapped pipeline terminal events post one idempotent CI summary;
-- failures do not leak sensitive exception text into durable records.
+- failures do not leak sensitive exception text into durable records;
+- an adapter-backed dispatch failure atomically returns every claimed event to pending work and a subsequent duplicate EventBridge delivery recovers and dispatches it.
 
 - [ ] **Step 2: Run and confirm RED**
 
@@ -561,7 +566,28 @@ For `PipelineEventRouter.routePipelineOnly(value)`, the extracted service is the
 
 Do not call `recordExecution()` because there is no durable reviewer execution ARN. Lease recovery must use `recoverLease()` only for `recoveryEligible` results and then re-enter the same claim/drain loop. Add a two-invocation concurrency test proving the non-owner returns while the owner drains the newly appended revision.
 
-On failure, persist only this fixed sanitized envelope through `complete(..., { type: "failed", ... })`; never persist the caught message, stack, custom fields, or transport payload:
+On failure after events have been claimed, do **not** call ordinary `complete(...failed)` because it consumes the only replayable event. Extend `ReviewStateStore` with this pipeline-only atomic contract:
+
+```ts
+interface FailAndRequeueClaimInput {
+  readonly request: RequestKey;
+  readonly generation: number;
+  readonly leaseVersion: number;
+  readonly events: readonly ReviewEvent[];
+  readonly failedAt: string;
+  readonly failure: OperationalFailure;
+}
+
+type FailAndRequeueClaimResult =
+  | { readonly requeued: true; readonly leaseVersion: number }
+  | { readonly requeued: false; readonly reason: "changed" };
+
+failAndRequeueClaim(
+  input: FailAndRequeueClaimInput,
+): Promise<FailAndRequeueClaimResult>;
+```
+
+The pipeline router supplies only this fixed sanitized envelope; never persist the caught message, stack, custom fields, or transport payload:
 
 ```ts
 {
@@ -577,7 +603,11 @@ On failure, persist only this fixed sanitized envelope through `complete(..., { 
 }
 ```
 
-Pass the current adopted owner to failed completion, for example `{ kind: "lease", leaseVersion: owner.leaseVersion }`; after successful recovery it is invalid to reuse `append.leaseVersion`. Never invent callback ownership in pipeline-only mode. Rethrow a bounded retryable error after recording failure so EventBridge retry behavior remains observable. Test the adapter/store transition, not only an in-memory happy path.
+Implement `DynamoDbStateStore.failAndRequeueClaim()` as one `TransactWrite`: condition the META update on the adopted generation/lease and `RUNNING`, set terminal `FAILED` metadata with only the supplied sanitized envelope, increment `pendingEventCount` by the claimed event count, increment `leaseVersion`, and remove `claimedGeneration` from each claimed event under a matching-generation condition. `claimEvents()` already caps a page at 99 items, so META plus event updates stay within DynamoDB's 100-item transaction limit. Preserve any events appended concurrently by adding to—never replacing—the pending count.
+
+A successful requeue leaves terminal `FAILED` with pending work. The next duplicate EventBridge append therefore returns `recoveryEligible`; `recoverLease(remoteStatus: "NOT_FOUND")` advances/adopts ownership and replays the event. On a `changed` result, another invocation owns state, so do not overwrite it. If failure occurs before any claim, use ordinary failed completion with the adopted lease because no event has been consumed.
+
+Rethrow a bounded retryable error after successful requeue/recording so EventBridge retry behavior remains observable. Add a real DynamoDB-adapter command/condition test and an end-to-end fake replay test proving first dispatch fails, redelivery recovers, and the exact revision starts once. Update the in-memory state-store fake with equivalent atomic semantics.
 
 - [ ] **Step 5: Add pipeline-only handler composition**
 
@@ -596,8 +626,8 @@ Keep environment parsing fail-fast and test both composition branches. Assert ea
 Run:
 
 ```bash
-rtk test bun test packages/cdk/tests/pipeline-event-router.test.ts packages/cdk/tests/pipeline-review-dispatcher.test.ts packages/cdk/tests/reviewer/unit/event-router.test.ts packages/cdk/tests/reviewer/unit/handlers/router.test.ts packages/cdk/tests/codepipeline-transport.test.ts
-rtk lint bunx biome check packages/cdk/src/reviewer/router/pipeline-event-router.ts packages/cdk/src/reviewer/router/event-router.ts packages/cdk/src/reviewer/handlers/router.ts packages/cdk/tests/pipeline-event-router.test.ts
+rtk test bun test packages/cdk/tests/pipeline-event-router.test.ts packages/cdk/tests/pipeline-review-dispatcher.test.ts packages/cdk/tests/reviewer/unit/event-router.test.ts packages/cdk/tests/reviewer/unit/handlers/router.test.ts packages/cdk/tests/reviewer/unit/dynamodb-state-store.test.ts packages/cdk/tests/codepipeline-transport.test.ts
+rtk lint bunx biome check packages/cdk/src/reviewer/router/pipeline-event-router.ts packages/cdk/src/reviewer/router/event-router.ts packages/cdk/src/reviewer/handlers/router.ts packages/cdk/src/reviewer/ports/state-store.ts packages/cdk/src/reviewer/adapters/dynamodb-state-store.ts packages/cdk/tests/pipeline-event-router.test.ts
 ```
 
 Expected: PASS with durable reviewer behavior unchanged.
@@ -605,7 +635,7 @@ Expected: PASS with durable reviewer behavior unchanged.
 Commit:
 
 ```bash
-rtk git add packages/cdk/src/reviewer packages/cdk/tests/pipeline-event-router.test.ts packages/cdk/tests/pipeline-review-dispatcher.test.ts packages/cdk/tests/reviewer/unit
+rtk git add packages/cdk/src/reviewer packages/cdk/tests/pipeline-event-router.test.ts packages/cdk/tests/pipeline-review-dispatcher.test.ts packages/cdk/tests/reviewer
 rtk git commit -m "refactor(cdk): separate exact PR pipeline routing"
 ```
 

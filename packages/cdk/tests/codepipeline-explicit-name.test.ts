@@ -19,15 +19,17 @@ function createTemplate(props: Partial<CodePipelineProps> = {}) {
 	const repository = new Repository(stack, "Repository", {
 		repositoryName: "pipeline-name-repository",
 	});
-	new CodePipeline(stack, "Pipeline", {
-		source: {
-			type: "codecommit",
+	new CodePipeline(stack, "Pipeline", props)
+		.source({
+			origin: "codecommit",
 			repository,
 			branchName: "main",
 			repositoryName: "pipeline-name-repository",
-		},
-		...props,
-	});
+		})
+		.stage({
+			name: "Build",
+			actions: [{ type: "approval", name: "Approve" }],
+		});
 	return Template.fromStack(stack).toJSON();
 }
 
@@ -47,13 +49,7 @@ function resourcesByType(
 function prGatedAutoReviewProps(): Partial<CodePipelineProps> {
 	return {
 		onPullRequest: true,
-		autoReview: { modelId: "eu.amazon.nova-2-lite-v1:0" },
-		stages: [
-			{
-				name: "Build",
-				actions: [{ type: "manualApproval", name: "Approve" }],
-			},
-		],
+		autoReviewer: { modelId: "eu.amazon.nova-2-lite-v1:0" },
 	};
 }
 
@@ -110,6 +106,28 @@ describe("CodePipeline physical name", () => {
 		expect(parseAiReviewUserParameters(pipeline).pipelineName).toBe(
 			"foo-bar-Pipeline-pipeline",
 		);
+	});
+
+	test("accepts the standard pipelineName prop as explicit ownership", () => {
+		const template = createTemplate({ pipelineName: "standard-pipeline-name" });
+		const [, pipeline] = findPipeline(template);
+
+		expect(pipeline.Properties?.Name).toBe("standard-pipeline-name");
+	});
+
+	test("rejects ambiguous pipelineName and pipelineNaming combinations", () => {
+		for (const pipelineNaming of [
+			{ mode: "pawl" } as const,
+			{ mode: "explicit", name: "named-by-policy" } as const,
+			{ mode: "cloudFormation" } as const,
+		]) {
+			expect(() =>
+				createTemplate({
+					pipelineName: "named-by-aws-prop",
+					pipelineNaming,
+				}),
+			).toThrow(/pipelineNaming and pipelineName/);
+		}
 	});
 
 	test("uses a validated explicit name for the resource and coordination", () => {

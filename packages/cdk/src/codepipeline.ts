@@ -1,6 +1,5 @@
-import { CfnCapabilities, Fn, RemovalPolicy } from "aws-cdk-lib";
+import { Fn, RemovalPolicy } from "aws-cdk-lib";
 import type { IRepository } from "aws-cdk-lib/aws-codecommit";
-import type { IAction } from "aws-cdk-lib/aws-codepipeline";
 import {
 	Artifact,
 	Pipeline,
@@ -9,13 +8,8 @@ import {
 	Variable,
 } from "aws-cdk-lib/aws-codepipeline";
 import {
-	CloudFormationCreateUpdateStackAction,
-	CodeBuildAction,
 	CodeCommitSourceAction,
 	CodeCommitTrigger,
-	LambdaInvokeAction,
-	ManualApprovalAction,
-	S3DeployAction,
 } from "aws-cdk-lib/aws-codepipeline-actions";
 import { Rule } from "aws-cdk-lib/aws-events";
 import { LambdaFunction as LambdaEventTarget } from "aws-cdk-lib/aws-events-targets";
@@ -23,6 +17,7 @@ import {
 	Effect,
 	PolicyStatement as IamPolicyStatement,
 } from "aws-cdk-lib/aws-iam";
+import type { IKey } from "aws-cdk-lib/aws-kms";
 import { Key } from "aws-cdk-lib/aws-kms";
 import type { IBucket } from "aws-cdk-lib/aws-s3";
 import { Bucket } from "aws-cdk-lib/aws-s3";
@@ -32,10 +27,26 @@ import {
 	BasicConstruct,
 	type PolicyStatement as BasicPolicyStatement,
 } from "./basic-construct";
-import type { CodeBuildProject } from "./codebuild-project";
+import type { AutoReviewConfig } from "./codecommit";
 import { CodeCommitAutoReviewer } from "./codecommit-auto-reviewer";
-import type { LambdaFunction } from "./lambda-function";
+import {
+	type PipelineActionDefinition,
+	type PlannedActionAdapter,
+	planPipelineAction,
+} from "./pipeline/actions";
+import {
+	type ArtifactPlanState,
+	createArtifactPlan,
+	planStageBatch,
+} from "./pipeline/artifacts";
+import { PipelineDefinitionError } from "./pipeline/errors";
+import { deriveStageName, validateStageName } from "./pipeline/naming";
 import { PullRequestRouter } from "./pipeline/pull-request-router";
+import {
+	type CodeCommitPipelineSource,
+	type MaterializedPipelineSource,
+	planCodeCommitSource,
+} from "./pipeline/source";
 import {
 	type ReviewCoordinationDeploymentPhase,
 	ReviewCoordinationDeploymentPhaseSchema,
@@ -43,155 +54,30 @@ import {
 import type { Stack } from "./stack";
 
 export {
+	type ApprovalActionDefinition,
+	type CloudFormationDeployActionDefinition,
+	type CodeBuildActionDefinition,
+	CodeBuildActionType,
+	type CustomActionDefinition,
+	type LambdaActionDefinition,
+	type PipelineActionBase,
+	type PipelineActionDefinition,
+	PipelineActionDefinitionSchema,
+	type S3DeployActionDefinition,
+} from "./pipeline/actions";
+export {
+	PipelineDefinitionError,
+	type PipelineDefinitionErrorCode,
+} from "./pipeline/errors";
+export {
+	type CodeCommitPipelineSource,
+	CodeCommitPipelineSourceSchema,
+} from "./pipeline/source";
+export {
 	type ReviewCoordinationDeploymentPhase,
 	ReviewCoordinationDeploymentPhaseSchema,
 } from "./review-coordination-deployment";
 
-/**
- * Source configuration for a CodePipeline pipeline.
- *
- * CodeCommit is the primary use case. S3 and GitHub are supported but less
- * opinionated — the construct creates the source action but does not manage
- * the bucket or connection.
- */
-export type PipelineSource =
-	| {
-			readonly type: "codecommit";
-			readonly repository: IRepository;
-			readonly branchName?: string;
-			/**
-			 * Literal repository name. Required when `autoReview` is set, because
-			 * `IRepository.repositoryName` returns a CDK intrinsic token that Zod
-			 * validation (used internally by the auto-reviewer) cannot parse.
-			 */
-			readonly repositoryName?: string;
-	  }
-	| {
-			readonly type: "s3";
-			readonly bucket: IBucket;
-			readonly objectKey: string;
-	  }
-	| {
-			readonly type: "github";
-			readonly repository: string;
-			readonly branch: string;
-			readonly connectionArn: string;
-	  };
-
-/**
- * A single stage in a pipeline with a name and ordered actions.
- */
-export interface PipelineStage {
-	readonly name: string;
-	readonly actions: PipelineAction[];
-}
-
-/**
- * Pawl-validated pipeline action types.
- *
- * Each action explicitly models artifact dependencies. The construct creates
- * the underlying CDK action with correct artifact wiring.
- */
-export type PipelineAction =
-	| {
-			readonly type: "codebuild";
-			readonly name?: string;
-			readonly project: CodeBuildProject;
-			readonly inputArtifact?: Artifact;
-			readonly outputArtifacts?: readonly Artifact[];
-	  }
-	| {
-			readonly type: "manualApproval";
-			readonly name?: string;
-			readonly description?: string;
-	  }
-	| {
-			readonly type: "lambda";
-			readonly name?: string;
-			readonly handler: LambdaFunction;
-			readonly inputs?: Record<string, string>;
-			readonly userParameters?: Record<string, string>;
-	  }
-	| {
-			readonly type: "s3Deploy";
-			readonly name?: string;
-			readonly bucket: IBucket;
-			readonly inputArtifact: Artifact;
-			readonly objectKey: string;
-	  }
-	| {
-			readonly type: "cloudFormationDeploy";
-			readonly name?: string;
-			readonly stackName: string;
-			readonly templatePath: string;
-			readonly inputArtifact: Artifact;
-			readonly actionMode?: "CREATE_UPDATE" | "REPLACE_ON_FAILURE";
-			readonly capabilities?: readonly (
-				| "CAPABILITY_IAM"
-				| "CAPABILITY_NAMED_IAM"
-				| "CAPABILITY_AUTO_EXPAND"
-			)[];
-	  };
-
-/**
- * Props for the {@link CodePipeline} construct.
- */
-export interface CodePipelineProps {
-	/** Source configuration — CodeCommit, S3, or GitHub. */
-	readonly source: PipelineSource;
-	/** Ordered stage definitions. Defaults to Source → Build → ManualApproval. */
-	readonly stages?: PipelineStage[];
-	/** Cross-account artifact bucket KMS key (auto-created by default). */
-	readonly artifactEncryptionKey?: Key;
-	/** When true, pipeline only triggers on PR events (router starts executions). Default: false (push-triggered). */
-	readonly onPullRequest?: boolean;
-	/** Physical-name ownership and reviewer coordination configuration. */
-	readonly pipelineNaming?: CodePipelineNaming;
-	/** When set, deploys the durable auto-reviewer and wires it to the pipeline. */
-	readonly autoReview?: import("./codecommit").AutoReviewConfig;
-	/** Team/stage overrides (required when autoReview is set). */
-	readonly team?: string;
-	readonly stage?: string;
-	/**
-	 * Safe deployment phase for PR-gated auto-review coordination. Defaults to
-	 * `active`; preparation phases provision indexes without runtime activation.
-	 */
-	readonly reviewCoordinationDeploymentPhase?: ReviewCoordinationDeploymentPhase;
-	/**
-	 * Deadline for the active PR-gated AIReview action. Default/max: 15 minutes.
-	 * CodePipeline fails a Lambda action after 20 minutes without a reply, so
-	 * this limit preserves a conservative five-minute callback margin.
-	 */
-	readonly reviewActionTimeoutMinutes?: number;
-}
-
-/**
- * CI/CD pipeline construct with optional durable auto-review.
- *
- * Supports four combinations:
- * - **Push, no review:** Standard CodePipeline triggering on branch pushes.
- * - **Push + review:** Pipeline on push, reviewer on PR events — independent.
- * - **PR-gated, no review:** Pipeline only starts on PR events via the router.
- * - **PR-gated + review:** Router starts pipeline and invokes AI reviewer in
- *   parallel on PR events via `Promise.allSettled`.
- *
- * @example Push-triggered with auto-review:
- * ```ts
- * new CodePipeline(this, "Pipeline", {
- *   source: { type: "codecommit", repository, branchName: "main" },
- *   autoReview: { modelId: "eu.anthropic.claude-sonnet-4-6" },
- * });
- * ```
- *
- * @example PR-gated with auto-review:
- * ```ts
- * new CodePipeline(this, "Pipeline", {
- *   source: { type: "codecommit", repository, branchName: "main" },
- *   onPullRequest: true,
- *   autoReview: { modelId: "eu.anthropic.claude-sonnet-4-6" },
- * });
- * ```
- */
 const reviewActionTimeoutSchema = z.number().int().min(5).max(15);
 
 /** Zod schema validating an AWS CodePipeline pipeline name. */
@@ -201,21 +87,11 @@ export const CodePipelineNameSchema = z
 	.max(100)
 	.regex(/^[A-Za-z0-9.@_-]+$/);
 
-/**
- * Physical-name ownership for a CodePipeline.
- *
- * Pawl and explicit modes emit a concrete CloudFormation `Name`. CloudFormation
- * mode leaves physical naming to CloudFormation; `coordinationName` is a
- * concrete existing name used only by the in-pipeline review bridge, where a
- * reference to the pipeline itself would create a cycle.
- */
+/** Physical-name ownership for a CodePipeline. */
 export const CodePipelineNamingSchema = z.discriminatedUnion("mode", [
 	z.object({ mode: z.literal("pawl") }).strict(),
 	z
-		.object({
-			mode: z.literal("explicit"),
-			name: CodePipelineNameSchema,
-		})
+		.object({ mode: z.literal("explicit"), name: CodePipelineNameSchema })
 		.strict(),
 	z
 		.object({
@@ -229,6 +105,34 @@ export type CodePipelineNaming = Readonly<
 	z.infer<typeof CodePipelineNamingSchema>
 >;
 
+export interface PipelineStageDefinition {
+	readonly name?: string;
+	readonly actions: readonly [
+		PipelineActionDefinition,
+		...PipelineActionDefinition[],
+	];
+}
+
+export type PipelineStageDefinitionList = readonly [
+	PipelineStageDefinition,
+	...PipelineStageDefinition[],
+];
+
+/** Pipeline-level props; source and stages are configured fluently. */
+export interface CodePipelineProps
+	extends Omit<
+		PipelineProps,
+		"pipelineType" | "stages" | "triggers" | "variables"
+	> {
+	readonly variables?: readonly Variable[];
+	readonly autoReviewer?: AutoReviewConfig;
+	readonly onPullRequest?: boolean;
+	readonly artifactEncryptionKey?: IKey;
+	readonly pipelineNaming?: CodePipelineNaming;
+	readonly reviewCoordinationDeploymentPhase?: ReviewCoordinationDeploymentPhase;
+	readonly reviewActionTimeoutMinutes?: number;
+}
+
 const PAWL_PIPELINE_VARIABLE_NAMES = [
 	"PAWL_PROVIDER",
 	"PAWL_REPOSITORY",
@@ -238,381 +142,481 @@ const PAWL_PIPELINE_VARIABLE_NAMES = [
 	"PAWL_DESTINATION_REVISION",
 ] as const;
 
+type PawlVariableName = (typeof PAWL_PIPELINE_VARIABLE_NAMES)[number];
+
+interface PlannedStage {
+	readonly name: string;
+	readonly adapters: readonly PlannedActionAdapter[];
+}
+
+function propertyConflict(message: string, path: string): never {
+	throw new PipelineDefinitionError("PIPELINE_PROP_CONFLICT", message, path);
+}
+
+function hasOwn(value: object, property: string): boolean {
+	return Object.hasOwn(value, property);
+}
+
+function normalizeStages(
+	definition: PipelineStageDefinition | PipelineStageDefinitionList,
+): readonly PipelineStageDefinition[] {
+	const stages = Array.isArray(definition) ? definition : [definition];
+	if (stages.length === 0) {
+		throw new PipelineDefinitionError(
+			"STAGE_EMPTY",
+			"A fluent stage batch requires at least one stage",
+			"stages",
+		);
+	}
+	return stages as readonly PipelineStageDefinition[];
+}
+
 export class CodePipeline extends BasicConstruct {
 	readonly pipeline: Pipeline;
-	readonly artifactBucket: Bucket;
-	readonly artifactEncryptionKey: Key;
+	readonly artifactBucket: IBucket;
+	readonly artifactEncryptionKey?: IKey;
 
-	constructor(scope: Stack, id: string, props: CodePipelineProps) {
+	private readonly props: CodePipelineProps;
+	private readonly pipelineCoordinationName?: string;
+	private readonly reviewVariables: ReadonlyMap<string, Variable>;
+	private readonly reviewCoordinationDeploymentPhase?: ReviewCoordinationDeploymentPhase;
+	private readonly reviewActionTimeoutMinutes?: number;
+	private sourceDefined = false;
+	private userStageCount = 0;
+	private artifactState?: ArtifactPlanState;
+	private readonly artifacts = new Map<string, Artifact>();
+	private readonly stageNames = new Set<string>(["Source"]);
+	private autoReviewer?: CodeCommitAutoReviewer;
+
+	constructor(scope: Stack, id: string, props: CodePipelineProps = {}) {
 		super(scope, id);
+		this.props = props;
+		for (const forbidden of [
+			"source",
+			"stages",
+			"pipelineType",
+			"triggers",
+			"autoReview",
+			"team",
+			"stage",
+		] as const) {
+			if (hasOwn(props, forbidden)) {
+				propertyConflict(
+					`CodePipeline prop '${forbidden}' is not supported by the fluent API`,
+					forbidden,
+				);
+			}
+		}
+		if (
+			props.artifactBucket !== undefined &&
+			props.crossRegionReplicationBuckets !== undefined
+		) {
+			propertyConflict(
+				"artifactBucket and crossRegionReplicationBuckets cannot be supplied together",
+				"artifactBucket",
+			);
+		}
+		if (
+			props.artifactEncryptionKey !== undefined &&
+			(props.artifactBucket !== undefined ||
+				props.crossRegionReplicationBuckets !== undefined)
+		) {
+			propertyConflict(
+				"artifactEncryptionKey cannot be combined with external artifact storage",
+				"artifactEncryptionKey",
+			);
+		}
+		if (props.enableKeyRotation === true && props.crossAccountKeys !== true) {
+			propertyConflict(
+				"enableKeyRotation requires crossAccountKeys to be true",
+				"enableKeyRotation",
+			);
+		}
+
 		const prGatedAutoReview =
-			props.onPullRequest === true && props.autoReview !== undefined;
-		const prGatedWithoutAutoReview =
-			props.onPullRequest === true && props.autoReview === undefined;
+			props.onPullRequest === true && props.autoReviewer !== undefined;
 		if (
 			props.reviewCoordinationDeploymentPhase !== undefined &&
 			!prGatedAutoReview
 		) {
-			throw new Error(
+			propertyConflict(
 				"reviewCoordinationDeploymentPhase requires PR-gated auto-review",
+				"reviewCoordinationDeploymentPhase",
 			);
 		}
-		const reviewCoordinationDeploymentPhase = prGatedAutoReview
+		this.reviewCoordinationDeploymentPhase = prGatedAutoReview
 			? ReviewCoordinationDeploymentPhaseSchema.parse(
 					props.reviewCoordinationDeploymentPhase ?? "active",
 				)
 			: undefined;
 		const reviewCoordinationActive =
-			reviewCoordinationDeploymentPhase === "active";
-		const pipelineNaming = CodePipelineNamingSchema.parse(
-			props.pipelineNaming ?? { mode: "pawl" },
-		);
-		const pipelinePhysicalName =
-			pipelineNaming.mode === "cloudFormation"
-				? undefined
-				: CodePipelineNameSchema.parse(
-						pipelineNaming.mode === "explicit"
-							? pipelineNaming.name
-							: `${this.prefix}${id}-pipeline`,
-					);
-		const pipelineCoordinationName =
-			pipelineNaming.mode === "cloudFormation"
-				? pipelineNaming.coordinationName
-				: pipelinePhysicalName;
-		if (reviewCoordinationActive && pipelineCoordinationName === undefined) {
-			throw new Error(
-				"CloudFormation pipeline naming requires coordinationName for PR-gated auto-review",
-			);
-		}
+			this.reviewCoordinationDeploymentPhase === "active";
 		if (
 			props.reviewActionTimeoutMinutes !== undefined &&
 			!reviewCoordinationActive
 		) {
-			throw new Error(
+			propertyConflict(
 				"reviewActionTimeoutMinutes requires active PR-gated auto-review coordination",
+				"reviewActionTimeoutMinutes",
 			);
 		}
-		const reviewActionTimeoutMinutes = reviewCoordinationActive
+		this.reviewActionTimeoutMinutes = reviewCoordinationActive
 			? reviewActionTimeoutSchema.parse(props.reviewActionTimeoutMinutes ?? 15)
 			: undefined;
-		const reviewVariables =
-			reviewCoordinationActive || prGatedWithoutAutoReview
-				? new Map(
-						PAWL_PIPELINE_VARIABLE_NAMES.map((name) => [
-							name,
-							new Variable({ variableName: name, defaultValue: "UNSET" }),
-						]),
-					)
-				: undefined;
 
-		// 1. Artifact bucket with KMS encryption
-		this.artifactEncryptionKey =
-			props.artifactEncryptionKey ??
-			new Key(this, "ArtifactKey", {
-				enableKeyRotation: true,
+		if (
+			props.pipelineNaming !== undefined &&
+			props.pipelineName !== undefined
+		) {
+			propertyConflict(
+				"pipelineNaming and pipelineName cannot be supplied together",
+				"pipelineName",
+			);
+		}
+		const naming =
+			props.pipelineNaming === undefined
+				? props.pipelineName === undefined
+					? ({ mode: "pawl" } as const)
+					: ({ mode: "explicit", name: props.pipelineName } as const)
+				: CodePipelineNamingSchema.parse(props.pipelineNaming);
+		const pipelinePhysicalName =
+			naming.mode === "cloudFormation"
+				? undefined
+				: CodePipelineNameSchema.parse(
+						naming.mode === "explicit"
+							? naming.name
+							: `${this.prefix}${id}-pipeline`,
+					);
+		this.pipelineCoordinationName =
+			naming.mode === "cloudFormation"
+				? naming.coordinationName
+				: pipelinePhysicalName;
+		if (
+			reviewCoordinationActive &&
+			this.pipelineCoordinationName === undefined
+		) {
+			propertyConflict(
+				"CloudFormation pipeline naming requires coordinationName for PR-gated auto-review",
+				"pipelineNaming.coordinationName",
+			);
+		}
+
+		const variables = new Map<string, Variable>();
+		for (const [index, variable] of (props.variables ?? []).entries()) {
+			if (variable.variableName.startsWith("PAWL_")) {
+				throw new PipelineDefinitionError(
+					"RESERVED_VARIABLE_CONFLICT",
+					`Pipeline variable '${variable.variableName}' uses the reserved PAWL_ prefix`,
+					`variables[${index}]`,
+				);
+			}
+			if (variables.has(variable.variableName)) {
+				propertyConflict(
+					`Pipeline variable '${variable.variableName}' is duplicated`,
+					`variables[${index}]`,
+				);
+			}
+			variables.set(variable.variableName, variable);
+		}
+		if (props.onPullRequest === true) {
+			for (const name of PAWL_PIPELINE_VARIABLE_NAMES) {
+				variables.set(
+					name,
+					new Variable({ variableName: name, defaultValue: "UNSET" }),
+				);
+			}
+		}
+		this.reviewVariables = variables;
+
+		let pipelineArtifactBucket: IBucket | undefined;
+		if (
+			props.artifactBucket === undefined &&
+			props.crossRegionReplicationBuckets === undefined
+		) {
+			this.artifactEncryptionKey =
+				props.artifactEncryptionKey ??
+				new Key(this, "ArtifactKey", {
+					enableKeyRotation: true,
+					removalPolicy: RemovalPolicy.RETAIN,
+				});
+			pipelineArtifactBucket = new Bucket(this, "ArtifactBucket", {
+				encryptionKey: this.artifactEncryptionKey,
 				removalPolicy: RemovalPolicy.RETAIN,
 			});
-		this.artifactBucket = new Bucket(this, "ArtifactBucket", {
-			encryptionKey: this.artifactEncryptionKey,
-			removalPolicy: RemovalPolicy.RETAIN,
-		});
+		} else {
+			this.artifactEncryptionKey = undefined;
+			pipelineArtifactBucket = props.artifactBucket;
+		}
 
-		// 2. Create pipeline
-		const pipelineProps: PipelineProps = {
-			artifactBucket: this.artifactBucket,
-			crossAccountKeys: false,
-		};
 		this.pipeline = new Pipeline(this, "Pipeline", {
-			...pipelineProps,
+			artifactBucket: pipelineArtifactBucket,
+			role: props.role,
+			restartExecutionOnUpdate: props.restartExecutionOnUpdate,
 			...(pipelinePhysicalName === undefined
 				? {}
 				: { pipelineName: pipelinePhysicalName }),
+			crossRegionReplicationBuckets: props.crossRegionReplicationBuckets,
+			crossAccountKeys: props.crossAccountKeys,
+			enableKeyRotation: props.enableKeyRotation,
+			reuseCrossRegionSupportStacks: props.reuseCrossRegionSupportStacks,
 			pipelineType: PipelineType.V2,
-			variables: reviewVariables ? [...reviewVariables.values()] : undefined,
+			variables: variables.size === 0 ? undefined : [...variables.values()],
+			executionMode: props.executionMode,
+			usePipelineRoleForActions: props.usePipelineRoleForActions,
 		});
+		this.artifactBucket = this.pipeline.artifactBucket;
 
-		// 3. Source stage
-		const sourceArtifact = this.addSourceStage(props);
-		if (prGatedWithoutAutoReview) {
-			if (props.source.type !== "codecommit") {
-				throw new Error(
-					"Pull-request routing is only supported with CodeCommit source",
-				);
-			}
-			new PullRequestRouter(scope, `${id}PullRequest`, {
-				repository: props.source.repository,
-				pipeline: this.pipeline,
-				sourceActionName: "Source",
-			});
-		}
-
-		// 4. Auto-review infrastructure (if enabled) — created BEFORE stages so
-		//    the reviewer Lambda can be injected as a parallel pipeline action.
-		let autoReviewer: CodeCommitAutoReviewer | undefined;
-		if (props.autoReview !== undefined) {
-			if (props.source.type !== "codecommit") {
-				throw new Error("Auto-review is only supported with CodeCommit source");
-			}
-
-			const { modelId, ...otherAutoReviewProps } = props.autoReview;
-			const repositoryName =
-				props.source.type === "codecommit"
-					? (props.source.repositoryName ??
-						(() => {
-							throw new Error(
-								"CodePipeline auto-review requires repositoryName in source config",
-							);
-						})())
-					: (() => {
-							throw new Error(
-								"Auto-review is only supported with CodeCommit source",
-							);
-						})();
-
-			autoReviewer = new CodeCommitAutoReviewer(scope, `${id}AutoReview`, {
-				...otherAutoReviewProps,
-				repositories: [repositoryName],
-				reviewerModelId: modelId,
-				team: props.team,
-				stage: props.stage,
-				reviewCoordinationDeployment:
-					reviewCoordinationDeploymentPhase === undefined
-						? undefined
-						: reviewCoordinationDeploymentPhase === "active"
-							? {
-									phase: reviewCoordinationDeploymentPhase,
-									reviewActionTimeoutMinutes: reviewActionTimeoutMinutes ?? 15,
-								}
-							: { phase: reviewCoordinationDeploymentPhase },
-			});
-
-			// Wire the pipeline name to the router so it starts pipeline
-			// execution when a PR event arrives.
-			autoReviewer.router.lambda.addEnvironment(
-				"PIPELINE_NAME",
-				this.pipeline.pipelineName,
-			);
-			autoReviewer.router.lambda.addEnvironment(
-				"PIPELINE_SOURCE_ACTION_NAME",
-				"Source",
-			);
-
-			// Grant the router IAM permissions to start and monitor the pipeline.
-			autoReviewer.router.lambda.addToRolePolicy(
-				new IamPolicyStatement({
-					effect: Effect.ALLOW,
-					actions: [
-						"codepipeline:StartPipelineExecution",
-						"codepipeline:GetPipelineExecution",
-						"codepipeline:ListActionExecutions",
-					],
-					resources: [this.pipeline.pipelineArn],
-				}),
-			);
-
-			// EventBridge rule: pipeline execution state changes → router.
-			// The router posts CI result summaries as PR comments.
-			new Rule(scope, `${id}PipelineExecutionRule`, {
-				eventPattern: {
-					source: ["aws.codepipeline"],
-					detailType: ["CodePipeline Pipeline Execution State Change"],
-					detail: {
-						pipeline: [this.pipeline.pipelineName],
-					},
-				},
-				targets: [new LambdaEventTarget(autoReviewer.router.lambda)],
-			});
-		}
-
-		// 5. User stages or default Approve + optional AIReview.
-		//    PR-gated auto-review injects an ordinary bridge Lambda action. The
-		//    bridge leaves the job pending until the durable reviewer outcome is
-		//    reconciled through PutJobSuccessResult/PutJobFailureResult.
-		//
-		//    Active phase: inject AIReview into the first stage.
-		//    Preparation phases (prepareGsi1, prepareGsi2): omit AIReview.
-		if (props.stages !== undefined) {
-			const stageActions = props.stages.map((stage) => ({
-				...stage,
-				actions: [...stage.actions],
-			}));
-			if (reviewCoordinationActive) {
-				this.addAiReviewAction(
-					stageActions,
-					sourceArtifact,
-					autoReviewer,
-					reviewVariables,
-					pipelineCoordinationName,
-				);
-			}
-			for (const stage of stageActions) {
-				this.addStage(stage, sourceArtifact);
-			}
-		} else {
-			this.addDefaultStages({
-				reviewCoordinationActive,
-				autoReviewer,
-				reviewVariables,
-				pipelineCoordinationName,
-				sourceArtifact,
-			});
-		}
-	}
-
-	private addSourceStage(props: CodePipelineProps): Artifact {
-		const sourceAction = this.createSourceAction(props);
-		this.pipeline.addStage({
-			stageName: "Source",
-			actions: [sourceAction],
-		});
-		return (
-			sourceAction.actionProperties.outputs?.[0] ?? new Artifact("SourceOutput")
-		);
-	}
-
-	private createSourceAction(props: CodePipelineProps): CodeCommitSourceAction {
-		if (props.source.type === "codecommit") {
-			// Build the repository ARN via Fn::Sub so LocalStack (and any provider
-			// that does not support Fn::GetAtt on CodeCommit) can resolve it.
-			const repoName =
-				props.source.repositoryName ?? props.source.repository.repositoryName;
-			const repoArn = Fn.sub(
-				// biome-ignore lint/suspicious/noTemplateCurlyInString: Fn.sub CloudFormation syntax
-				"arn:${AWS::Partition}:codecommit:${AWS::Region}:${AWS::AccountId}:${repoName}",
-				{ repoName },
-			);
-			// Create a proxy that preserves the full IRepository interface but
-			// overrides repositoryArn with the Fn::Sub-based ARN.
-			const repository: IRepository = new Proxy(props.source.repository, {
-				get(target, prop, receiver) {
-					if (prop === "repositoryArn") return repoArn;
-					const value = Reflect.get(target, prop, receiver);
-					return typeof value === "function" ? value.bind(target) : value;
-				},
-			});
-			return new CodeCommitSourceAction({
-				actionName: "Source",
-				repository,
-				branch: props.source.branchName ?? "main",
-				trigger:
-					props.onPullRequest === true ? CodeCommitTrigger.NONE : undefined,
-				output: new Artifact("SourceOutput"),
-			});
-		}
-		// S3 and GitHub sources — placeholder for future implementation
-		throw new Error(
-			`Source type "${props.source.type}" is not yet implemented`,
-		);
-	}
-
-	private addStage(stage: PipelineStage, sourceArtifact: Artifact): void {
-		const actions = stage.actions.map((action) =>
-			this.createAction(action, sourceArtifact),
-		);
-		this.pipeline.addStage({
-			stageName: stage.name,
-			actions,
-		});
-	}
-
-	private addAction(action: PipelineAction, sourceArtifact: Artifact): IAction {
-		switch (action.type) {
-			case "codebuild":
-				return new CodeBuildAction({
-					actionName: action.name ?? "Build",
-					project: action.project.project,
-					input: action.inputArtifact ?? sourceArtifact,
-					outputs: action.outputArtifacts
-						? [...action.outputArtifacts]
-						: undefined,
-				});
-			case "manualApproval":
-				return new ManualApprovalAction({
-					actionName: action.name ?? "Approve",
-					additionalInformation: action.description,
-				});
-			case "lambda": {
-				if ("durableFunctionArn" in action.handler) {
-					throw new Error(
-						"CodePipeline Lambda actions cannot invoke durable functions directly; use an ordinary bridge Lambda",
+		this.node.addValidation({
+			validate: () => {
+				const errors: string[] = [];
+				if (!this.sourceDefined) {
+					errors.push("CodePipeline: a source is required; call source() once");
+				}
+				if (this.userStageCount === 0) {
+					errors.push(
+						"CodePipeline: at least one user stage is required; call stage()",
 					);
 				}
-				return new LambdaInvokeAction({
-					actionName: action.name ?? "Invoke",
-					lambda: action.handler.lambda,
-					inputs: action.inputs
-						? Object.values(action.inputs).map((v) => new Artifact(v))
-						: undefined,
-					userParameters: action.userParameters,
-				});
+				return errors;
+			},
+		});
+	}
+
+	source(source: CodeCommitPipelineSource): this {
+		if (this.userStageCount > 0) {
+			throw new PipelineDefinitionError(
+				"SOURCE_AFTER_STAGE",
+				"CodePipeline source must be defined before stages",
+				"source",
+			);
+		}
+		if (this.sourceDefined) {
+			throw new PipelineDefinitionError(
+				"SOURCE_ALREADY_DEFINED",
+				"CodePipeline source is already defined",
+				"source",
+			);
+		}
+
+		const sourcePlan = planCodeCommitSource(source, {
+			requiresConcreteName: this.props.autoReviewer !== undefined,
+		});
+		const details = sourcePlan.materialize(this.stack, `${this.node.id}Source`);
+		const sourceArtifact = new Artifact("SourceOutput");
+		const repository = this.sourceRepository(
+			details.repository,
+			details.repositoryName,
+		);
+		this.pipeline.addStage({
+			stageName: "Source",
+			actions: [
+				new CodeCommitSourceAction({
+					actionName: "Source",
+					repository,
+					branch: details.branchName,
+					trigger:
+						this.props.onPullRequest === true
+							? CodeCommitTrigger.NONE
+							: undefined,
+					output: sourceArtifact,
+				}),
+			],
+		});
+		this.sourceDefined = true;
+		this.artifactState = createArtifactPlan("SourceOutput");
+		this.artifacts.set("SourceOutput", sourceArtifact);
+		this.createReviewInfrastructure(details);
+		return this;
+	}
+
+	stage(stage: PipelineStageDefinition): this;
+	stage(stages: PipelineStageDefinitionList): this;
+	stage(
+		definition: PipelineStageDefinition | PipelineStageDefinitionList,
+	): this {
+		if (!this.sourceDefined || this.artifactState === undefined) {
+			throw new PipelineDefinitionError(
+				"SOURCE_REQUIRED",
+				"CodePipeline source must be defined before stages",
+				"stages",
+			);
+		}
+		const definitions = normalizeStages(definition);
+		const plannedStages = this.planStages(definitions);
+		const artifactBatch = planStageBatch(
+			this.artifactState,
+			plannedStages.map((stage) => ({
+				name: stage.name,
+				actions: stage.adapters.map((adapter) => adapter.artifactPlan),
+			})),
+		);
+
+		const materializedArtifacts = new Map(this.artifacts);
+		for (const stage of plannedStages) {
+			for (const adapter of stage.adapters) {
+				for (const [name, existing] of adapter.existingArtifacts ?? []) {
+					if (!materializedArtifacts.has(name)) {
+						materializedArtifacts.set(name, existing);
+					}
+				}
 			}
-			case "s3Deploy":
-				return new S3DeployAction({
-					actionName: action.name ?? "Deploy",
-					bucket: action.bucket,
-					input: action.inputArtifact,
-					objectKey: action.objectKey,
-				});
-			case "cloudFormationDeploy":
-				return new CloudFormationCreateUpdateStackAction({
-					actionName: action.name ?? "Deploy",
-					stackName: action.stackName,
-					templatePath: action.inputArtifact.atPath(action.templatePath),
-					replaceOnFailure: action.actionMode === "REPLACE_ON_FAILURE",
-					adminPermissions: false,
-					cfnCapabilities: action.capabilities?.map(
-						(c) => CfnCapabilities[c as keyof typeof CfnCapabilities],
+		}
+		for (const name of artifactBatch.state.registered) {
+			if (!materializedArtifacts.has(name)) {
+				materializedArtifacts.set(name, new Artifact(name));
+			}
+		}
+
+		const materializedStages = plannedStages.map((stage, stageIndex) => {
+			const artifactStage = artifactBatch.stages[stageIndex];
+			if (artifactStage === undefined) {
+				propertyConflict(
+					"Missing planned artifact stage",
+					`stages[${stageIndex}]`,
+				);
+			}
+			const actions = stage.adapters.map((adapter, actionIndex) => {
+				const artifactAction = artifactStage.actions[actionIndex];
+				if (artifactAction === undefined) {
+					propertyConflict(
+						"Missing planned artifact action",
+						`stages[${stageIndex}].actions[${actionIndex}]`,
+					);
+				}
+				return adapter.materialize({
+					inputs: artifactAction.inputs.map((name) =>
+						this.requireArtifact(materializedArtifacts, name),
+					),
+					outputs: artifactAction.outputs.map((name) =>
+						this.requireArtifact(materializedArtifacts, name),
 					),
 				});
-			default:
-				throw new Error(
-					`Unknown action type: ${(action as { type: string }).type}`,
+			});
+			return { name: stage.name, actions };
+		});
+		for (const stage of materializedStages) {
+			this.pipeline.addStage({ stageName: stage.name, actions: stage.actions });
+		}
+
+		this.artifactState = artifactBatch.state;
+		this.artifacts.clear();
+		for (const [name, artifact] of materializedArtifacts) {
+			this.artifacts.set(name, artifact);
+		}
+		for (const stage of plannedStages) this.stageNames.add(stage.name);
+		this.userStageCount += plannedStages.length;
+		return this;
+	}
+
+	private planStages(
+		definitions: readonly PipelineStageDefinition[],
+	): readonly PlannedStage[] {
+		const names = new Set(this.stageNames);
+		const planned: PlannedStage[] = [];
+		for (const [stageIndex, definition] of definitions.entries()) {
+			const stagePath = `stages[${stageIndex}]`;
+			if (
+				typeof definition !== "object" ||
+				definition === null ||
+				!Array.isArray(definition.actions) ||
+				definition.actions.length === 0
+			) {
+				throw new PipelineDefinitionError(
+					"STAGE_EMPTY",
+					"A pipeline stage requires at least one action",
+					`${stagePath}.actions`,
 				);
+			}
+			const adapters = definition.actions.map((action, actionIndex) =>
+				planPipelineAction(action, `${stagePath}.actions[${actionIndex}]`),
+			);
+			const actionNames = adapters.map(({ artifactPlan }) => artifactPlan.name);
+			const seenActions = new Set<string>();
+			for (const [actionIndex, actionName] of actionNames.entries()) {
+				if (seenActions.has(actionName)) {
+					throw new PipelineDefinitionError(
+						"ACTION_NAME_CONFLICT",
+						`Action name '${actionName}' is duplicated in the stage`,
+						`${stagePath}.actions[${actionIndex}].name`,
+					);
+				}
+				seenActions.add(actionName);
+			}
+			const name =
+				definition.name === undefined
+					? deriveStageName(actionNames, stagePath)
+					: validateStageName(definition.name, `${stagePath}.name`);
+			if (names.has(name)) {
+				throw new PipelineDefinitionError(
+					"STAGE_NAME_CONFLICT",
+					`Stage name '${name}' is already in use`,
+					`${stagePath}.name`,
+				);
+			}
+			names.add(name);
+			planned.push({ name, adapters });
 		}
+
+		if (this.reviewCoordinationDeploymentPhase === "active") {
+			const first = planned[0];
+			if (first !== undefined) {
+				if (
+					first.adapters.some(
+						({ artifactPlan }) => artifactPlan.name === "AIReview",
+					)
+				) {
+					throw new PipelineDefinitionError(
+						"ACTION_NAME_CONFLICT",
+						"Action name 'AIReview' is reserved for review coordination",
+						"stages[0].actions",
+					);
+				}
+				const aiReview = planPipelineAction(
+					this.aiReviewDefinition(first.name),
+					`stages[${first.name}].actions[AIReview]`,
+				);
+				planned[0] = {
+					name: first.name,
+					adapters: [...first.adapters, aiReview],
+				};
+			}
+		}
+		return planned;
 	}
 
-	private createAction(
-		action: PipelineAction,
-		sourceArtifact: Artifact,
-	): IAction {
-		return this.addAction(action, sourceArtifact);
-	}
-
-	private addAiReviewAction(
-		stageActions: { name: string; actions: PipelineAction[] }[],
-		sourceArtifact: Artifact,
-		autoReviewer: CodeCommitAutoReviewer | undefined,
-		reviewVariables: Map<string, Variable> | undefined,
-		pipelineCoordinationName: string | undefined,
-	): void {
-		if (
-			autoReviewer?.pipelineBridge === undefined ||
-			reviewVariables === undefined ||
-			stageActions.length === 0
-		) {
-			return;
+	private aiReviewDefinition(stageName: string): PipelineActionDefinition {
+		const bridge = this.autoReviewer?.pipelineBridge;
+		if (bridge === undefined) {
+			propertyConflict(
+				"Active review coordination requires a pipeline bridge",
+				"autoReviewer",
+			);
 		}
-		const pipelineCoordinationNameResolved =
-			pipelineCoordinationName ??
-			(() => {
-				throw new Error("Missing pipeline coordination name");
-			})();
-		const variable = (name: (typeof PAWL_PIPELINE_VARIABLE_NAMES)[number]) => {
-			const value = reviewVariables.get(name);
-			if (value === undefined)
-				throw new Error(`Missing pipeline variable ${name}`);
+		const variable = (name: PawlVariableName): string => {
+			const value = this.reviewVariables.get(name);
+			if (value === undefined) {
+				throw new PipelineDefinitionError(
+					"RESERVED_VARIABLE_CONFLICT",
+					`Missing pipeline variable '${name}'`,
+					"variables",
+				);
+			}
 			return value.reference();
 		};
-		const firstStage = stageActions[0];
-		firstStage.actions.push({
+		return {
 			type: "lambda",
 			name: "AIReview",
-			handler: autoReviewer.pipelineBridge,
-			inputs: { source: sourceArtifact.artifactName ?? "SourceOutput" },
+			handler: bridge,
+			inputs: ["SourceOutput"],
 			userParameters: {
 				pipelineExecutionId: "#{codepipeline.PipelineExecutionId}",
-				pipelineName: pipelineCoordinationNameResolved,
-				stageName: firstStage.name,
+				pipelineName:
+					this.pipelineCoordinationName ??
+					propertyConflict(
+						"Missing pipeline coordination name",
+						"pipelineNaming",
+					),
+				stageName,
 				actionName: "AIReview",
 				provider: variable("PAWL_PROVIDER"),
 				repository: variable("PAWL_REPOSITORY"),
@@ -621,55 +625,113 @@ export class CodePipeline extends BasicConstruct {
 				sourceRevision: variable("PAWL_SOURCE_REVISION"),
 				destinationRevision: variable("PAWL_DESTINATION_REVISION"),
 			},
+		};
+	}
+
+	private createReviewInfrastructure(
+		details: MaterializedPipelineSource,
+	): void {
+		if (this.props.autoReviewer === undefined) {
+			if (this.props.onPullRequest === true) {
+				new PullRequestRouter(this.stack, `${this.node.id}PullRequest`, {
+					repository: details.repository,
+					pipeline: this.pipeline,
+					sourceActionName: "Source",
+				});
+			}
+			return;
+		}
+
+		const { modelId, ...autoReviewerProps } = this.props.autoReviewer;
+		this.autoReviewer = new CodeCommitAutoReviewer(
+			this.stack,
+			`${this.node.id}AutoReview`,
+			{
+				...autoReviewerProps,
+				repositories: [details.repositoryName],
+				reviewerModelId: modelId,
+				reviewCoordinationDeployment:
+					this.reviewCoordinationDeploymentPhase === undefined
+						? undefined
+						: this.reviewCoordinationDeploymentPhase === "active"
+							? {
+									phase: "active",
+									reviewActionTimeoutMinutes:
+										this.reviewActionTimeoutMinutes ?? 15,
+								}
+							: { phase: this.reviewCoordinationDeploymentPhase },
+			},
+		);
+		this.autoReviewer.router.lambda.addEnvironment(
+			"PIPELINE_NAME",
+			this.pipeline.pipelineName,
+		);
+		this.autoReviewer.router.lambda.addEnvironment(
+			"PIPELINE_SOURCE_ACTION_NAME",
+			"Source",
+		);
+		this.autoReviewer.router.lambda.addToRolePolicy(
+			new IamPolicyStatement({
+				effect: Effect.ALLOW,
+				actions: [
+					"codepipeline:StartPipelineExecution",
+					"codepipeline:GetPipelineExecution",
+					"codepipeline:ListActionExecutions",
+				],
+				resources: [this.pipeline.pipelineArn],
+			}),
+		);
+		new Rule(this.stack, `${this.node.id}PipelineExecutionRule`, {
+			eventPattern: {
+				source: ["aws.codepipeline"],
+				detailType: ["CodePipeline Pipeline Execution State Change"],
+				detail: { pipeline: [this.pipeline.pipelineName] },
+			},
+			targets: [new LambdaEventTarget(this.autoReviewer.router.lambda)],
 		});
 	}
 
-	private addDefaultStages(options?: {
-		readonly reviewCoordinationActive: boolean;
-		readonly autoReviewer?: CodeCommitAutoReviewer;
-		readonly reviewVariables?: Map<string, Variable>;
-		readonly pipelineCoordinationName?: string;
-		readonly sourceArtifact: Artifact;
-	}): void {
-		// Build stage — placeholder, user creates their own CodeBuildProject.
-		// For now, just add a manual approval stage with optional AIReview.
-		const stageActions: { name: string; actions: PipelineAction[] }[] = [
-			{
-				name: "Approve",
-				actions: [{ type: "manualApproval", name: "Approve" }],
+	private sourceRepository(
+		repository: IRepository,
+		repositoryName: string,
+	): IRepository {
+		const repositoryArn = Fn.sub(
+			// biome-ignore lint/suspicious/noTemplateCurlyInString: Fn.sub CloudFormation syntax
+			"arn:${AWS::Partition}:codecommit:${AWS::Region}:${AWS::AccountId}:${repositoryName}",
+			{ repositoryName },
+		);
+		return new Proxy(repository, {
+			get(target, property, receiver) {
+				if (property === "repositoryArn") return repositoryArn;
+				const value = Reflect.get(target, property, receiver);
+				return typeof value === "function" ? value.bind(target) : value;
 			},
-		];
-		if (options?.reviewCoordinationActive) {
-			this.addAiReviewAction(
-				stageActions,
-				options.sourceArtifact,
-				options.autoReviewer,
-				options.reviewVariables,
-				options.pipelineCoordinationName,
-			);
-		}
-		for (const stage of stageActions) {
-			this.addStage(
-				stage,
-				options?.sourceArtifact ?? new Artifact("SourceOutput"),
-			);
-		}
+		});
 	}
+
+	private requireArtifact(
+		artifacts: ReadonlyMap<string, Artifact>,
+		name: string,
+	): Artifact {
+		const artifact = artifacts.get(name);
+		if (artifact === undefined) {
+			throw new PipelineDefinitionError(
+				"ARTIFACT_NOT_FOUND",
+				`Artifact '${name}' was not materialized`,
+				"artifacts",
+			);
+		}
+		return artifact;
+	}
+
 	protected applyPermissionPolicy(
 		_construct: Construct,
 		_policyStatement: BasicPolicyStatement,
 	): void {
-		// CodePipeline does not expose grant methods for custom permission
-		// policies in the same way Lambda or CodeBuild constructs do. Pipeline
-		// access is managed through the pipeline's service role and per-action
-		// permissions. This method is a no-op for CodePipeline.
+		// Pipeline access is managed through its service role and action grants.
 	}
 
 	createAlarm(scope: Stack): void {
-		// Monitor pipeline execution failures via the monitoring facade.
-		// The cdk-monitoring-constructs library does not have a direct
-		// pipeline monitor, so we monitor the artifact bucket S3 bucket
-		// access instead as a baseline.
 		scope.monitoring.monitorS3Bucket({ bucket: this.artifactBucket });
 	}
 }

@@ -1,29 +1,30 @@
 import { describe, expect, test } from "bun:test";
 import { Template } from "aws-cdk-lib/assertions";
 import { Repository } from "aws-cdk-lib/aws-codecommit";
-import { CodePipeline } from "../src/codepipeline";
+import { CodePipeline, type CodePipelineProps } from "../src/codepipeline";
 import { Stack } from "../src/stack";
 import { createTestApp } from "./utils";
 
-const createBridgePipeline = (overrides: Record<string, unknown> = {}) => {
+const createBridgePipeline = (overrides: Partial<CodePipelineProps> = {}) => {
 	const stack = new Stack(createTestApp(), "BridgePipelineStack");
 	const repository = new Repository(stack, "Repo", {
 		repositoryName: "test-repo",
 	});
 	new CodePipeline(stack, "Pipeline", {
-		source: {
-			type: "codecommit",
+		onPullRequest: true,
+		autoReviewer: { modelId: "eu.anthropic.claude-sonnet-4-6" },
+		...overrides,
+	})
+		.source({
+			origin: "codecommit",
 			repository,
 			repositoryName: "test-repo",
 			branchName: "main",
-		},
-		onPullRequest: true,
-		autoReview: { modelId: "eu.anthropic.claude-sonnet-4-6" },
-		team: "test",
-		stage: "dev",
-		stages: [{ name: "Build", actions: [{ type: "manualApproval" }] }],
-		...overrides,
-	});
+		})
+		.stage({
+			name: "Build",
+			actions: [{ type: "approval", name: "Approve" }],
+		});
 	return Template.fromStack(stack);
 };
 

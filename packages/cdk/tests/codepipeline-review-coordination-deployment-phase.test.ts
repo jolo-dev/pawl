@@ -26,23 +26,23 @@ function createTemplate(
 	const repository = new Repository(stack, "Repository", {
 		repositoryName: "review-repository",
 	});
-	new CodePipeline(stack, "Pipeline", {
-		source: {
-			type: "codecommit",
-			repository,
-			repositoryName: "review-repository",
-		},
+	const pipeline = new CodePipeline(stack, "Pipeline", {
 		onPullRequest: true,
-		autoReview: { modelId: "eu.anthropic.claude-sonnet-4-6" },
-		...(options?.omitStages === true
-			? {}
-			: {
-					stages: [{ name: "Build", actions: [{ type: "manualApproval" }] }],
-				}),
+		autoReviewer: { modelId: "eu.anthropic.claude-sonnet-4-6" },
 		...(phase === undefined
 			? {}
 			: { reviewCoordinationDeploymentPhase: phase }),
+	}).source({
+		origin: "codecommit",
+		repository,
+		repositoryName: "review-repository",
 	});
+	if (options?.omitStages !== true) {
+		pipeline.stage({
+			name: "Build",
+			actions: [{ type: "approval", name: "Approve" }],
+		});
+	}
 	return Template.fromStack(stack);
 }
 
@@ -139,7 +139,7 @@ function expectPreparationPhase(
 ): void {
 	const summary = coordinationResourceSummary(template);
 	expect(summary.indexes).toEqual(expectedIndexes);
-	expect(summary.variables).toEqual([]);
+	expect(summary.variables).toEqual(PIPELINE_VARIABLES);
 	expect(summary.hasAiReview).toBeFalse();
 	expect(summary.hasBridge).toBeFalse();
 	expect(summary.hasReconciler).toBeFalse();
@@ -211,90 +211,36 @@ describe("CodePipeline review coordination deployment phases", () => {
 
 	test("rejects an invalid phase through the CodePipeline API", () => {
 		const stack = new Stack(createTestApp(), "InvalidEnumPhaseStack");
-		const repository = new Repository(stack, "Repository", {
-			repositoryName: "review-repository",
-		});
 		expect(
 			() =>
 				new CodePipeline(stack, "Pipeline", {
-					source: {
-						type: "codecommit",
-						repository,
-						repositoryName: "review-repository",
-					},
 					onPullRequest: true,
-					autoReview: { modelId: "eu.anthropic.claude-sonnet-4-6" },
+					autoReviewer: { modelId: "eu.anthropic.claude-sonnet-4-6" },
 					reviewCoordinationDeploymentPhase:
 						"preparing" as ReviewCoordinationDeploymentPhase,
 				}),
 		).toThrow();
 	});
 
-	describe("default stages with PR-gated auto-review", () => {
-		function defaultStageNames(
-			phase?: ReviewCoordinationDeploymentPhase,
-		): readonly string[] {
-			const template = createTemplate(phase, { omitStages: true });
-			return pipelineProperties(template).Stages.flatMap((stage) =>
-				stage.Actions.map(({ Name }) => Name),
-			);
-		}
-
-		test("active phase injects AIReview into default Approve stage", () => {
-			const names = defaultStageNames("active");
-			expect(names).toContain("AIReview");
-		});
-
-		test("prepareGsi1 omits AIReview from default stages", () => {
-			expect(defaultStageNames("prepareGsi1")).not.toContain("AIReview");
-		});
-
-		test("prepareGsi2 omits AIReview from default stages", () => {
-			expect(defaultStageNames("prepareGsi2")).not.toContain("AIReview");
-		});
-
-		test("default phase (active) injects AIReview into default stages", () => {
-			expect(defaultStageNames()).toContain("AIReview");
-		});
-
-		test("default stages with active phase creates bridge and reconciler", () => {
-			const template = createTemplate("active", { omitStages: true });
-			const summary = coordinationResourceSummary(template);
-			expect(summary.hasBridge).toBeTrue();
-			expect(summary.hasReconciler).toBeTrue();
-			expect(summary.variables).toEqual(PIPELINE_VARIABLES);
-		});
-
-		test("default stages with prepareGsi1 skips bridge and reconciler", () => {
-			const template = createTemplate("prepareGsi1", { omitStages: true });
-			const summary = coordinationResourceSummary(template);
-			expect(summary.hasBridge).toBeFalse();
-			expect(summary.hasReconciler).toBeFalse();
-			expect(summary.variables).toEqual([]);
-		});
+	test("requires an explicit fluent user stage at synthesis", () => {
+		expect(() => createTemplate("active", { omitStages: true })).toThrow(
+			/at least one user stage/i,
+		);
 	});
 
 	test.each([
 		{
 			onPullRequest: false,
-			autoReview: { modelId: "eu.anthropic.claude-sonnet-4-6" },
+			autoReviewer: { modelId: "eu.anthropic.claude-sonnet-4-6" },
 		},
-		{ onPullRequest: true, autoReview: undefined },
+		{ onPullRequest: true, autoReviewer: undefined },
 	])("rejects phase unless PR-gated auto-review is configured", (configuration) => {
 		const stack = new Stack(createTestApp(), "InvalidPhaseStack");
-		const repository = new Repository(stack, "Repository", {
-			repositoryName: "review-repository",
-		});
 		expect(
 			() =>
 				new CodePipeline(stack, "Pipeline", {
-					source: {
-						type: "codecommit",
-						repository,
-						repositoryName: "review-repository",
-					},
 					onPullRequest: configuration.onPullRequest,
-					autoReview: configuration.autoReview,
+					autoReviewer: configuration.autoReviewer,
 					reviewCoordinationDeploymentPhase: "prepareGsi1",
 				}),
 		).toThrow(/requires PR-gated auto-review/);

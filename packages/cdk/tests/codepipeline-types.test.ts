@@ -7,21 +7,25 @@ import type { IRole } from "aws-cdk-lib/aws-iam";
 import type { IKey } from "aws-cdk-lib/aws-kms";
 import type { BucketAccessControl, IBucket } from "aws-cdk-lib/aws-s3";
 import type { ITopic } from "aws-cdk-lib/aws-sns";
-import type { CodeBuildProject } from "../src/codebuild-project";
-import type { DurableLambdaFunction } from "../src/durable-lambda-function";
-import type { LambdaFunction } from "../src/lambda-function";
 import type {
 	ApprovalActionDefinition,
 	CloudFormationDeployActionDefinition,
 	CodeBuildActionDefinition,
 	CodeBuildActionType,
+	CodeCommitPipelineSource,
+	CodePipeline,
+	CodePipelineProps,
 	CustomActionDefinition,
 	LambdaActionDefinition,
 	PipelineActionBase,
 	PipelineActionDefinition,
+	PipelineDefinitionErrorCode,
+	PipelineStageDefinition,
 	S3DeployActionDefinition,
-} from "../src/pipeline/actions";
-import type { CodeCommitPipelineSource } from "../src/pipeline/source";
+} from "../index";
+import type { CodeBuildProject } from "../src/codebuild-project";
+import type { DurableLambdaFunction } from "../src/durable-lambda-function";
+import type { LambdaFunction } from "../src/lambda-function";
 
 function verifyCodeCommitPipelineSourceTypes(repository: IRepository): void {
 	const createSource: CodeCommitPipelineSource = {
@@ -276,5 +280,62 @@ function verifyPipelineActionTypes(
 	];
 }
 
+function verifyFluentCodePipelineTypes(
+	pipeline: CodePipeline,
+	source: CodeCommitPipelineSource,
+	action: PipelineActionDefinition,
+): void {
+	const errorCode: PipelineDefinitionErrorCode = "SOURCE_REQUIRED";
+	const props: CodePipelineProps = {
+		onPullRequest: true,
+		variables: [],
+		pipelineNaming: { mode: "pawl" },
+	};
+	const stage: PipelineStageDefinition = { actions: [action] };
+	const samePipeline: CodePipeline = pipeline
+		.source(source)
+		.stage(stage)
+		.stage([
+			{ name: "First", actions: [action] },
+			{ name: "Second", actions: [action] },
+		]);
+
+	// @ts-expect-error fluent stage batches must not be empty
+	pipeline.stage([]);
+	// @ts-expect-error fluent stages must contain at least one action
+	pipeline.stage({ name: "Empty", actions: [] });
+	// @ts-expect-error source is configured through source()
+	const oldSource: CodePipelineProps = { source };
+	// @ts-expect-error stages are configured through stage()
+	const oldStages: CodePipelineProps = { stages: [stage] };
+	// @ts-expect-error BasicConstruct context owns team
+	const oldTeam: CodePipelineProps = { team: "platform" };
+	// @ts-expect-error BasicConstruct context owns stage
+	const oldStage: CodePipelineProps = { stage: "production" };
+	const oldAutoReview: CodePipelineProps = {
+		// @ts-expect-error autoReview was renamed to autoReviewer
+		autoReview: { modelId: "eu.anthropic.claude-sonnet-4-6" },
+	};
+	// @ts-expect-error CodePipeline always uses V2
+	const oldPipelineType: CodePipelineProps = { pipelineType: "V1" };
+	// @ts-expect-error raw Pipeline triggers are not part of the fluent contract
+	const oldTriggers: CodePipelineProps = { triggers: [] };
+
+	void [
+		errorCode,
+		props,
+		stage,
+		samePipeline,
+		oldSource,
+		oldStages,
+		oldTeam,
+		oldStage,
+		oldAutoReview,
+		oldPipelineType,
+		oldTriggers,
+	];
+}
+
 void verifyCodeCommitPipelineSourceTypes;
 void verifyPipelineActionTypes;
+void verifyFluentCodePipelineTypes;

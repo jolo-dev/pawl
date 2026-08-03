@@ -2388,13 +2388,36 @@ describe("DynamoDbStateStore", () => {
 			}),
 		).toEqual({ requeued: true, leaseVersion: 9 });
 
-		expect(commands).toHaveLength(1);
-		const transaction = commands[0] as {
-			input?: { TransactItems?: readonly Record<string, unknown>[] };
-		};
-		expect(transaction.constructor.name).toBe("TransactWriteCommand");
-		expect(transaction.input?.TransactItems).toHaveLength(3);
-		const serialized = JSON.stringify(transaction.input);
+		await store.failAndRequeueClaim({
+			request,
+			generation: 3,
+			leaseVersion: 8,
+			events: [...events].reverse(),
+			failedAt: "2026-07-18T12:00:01.000Z",
+			failure: {
+				type: "operational-failure",
+				lifecycleState: "FAILED",
+				operation: "different-secret-operation",
+				reason: "permanent-error",
+				attempts: 1,
+				lastError: { name: "DifferentSecret", message: "different secret" },
+			},
+		});
+
+		expect(commands).toHaveLength(2);
+		const [transaction, retry] = commands as Array<{
+			input?: {
+				ClientRequestToken?: string;
+				TransactItems?: readonly Record<string, unknown>[];
+			};
+		}>;
+		expect(transaction?.constructor.name).toBe("TransactWriteCommand");
+		expect(transaction?.input?.TransactItems).toHaveLength(3);
+		expect(transaction?.input?.ClientRequestToken).toHaveLength(36);
+		expect(retry?.input?.ClientRequestToken).toBe(
+			transaction?.input?.ClientRequestToken,
+		);
+		const serialized = JSON.stringify(transaction?.input);
 		expect(serialized).toContain(
 			"generation = :generation AND leaseVersion = :leaseVersion AND #state = :running",
 		);
@@ -2406,6 +2429,61 @@ describe("DynamoDbStateStore", () => {
 		expect(serialized).toContain("lastPipelineRoutingFailure");
 		expect(serialized).toContain('"operation":"pipeline-route"');
 		expect(serialized).not.toContain("secret");
+	});
+
+	it("recognizes a committed requeue after its transaction response is lost", async () => {
+		const event = revisionEvent("requeue-response-lost");
+		const transport: DynamoDbDocumentTransport = {
+			send: async (command) => {
+				if (command.constructor.name === "TransactWriteCommand") {
+					throw new Error("response lost after commit");
+				}
+				const key = (command as { input?: { Key?: { sk?: string } } }).input
+					?.Key;
+				if (key?.sk === "META") {
+					return {
+						Item: {
+							generation: 3,
+							leaseVersion: 9,
+							lifecycleState: "STARTING",
+							leaseExpiresAt: now,
+							pendingEventCount: 1,
+						},
+					};
+				}
+				return {
+					Item: {
+						eventId: event.id,
+						occurredAt: event.occurredAt,
+					},
+				};
+			},
+		};
+		const store = new DynamoDbStateStore({
+			transport,
+			tableName: "review-state",
+		});
+
+		expect(
+			await store.failAndRequeueClaim({
+				request,
+				generation: 3,
+				leaseVersion: 8,
+				events: [event],
+				failedAt: now,
+				failure: {
+					type: "operational-failure",
+					lifecycleState: "FAILED",
+					operation: "pipeline-route",
+					reason: "retry-exhausted",
+					attempts: 1,
+					lastError: {
+						name: "PipelineRoutingError",
+						message: "Pipeline routing failed",
+					},
+				},
+			}),
+		).toEqual({ requeued: true, leaseVersion: 9 });
 	});
 
 	it("uses one ownership-conditioned transaction to recover an expired orphan claim", async () => {
@@ -2478,6 +2556,76 @@ describe("DynamoDbStateStore", () => {
 		expect(transaction.input?.TransactItems).toHaveLength(2);
 	});
 
+	it("searches past 500 newer unclaimed events to recover an older orphan claim", async () => {
+		const commands: object[] = [];
+		const claimed = revisionEvent("hidden-orphan");
+		let queryPage = 0;
+		const transport: DynamoDbDocumentTransport = {
+			send: async (command) => {
+				commands.push(command);
+				if (command.constructor.name === "GetCommand") {
+					return {
+						Item: {
+							generation: 3,
+							leaseVersion: 8,
+							lifecycleState: "RUNNING",
+							leaseExpiresAt: "2026-07-18T11:59:00.000Z",
+							pendingEventCount: 401,
+						},
+					};
+				}
+				if (command.constructor.name === "QueryCommand") {
+					queryPage += 1;
+					if (queryPage <= 5) {
+						return {
+							Items: [],
+							ScannedCount: 100,
+							LastEvaluatedKey: {
+								pk: "request",
+								sk: `EVENT#${queryPage * 100}`,
+							},
+						};
+					}
+					return {
+						Items: [
+							{
+								pk: "request",
+								sk: "EVENT#hidden-orphan",
+								eventType: claimed.type,
+								eventId: claimed.id,
+								occurredAt: claimed.occurredAt,
+								watermark: `${claimed.occurredAt}#${claimed.id}`,
+								revision: claimed.revision,
+								claimedGeneration: 3,
+							},
+						],
+					};
+				}
+				return {};
+			},
+		};
+		const store = new DynamoDbStateStore({
+			transport,
+			tableName: "review-state",
+			clock: () => new Date(now),
+		});
+
+		expect(
+			await store.recoverOrphanedPipelineClaim({
+				request,
+				generation: 3,
+				leaseVersion: 8,
+				recoveredAt: now,
+			}),
+		).toEqual({ recovered: true, generation: 3, leaseVersion: 9 });
+		expect(queryPage).toBe(6);
+		expect(
+			commands.filter(
+				(command) => command.constructor.name === "TransactWriteCommand",
+			),
+		).toHaveLength(1);
+	});
+
 	it("conditionally gets, creates, and completes an immutable dispatch intent", async () => {
 		const commands: object[] = [];
 		const transport: DynamoDbDocumentTransport = {
@@ -2494,18 +2642,28 @@ describe("DynamoDbStateStore", () => {
 		const intent = {
 			request,
 			generation: 3,
+			dispatchIdentity: "dispatch-identity",
+			status: "PENDING" as const,
 			sourceRevision: "abcdef1",
 			destinationRevision: "1234567",
 			observedAt: now,
 			eventId: "intent-event",
 		};
+		const ownership = { kind: "pipeline-only" as const, leaseVersion: 8 };
 
-		expect(await store.getOrCreatePipelineDispatchIntent(intent, 8)).toEqual(
-			intent,
-		);
-		expect(await store.completePipelineDispatchIntent(intent, 8)).toEqual({
-			completed: true,
-		});
+		expect(
+			await store.getOrCreatePipelineDispatchIntent(intent, ownership),
+		).toEqual(intent);
+		expect(
+			await store.completePipelineDispatchIntent(
+				{
+					...intent,
+					executionId: "execution-1",
+					mappingIdentity: "execution-1",
+				},
+				ownership,
+			),
+		).toEqual({ completed: true });
 		const transactions = commands.filter(
 			(command) => command.constructor.name === "TransactWriteCommand",
 		) as { input?: { TransactItems?: readonly Record<string, unknown>[] } }[];
@@ -2515,10 +2673,59 @@ describe("DynamoDbStateStore", () => {
 		expect(create).toContain("leaseVersion = :leaseVersion");
 		expect(create).toContain("#state = :running");
 		expect(create).toContain("attribute_not_exists(pk)");
-		const complete = JSON.stringify(transactions[1]?.input);
+		const completeInput = transactions[1]?.input as
+			| { ClientRequestToken?: string }
+			| undefined;
+		const complete = JSON.stringify(completeInput);
 		expect(complete).toContain("sourceRevision = :sourceRevision");
 		expect(complete).toContain("destinationRevision = :destinationRevision");
 		expect(complete).toContain("eventId = :eventId");
+		expect(complete).toContain("SET #dispatchStatus = :completed");
+		expect(complete).toContain("executionId = :executionId");
+		expect(complete).toContain("mappingIdentity = :mappingIdentity");
+		expect(complete).not.toContain('"Delete"');
+		expect(completeInput?.ClientRequestToken).toHaveLength(36);
+	});
+
+	it("recognizes a completed intent after its transaction response is lost", async () => {
+		let transactionAttempted = false;
+		const intent = {
+			request,
+			generation: 3,
+			dispatchIdentity: "response-lost-intent",
+			status: "PENDING" as const,
+			sourceRevision: "abcdef1",
+			destinationRevision: "1234567",
+			observedAt: now,
+			eventId: "intent-event",
+		};
+		const transport: DynamoDbDocumentTransport = {
+			send: async (command) => {
+				if (command.constructor.name === "TransactWriteCommand") {
+					transactionAttempted = true;
+					throw new Error("response lost");
+				}
+				return transactionAttempted
+					? {
+							Item: {
+								...intent,
+								status: "COMPLETED",
+							},
+						}
+					: {};
+			},
+		};
+		const store = new DynamoDbStateStore({
+			transport,
+			tableName: "review-state",
+		});
+
+		expect(
+			await store.completePipelineDispatchIntent(intent, {
+				kind: "pipeline-only",
+				leaseVersion: 8,
+			}),
+		).toEqual({ completed: true });
 	});
 
 	it("removes non-terminal pipeline routing failure metadata on completion", async () => {

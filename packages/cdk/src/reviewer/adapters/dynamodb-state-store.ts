@@ -28,6 +28,7 @@ import type {
 	PipelineClaimRecoveryInput,
 	PipelineClaimRecoveryResult,
 	PipelineDispatchIntent,
+	PipelineDispatchOwnership,
 	ReviewLifecycleState,
 	ReviewStateStore,
 	WriteReservation,
@@ -198,17 +199,61 @@ function eventSortKey(event: ReviewEvent): string {
 	return `EVENT#${canonicalTimestamp(event.occurredAt)}#${encodeStateKeyComponent(event.id)}`;
 }
 
+function transactionClientRequestToken(
+	operation: string,
+	identity: Readonly<Record<string, unknown>>,
+): string {
+	return createHash("sha256")
+		.update(JSON.stringify({ operation, ...identity }), "utf8")
+		.digest("base64url")
+		.slice(0, 36);
+}
+
+function requeueClientRequestToken(input: FailAndRequeueClaimInput): string {
+	return transactionClientRequestToken("pipeline-claim-requeue", {
+		request: input.request,
+		generation: input.generation,
+		leaseVersion: input.leaseVersion,
+		events: input.events
+			.map((event) => ({
+				id: event.id,
+				occurredAt: canonicalTimestamp(event.occurredAt),
+			}))
+			.sort((left, right) =>
+				left.occurredAt === right.occurredAt
+					? left.id.localeCompare(right.id)
+					: left.occurredAt.localeCompare(right.occurredAt),
+			),
+	});
+}
+
+function dispatchCompletionClientRequestToken(
+	intent: PipelineDispatchIntent,
+): string {
+	return transactionClientRequestToken("pipeline-dispatch-complete", {
+		request: intent.request,
+		generation: intent.generation,
+		dispatchIdentity: intent.dispatchIdentity,
+	});
+}
+
 function decodePipelineDispatchIntent(
 	item: Item,
 	request: RequestKey,
 ): PipelineDispatchIntent {
 	const generation = numberValue(item, "generation");
+	const dispatchIdentity = stringValue(item, "dispatchIdentity");
+	const status = stringValue(item, "status");
 	const sourceRevision = stringValue(item, "sourceRevision");
 	const destinationRevision = stringValue(item, "destinationRevision");
 	const observedAt = stringValue(item, "observedAt");
 	const eventId = stringValue(item, "eventId");
+	const executionId = stringValue(item, "executionId");
+	const mappingIdentity = stringValue(item, "mappingIdentity");
 	if (
 		generation === undefined ||
+		dispatchIdentity === undefined ||
+		(status !== "PENDING" && status !== "COMPLETED") ||
 		sourceRevision === undefined ||
 		destinationRevision === undefined ||
 		observedAt === undefined ||
@@ -219,11 +264,31 @@ function decodePipelineDispatchIntent(
 	return {
 		request,
 		generation,
+		dispatchIdentity,
+		status,
 		sourceRevision,
 		destinationRevision,
 		observedAt,
 		eventId,
+		...(executionId === undefined ? {} : { executionId }),
+		...(mappingIdentity === undefined ? {} : { mappingIdentity }),
 	};
+}
+
+function samePipelineDispatchIntent(
+	left: PipelineDispatchIntent,
+	right: PipelineDispatchIntent,
+): boolean {
+	return (
+		left.generation === right.generation &&
+		left.dispatchIdentity === right.dispatchIdentity &&
+		left.sourceRevision === right.sourceRevision &&
+		left.destinationRevision === right.destinationRevision &&
+		left.observedAt === canonicalTimestamp(right.observedAt) &&
+		left.eventId === right.eventId &&
+		left.executionId === right.executionId &&
+		left.mappingIdentity === right.mappingIdentity
+	);
 }
 
 function decodeEvent(item: Item, request: RequestKey): ReviewEvent {
@@ -600,10 +665,16 @@ export class DynamoDbStateStore implements ReviewStateStore {
 		];
 		try {
 			await this.#send(
-				new TransactWriteCommand({ TransactItems: transactItems }),
+				new TransactWriteCommand({
+					ClientRequestToken: requeueClientRequestToken(input),
+					TransactItems: transactItems,
+				}),
 			);
 			return { requeued: true, leaseVersion: input.leaseVersion + 1 };
 		} catch (error) {
+			if (await this.#observedRequeuedClaim(input, failedAt)) {
+				return { requeued: true, leaseVersion: input.leaseVersion + 1 };
+			}
 			if (isConditionalFailure(error)) {
 				return { requeued: false, reason: "changed" };
 			}
@@ -686,10 +757,11 @@ export class DynamoDbStateStore implements ReviewStateStore {
 	async getPipelineDispatchIntent(
 		request: RequestKey,
 		generation: number,
+		dispatchIdentity: string,
 	): Promise<PipelineDispatchIntent | undefined> {
 		const item = await this.#get(
 			this.#pk(request),
-			this.#pipelineDispatchIntentSk(generation),
+			this.#pipelineDispatchIntentSk(generation, dispatchIdentity),
 		);
 		return item === undefined
 			? undefined
@@ -698,18 +770,21 @@ export class DynamoDbStateStore implements ReviewStateStore {
 
 	async getOrCreatePipelineDispatchIntent(
 		intent: PipelineDispatchIntent,
-		leaseVersion: number,
+		ownership: PipelineDispatchOwnership,
 	): Promise<PipelineDispatchIntent> {
 		const existing = await this.getPipelineDispatchIntent(
 			intent.request,
 			intent.generation,
+			intent.dispatchIdentity,
 		);
 		if (existing !== undefined) return existing;
 		const pk = this.#pk(intent.request);
-		const canonical = {
+		const canonical: PipelineDispatchIntent = {
 			...intent,
+			status: "PENDING",
 			observedAt: canonicalTimestamp(intent.observedAt),
 		};
+		const pipelineOnly = ownership.kind === "pipeline-only";
 		try {
 			await this.#send(
 				new TransactWriteCommand({
@@ -718,13 +793,20 @@ export class DynamoDbStateStore implements ReviewStateStore {
 							ConditionCheck: {
 								TableName: this.#tableName,
 								Key: { pk, sk: "META" },
-								ConditionExpression:
-									"generation = :generation AND leaseVersion = :leaseVersion AND #state = :running",
-								ExpressionAttributeNames: { "#state": "lifecycleState" },
+								ConditionExpression: pipelineOnly
+									? "generation = :generation AND leaseVersion = :leaseVersion AND #state = :running"
+									: "generation = :generation",
+								...(pipelineOnly
+									? { ExpressionAttributeNames: { "#state": "lifecycleState" } }
+									: {}),
 								ExpressionAttributeValues: {
 									":generation": intent.generation,
-									":leaseVersion": leaseVersion,
-									":running": "RUNNING",
+									...(pipelineOnly
+										? {
+												":leaseVersion": ownership.leaseVersion,
+												":running": "RUNNING",
+											}
+										: {}),
 								},
 							},
 						},
@@ -733,12 +815,23 @@ export class DynamoDbStateStore implements ReviewStateStore {
 								TableName: this.#tableName,
 								Item: {
 									pk,
-									sk: this.#pipelineDispatchIntentSk(intent.generation),
+									sk: this.#pipelineDispatchIntentSk(
+										intent.generation,
+										intent.dispatchIdentity,
+									),
 									generation: canonical.generation,
+									dispatchIdentity: canonical.dispatchIdentity,
+									status: canonical.status,
 									sourceRevision: canonical.sourceRevision,
 									destinationRevision: canonical.destinationRevision,
 									observedAt: canonical.observedAt,
 									eventId: canonical.eventId,
+									...(canonical.executionId === undefined
+										? {}
+										: { executionId: canonical.executionId }),
+									...(canonical.mappingIdentity === undefined
+										? {}
+										: { mappingIdentity: canonical.mappingIdentity }),
 									provider: intent.request.provider,
 									repository: intent.request.repository,
 									requestId: intent.request.requestId,
@@ -753,54 +846,99 @@ export class DynamoDbStateStore implements ReviewStateStore {
 			);
 			return canonical;
 		} catch (error) {
-			if (!isConditionalFailure(error)) throw error;
 			const winner = await this.getPipelineDispatchIntent(
 				intent.request,
 				intent.generation,
-			);
+				intent.dispatchIdentity,
+			).catch(() => undefined);
 			if (winner !== undefined) return winner;
-			throw new StaleStateError();
+			if (isConditionalFailure(error)) throw new StaleStateError();
+			throw error;
 		}
 	}
 
 	async completePipelineDispatchIntent(
 		intent: PipelineDispatchIntent,
-		leaseVersion: number,
+		ownership: PipelineDispatchOwnership,
 	): Promise<CompletePipelineDispatchIntentResult> {
 		const pk = this.#pk(intent.request);
+		const existing = await this.getPipelineDispatchIntent(
+			intent.request,
+			intent.generation,
+			intent.dispatchIdentity,
+		);
+		if (existing?.status === "COMPLETED") {
+			return samePipelineDispatchIntent(existing, intent)
+				? { completed: true }
+				: { completed: false, reason: "changed" };
+		}
+		const pipelineOnly = ownership.kind === "pipeline-only";
+		const completionAssignments = [
+			"#dispatchStatus = :completed",
+			"expiresAt = :ttl",
+			...(intent.executionId === undefined
+				? []
+				: ["executionId = :executionId"]),
+			...(intent.mappingIdentity === undefined
+				? []
+				: ["mappingIdentity = :mappingIdentity"]),
+		];
 		try {
 			await this.#send(
 				new TransactWriteCommand({
+					ClientRequestToken: dispatchCompletionClientRequestToken(intent),
 					TransactItems: [
 						{
 							ConditionCheck: {
 								TableName: this.#tableName,
 								Key: { pk, sk: "META" },
-								ConditionExpression:
-									"generation = :generation AND leaseVersion = :leaseVersion AND #state = :running",
-								ExpressionAttributeNames: { "#state": "lifecycleState" },
+								ConditionExpression: pipelineOnly
+									? "generation = :generation AND leaseVersion = :leaseVersion AND #state = :running"
+									: "generation = :generation",
+								...(pipelineOnly
+									? { ExpressionAttributeNames: { "#state": "lifecycleState" } }
+									: {}),
 								ExpressionAttributeValues: {
 									":generation": intent.generation,
-									":leaseVersion": leaseVersion,
-									":running": "RUNNING",
+									...(pipelineOnly
+										? {
+												":leaseVersion": ownership.leaseVersion,
+												":running": "RUNNING",
+											}
+										: {}),
 								},
 							},
 						},
 						{
-							Delete: {
+							Update: {
 								TableName: this.#tableName,
 								Key: {
 									pk,
-									sk: this.#pipelineDispatchIntentSk(intent.generation),
+									sk: this.#pipelineDispatchIntentSk(
+										intent.generation,
+										intent.dispatchIdentity,
+									),
 								},
+								UpdateExpression: `SET ${completionAssignments.join(", ")}`,
 								ConditionExpression:
-									"generation = :generation AND sourceRevision = :sourceRevision AND destinationRevision = :destinationRevision AND observedAt = :observedAt AND eventId = :eventId",
+									"generation = :generation AND dispatchIdentity = :dispatchIdentity AND #dispatchStatus = :pending AND sourceRevision = :sourceRevision AND destinationRevision = :destinationRevision AND observedAt = :observedAt AND eventId = :eventId",
+								ExpressionAttributeNames: { "#dispatchStatus": "status" },
 								ExpressionAttributeValues: {
 									":generation": intent.generation,
+									":dispatchIdentity": intent.dispatchIdentity,
+									":pending": "PENDING",
+									":completed": "COMPLETED",
 									":sourceRevision": intent.sourceRevision,
 									":destinationRevision": intent.destinationRevision,
 									":observedAt": canonicalTimestamp(intent.observedAt),
 									":eventId": intent.eventId,
+									":ttl": this.#ttlAt(this.#ttl.eventSeconds),
+									...(intent.executionId === undefined
+										? {}
+										: { ":executionId": intent.executionId }),
+									...(intent.mappingIdentity === undefined
+										? {}
+										: { ":mappingIdentity": intent.mappingIdentity }),
 								},
 							},
 						},
@@ -809,6 +947,17 @@ export class DynamoDbStateStore implements ReviewStateStore {
 			);
 			return { completed: true };
 		} catch (error) {
+			const completed = await this.getPipelineDispatchIntent(
+				intent.request,
+				intent.generation,
+				intent.dispatchIdentity,
+			).catch(() => undefined);
+			if (
+				completed?.status === "COMPLETED" &&
+				samePipelineDispatchIntent(completed, intent)
+			) {
+				return { completed: true };
+			}
 			if (isConditionalFailure(error)) {
 				return { completed: false, reason: "changed" };
 			}
@@ -1442,6 +1591,36 @@ export class DynamoDbStateStore implements ReviewStateStore {
 		);
 	}
 
+	async #observedRequeuedClaim(
+		input: FailAndRequeueClaimInput,
+		failedAt: string,
+	): Promise<boolean> {
+		try {
+			const pk = this.#pk(input.request);
+			const meta = await this.#get(pk, "META");
+			if (
+				meta === undefined ||
+				numberValue(meta, "generation") !== input.generation ||
+				numberValue(meta, "leaseVersion") !== input.leaseVersion + 1 ||
+				lifecycleValue(meta) !== "STARTING" ||
+				(stringValue(meta, "leaseExpiresAt") ?? "") > failedAt ||
+				(numberValue(meta, "pendingEventCount") ?? 0) < input.events.length
+			) {
+				return false;
+			}
+			const events = await Promise.all(
+				input.events.map((event) => this.#get(pk, this.#eventSk(event))),
+			);
+			return events.every(
+				(item) =>
+					item !== undefined &&
+					numberValue(item, "claimedGeneration") === undefined,
+			);
+		} catch {
+			return false;
+		}
+	}
+
 	async #get(pk: string, sk: string): Promise<Item | undefined> {
 		const output = await this.#send<GetOutput>(
 			new GetCommand({
@@ -1456,7 +1635,7 @@ export class DynamoDbStateStore implements ReviewStateStore {
 	async #queryClaimedEvents(pk: string, generation: number): Promise<Item[]> {
 		const items: Item[] = [];
 		let exclusiveStartKey: Readonly<Record<string, unknown>> | undefined;
-		for (let page = 0; page < EVENT_CLAIM_PAGE_BUDGET; page += 1) {
+		do {
 			const output = await this.#send<QueryOutput>(
 				new QueryCommand({
 					TableName: this.#tableName,
@@ -1480,8 +1659,7 @@ export class DynamoDbStateStore implements ReviewStateStore {
 				}
 			}
 			exclusiveStartKey = output.LastEvaluatedKey;
-			if (exclusiveStartKey === undefined) return items;
-		}
+		} while (exclusiveStartKey !== undefined);
 		return items;
 	}
 
@@ -1625,8 +1803,11 @@ export class DynamoDbStateStore implements ReviewStateStore {
 		return `FINDING#${fingerprint}`;
 	}
 
-	#pipelineDispatchIntentSk(generation: number): string {
-		return `PIPELINE_DISPATCH_INTENT#${generation}`;
+	#pipelineDispatchIntentSk(
+		generation: number,
+		dispatchIdentity: string,
+	): string {
+		return `PIPELINE_DISPATCH_INTENT#${generation}#${encodeStateKeyComponent(dispatchIdentity)}`;
 	}
 
 	#eventItem(pk: string, event: ReviewEvent): Record<string, unknown> {

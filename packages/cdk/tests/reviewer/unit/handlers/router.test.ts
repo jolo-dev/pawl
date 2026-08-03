@@ -348,8 +348,7 @@ describe("router", () => {
 		await router.routeCodeCommit(delivery);
 		await router.routeCodeCommit(delivery);
 
-		expect(sender.starts).toHaveLength(2);
-		expect(sender.starts[1]?.input).toEqual(sender.starts[0]?.input);
+		expect(sender.starts).toHaveLength(1);
 		expectPipelineStart(sender.starts[0], 1);
 		expect(sender.executionsByToken).toHaveLength(1);
 	});
@@ -372,7 +371,7 @@ describe("router", () => {
 		);
 
 		await expect(router.routeCodeCommit(delivery)).rejects.toThrow(
-			"simulated dispatch failure",
+			"Pipeline routing failed",
 		);
 		await expect(router.routeCodeCommit(delivery)).resolves.toMatchObject({
 			appended: false,

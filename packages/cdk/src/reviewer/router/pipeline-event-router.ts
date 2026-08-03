@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { ReviewEvent } from "../domain/review-event";
 import type { ReviewRequest } from "../domain/review-request";
 import type { PrPipelineDispatcher } from "../pipeline-review-common";
@@ -93,6 +94,22 @@ function compareEvents(left: ReviewEvent, right: ReviewEvent): number {
 	return instant === 0 ? left.id.localeCompare(right.id) : instant;
 }
 
+function dispatchIdentity(event: {
+	readonly id: string;
+	readonly type: string;
+	readonly revision?: string;
+}): string {
+	return createHash("sha256")
+		.update(
+			JSON.stringify({
+				eventId: event.id,
+				sourceSignal: event.revision ?? event.type,
+			}),
+			"utf8",
+		)
+		.digest("base64url");
+}
+
 function isPendingWork(error: unknown): boolean {
 	return (
 		typeof error === "object" &&
@@ -136,22 +153,62 @@ export class PipelineEventRouter {
 	async dispatchReviewedEvent(
 		input: DispatchReviewedEventInput,
 	): Promise<void> {
+		try {
+			await this.#dispatchReviewedEvent(input);
+		} catch {
+			throw new PipelineRoutingError();
+		}
+	}
+
+	async #dispatchReviewedEvent(
+		input: DispatchReviewedEventInput,
+	): Promise<void> {
 		const startsPipeline =
 			input.event.type === "request-opened" ||
 			input.event.type === "revision-updated";
-		if (
-			startsPipeline &&
-			input.snapshot?.status === "open" &&
-			(input.event.type !== "revision-updated" ||
-				input.event.revision === input.snapshot.sourceRevision)
-		) {
-			await this.#dispatcher.startReviewPipeline({
-				snapshot: input.snapshot,
-				generation: input.generation,
-				observedAt: input.event.occurredAt,
-				eventId: input.event.id,
-				refetchSnapshot: input.refetchSnapshot,
-			});
+		if (startsPipeline) {
+			const identity = dispatchIdentity(input.event);
+			const existing = await this.#store.getPipelineDispatchIntent(
+				input.event.request,
+				input.generation,
+				identity,
+			);
+			if (existing !== undefined) {
+				if (existing.status === "COMPLETED") return;
+				const receipt = await this.#dispatchIntent(existing);
+				const completed = await this.#store.completePipelineDispatchIntent(
+					receipt === undefined ? existing : { ...existing, ...receipt },
+					{ kind: "reviewed" },
+				);
+				if (!completed.completed) throw new PipelineRoutingError();
+				return;
+			}
+			if (
+				input.snapshot?.status === "open" &&
+				(input.event.type !== "revision-updated" ||
+					input.event.revision === input.snapshot.sourceRevision)
+			) {
+				const intent = await this.#store.getOrCreatePipelineDispatchIntent(
+					{
+						request: input.event.request,
+						generation: input.generation,
+						dispatchIdentity: identity,
+						status: "PENDING",
+						sourceRevision: input.snapshot.sourceRevision,
+						destinationRevision: input.snapshot.destinationRevision,
+						observedAt: input.event.occurredAt,
+						eventId: input.event.id,
+					},
+					{ kind: "reviewed" },
+				);
+				if (intent.status === "COMPLETED") return;
+				const receipt = await this.#dispatchIntent(intent, input.snapshot);
+				const completed = await this.#store.completePipelineDispatchIntent(
+					receipt === undefined ? intent : { ...intent, ...receipt },
+					{ kind: "reviewed" },
+				);
+				if (!completed.completed) throw new PipelineRoutingError();
+			}
 			return;
 		}
 		if (
@@ -337,7 +394,7 @@ export class PipelineEventRouter {
 					claimed.events,
 					stage + 1,
 				);
-				if (!requeue.requeued) return started;
+				if (!requeue.requeued) throw new OwnedPipelineRoutingError();
 				throw new OwnedPipelineRoutingError();
 			}
 			started = started || outcome.started;
@@ -359,7 +416,7 @@ export class PipelineEventRouter {
 						claimed.events,
 						stage + 1,
 					);
-					if (!requeue.requeued) return started;
+					if (!requeue.requeued) throw new OwnedPipelineRoutingError();
 					throw new OwnedPipelineRoutingError();
 				}
 			}
@@ -429,7 +486,7 @@ export class PipelineEventRouter {
 				overflow.events,
 				MAX_DRAIN_STAGES,
 			);
-			if (!requeue.requeued) return started;
+			if (!requeue.requeued) throw new OwnedPipelineRoutingError();
 		}
 		throw new OwnedPipelineRoutingError();
 	}
@@ -467,23 +524,33 @@ export class PipelineEventRouter {
 		readonly started: boolean;
 		readonly terminal?: "merged" | "closed";
 	}> {
-		const existingIntent = await this.#store.getPipelineDispatchIntent(
-			initialRequest(events),
-			generation,
-		);
-		if (existingIntent !== undefined) {
-			await this.#dispatchIntent(existingIntent);
-			const completed = await this.#store.completePipelineDispatchIntent(
-				existingIntent,
-				leaseVersion,
+		const ordered = [...events].sort(compareEvents);
+		for (const event of ordered) {
+			if (
+				event.type === "human-comment" ||
+				event.type === "request-merged" ||
+				event.type === "request-closed"
+			) {
+				continue;
+			}
+			const existingIntent = await this.#store.getPipelineDispatchIntent(
+				event.request,
+				generation,
+				dispatchIdentity(event),
 			);
-			if (!completed.completed) throw new PipelineRoutingError();
-			const remaining = events.filter(
-				(event) =>
-					Date.parse(event.occurredAt) >
-						Date.parse(existingIntent.observedAt) ||
-					(event.occurredAt === existingIntent.observedAt &&
-						event.id !== existingIntent.eventId),
+			if (existingIntent === undefined) continue;
+			if (existingIntent.status === "PENDING") {
+				const receipt = await this.#dispatchIntent(existingIntent);
+				const completed = await this.#store.completePipelineDispatchIntent(
+					receipt === undefined
+						? existingIntent
+						: { ...existingIntent, ...receipt },
+					{ kind: "pipeline-only", leaseVersion },
+				);
+				if (!completed.completed) throw new PipelineRoutingError();
+			}
+			const remaining = ordered.filter(
+				(candidate) => compareEvents(candidate, event) > 0,
 			);
 			if (remaining.length === 0) return { started: true };
 			const next = await this.#dispatchFreshClaimed(
@@ -493,7 +560,7 @@ export class PipelineEventRouter {
 			);
 			return { ...next, started: true };
 		}
-		return this.#dispatchFreshClaimed(events, generation, leaseVersion);
+		return this.#dispatchFreshClaimed(ordered, generation, leaseVersion);
 	}
 
 	async #dispatchFreshClaimed(
@@ -531,17 +598,23 @@ export class PipelineEventRouter {
 			{
 				request: authoritative.key,
 				generation,
+				dispatchIdentity: dispatchIdentity(latest),
+				status: "PENDING",
 				sourceRevision: authoritative.sourceRevision,
 				destinationRevision: authoritative.destinationRevision,
 				observedAt: latest.occurredAt,
 				eventId: latest.id,
 			},
-			leaseVersion,
+			{ kind: "pipeline-only", leaseVersion },
 		);
-		await this.#dispatchIntent(intent, authoritative);
+		if (intent.status === "COMPLETED") return { started: true };
+		const receipt = await this.#dispatchIntent(intent, authoritative);
 		const completed = await this.#store.completePipelineDispatchIntent(
-			intent,
-			leaseVersion,
+			receipt === undefined ? intent : { ...intent, ...receipt },
+			{
+				kind: "pipeline-only",
+				leaseVersion,
+			},
 		);
 		if (!completed.completed) throw new PipelineRoutingError();
 		return { started: true };
@@ -550,7 +623,7 @@ export class PipelineEventRouter {
 	async #dispatchIntent(
 		intent: PipelineDispatchIntent,
 		snapshot?: ReviewRequest,
-	): Promise<void> {
+	) {
 		const pinnedSnapshot: ReviewRequest = snapshot ?? {
 			key: intent.request,
 			title: "Pipeline dispatch intent",
@@ -560,7 +633,7 @@ export class PipelineEventRouter {
 			sourceRevision: intent.sourceRevision,
 			destinationRevision: intent.destinationRevision,
 		};
-		await this.#dispatcher.startReviewPipeline({
+		return this.#dispatcher.startReviewPipeline({
 			snapshot: pinnedSnapshot,
 			generation: intent.generation,
 			observedAt: intent.observedAt,
@@ -569,14 +642,4 @@ export class PipelineEventRouter {
 			dispatchIntent: intent,
 		});
 	}
-}
-
-function initialRequest(
-	events: readonly ReviewEvent[],
-): ReviewEvent["request"] {
-	const event = events[0];
-	if (event === undefined) {
-		throw new Error("Expected claimed events while loading dispatch intent");
-	}
-	return event.request;
 }

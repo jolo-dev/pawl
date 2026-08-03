@@ -25,6 +25,7 @@ export interface StartReviewPipelineExecution {
 	readonly destinationRevision: string;
 	readonly request: RequestKey;
 	readonly generation: number;
+	readonly dispatchIdentity?: string;
 }
 
 export interface PipelineExecutionResult {
@@ -70,6 +71,7 @@ export const pipelineClientRequestToken = (
 				generation: input.generation,
 				sourceRevision: input.sourceRevision,
 				destinationRevision: input.destinationRevision,
+				dispatchIdentity: input.dispatchIdentity,
 			}),
 			"utf8",
 		)

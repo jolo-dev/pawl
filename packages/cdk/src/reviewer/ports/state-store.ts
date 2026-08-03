@@ -59,14 +59,24 @@ export type PipelineClaimRecoveryResult =
 			readonly leaseVersion: number;
 	  };
 
+export type PipelineDispatchIntentStatus = "PENDING" | "COMPLETED";
+
 export interface PipelineDispatchIntent {
 	readonly request: RequestKey;
 	readonly generation: number;
+	readonly dispatchIdentity: string;
+	readonly status: PipelineDispatchIntentStatus;
 	readonly sourceRevision: string;
 	readonly destinationRevision: string;
 	readonly observedAt: string;
 	readonly eventId: string;
+	readonly executionId?: string;
+	readonly mappingIdentity?: string;
 }
+
+export type PipelineDispatchOwnership =
+	| { readonly kind: "pipeline-only"; readonly leaseVersion: number }
+	| { readonly kind: "reviewed" };
 
 export type CompletePipelineDispatchIntentResult =
 	| { readonly completed: true }
@@ -293,14 +303,15 @@ export interface ReviewStateStore {
 	getPipelineDispatchIntent(
 		request: RequestKey,
 		generation: number,
+		dispatchIdentity: string,
 	): Promise<PipelineDispatchIntent | undefined>;
 	getOrCreatePipelineDispatchIntent(
 		intent: PipelineDispatchIntent,
-		leaseVersion: number,
+		ownership: PipelineDispatchOwnership,
 	): Promise<PipelineDispatchIntent>;
 	completePipelineDispatchIntent(
 		intent: PipelineDispatchIntent,
-		leaseVersion: number,
+		ownership: PipelineDispatchOwnership,
 	): Promise<CompletePipelineDispatchIntentResult>;
 	recordExecution(
 		request: RequestKey,

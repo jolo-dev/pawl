@@ -290,17 +290,22 @@ test("passes the normalized event timestamp and id to pipeline dispatch", async 
 	});
 
 	expect(starts).toEqual([
-		{
+		expect.objectContaining({
 			snapshot: expect.objectContaining({ sourceRevision: "source-1" }),
 			generation: 1,
 			observedAt: "2026-01-01T00:00:00.000Z",
 			eventId: "revision-event-1",
 			refetchSnapshot: expect.any(Function),
-		},
+			dispatchIntent: expect.objectContaining({
+				status: "PENDING",
+				sourceRevision: "source-1",
+				destinationRevision: "base-123",
+			}),
+		}),
 	]);
 });
 
-test("supplies pipeline arbitration with a retry-wrapped authoritative refetch", async () => {
+test("pins reviewed pipeline arbitration to the immutable dispatch intent", async () => {
 	const store = new InMemoryStateStore();
 	let providerCalls = 0;
 	let refetchedRevision: string | undefined;
@@ -356,8 +361,8 @@ test("supplies pipeline arbitration with a retry-wrapped authoritative refetch",
 		},
 	});
 
-	expect(providerCalls).toBe(3);
-	expect(refetchedRevision).toBe("source-2");
+	expect(providerCalls).toBe(1);
+	expect(refetchedRevision).toBe("source-1");
 });
 
 test("records permanent provider refetch failures accurately", async () => {

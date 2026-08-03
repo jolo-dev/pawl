@@ -226,7 +226,7 @@ it("recovers an expired pipeline-only orphan claim on the same generation", asyn
 	});
 });
 
-it("gets or creates one immutable pipeline dispatch intent and clears it exactly", async () => {
+it("keeps immutable per-dispatch intents as completed tombstones", async () => {
 	const store = new InMemoryStateStore({
 		clock: () => new Date("2026-07-18T12:00:00.000Z"),
 	});
@@ -242,6 +242,8 @@ it("gets or creates one immutable pipeline dispatch intent and clears it exactly
 	const first = {
 		request,
 		generation: 1,
+		dispatchIdentity: "dispatch-one",
+		status: "PENDING",
 		sourceRevision: "abcdef1",
 		destinationRevision: "1234567",
 		observedAt: "2026-07-18T12:00:00.000Z",
@@ -252,22 +254,48 @@ it("gets or creates one immutable pipeline dispatch intent and clears it exactly
 		sourceRevision: "bcdef12",
 		destinationRevision: "2345678",
 	};
+	const second = {
+		...first,
+		dispatchIdentity: "dispatch-two",
+		eventId: "intent-event-two",
+	};
+	const ownership = { kind: "pipeline-only", leaseVersion: 1 } as const;
 
-	expect(await store.getOrCreatePipelineDispatchIntent(first, 1)).toEqual(
-		first,
-	);
-	expect(await store.getOrCreatePipelineDispatchIntent(changed, 1)).toEqual(
-		first,
-	);
-	expect(await store.getPipelineDispatchIntent(request, 1)).toEqual(first);
-	expect(await store.completePipelineDispatchIntent(changed, 1)).toEqual({
-		completed: false,
-		reason: "changed",
-	});
-	expect(await store.completePipelineDispatchIntent(first, 1)).toEqual({
-		completed: true,
-	});
-	expect(await store.getPipelineDispatchIntent(request, 1)).toBeUndefined();
+	expect(
+		await store.getOrCreatePipelineDispatchIntent(first, ownership),
+	).toEqual(first);
+	expect(
+		await store.getOrCreatePipelineDispatchIntent(changed, ownership),
+	).toEqual(first);
+	expect(
+		await store.getOrCreatePipelineDispatchIntent(second, ownership),
+	).toEqual(second);
+	expect(
+		await store.getPipelineDispatchIntent(request, 1, "dispatch-one"),
+	).toEqual(first);
+	expect(
+		await store.completePipelineDispatchIntent(changed, ownership),
+	).toEqual({ completed: false, reason: "changed" });
+	const completedFirst = {
+		...first,
+		executionId: "execution-1",
+		mappingIdentity: "execution-1",
+	};
+	expect(
+		await store.completePipelineDispatchIntent(completedFirst, ownership),
+	).toEqual({ completed: true });
+	expect(
+		await store.completePipelineDispatchIntent(
+			{ ...completedFirst, executionId: "execution-2" },
+			ownership,
+		),
+	).toEqual({ completed: false, reason: "changed" });
+	expect(
+		await store.getPipelineDispatchIntent(request, 1, "dispatch-one"),
+	).toEqual({ ...completedFirst, status: "COMPLETED" });
+	expect(
+		await store.getPipelineDispatchIntent(request, 1, "dispatch-two"),
+	).toEqual(second);
 });
 
 it("canonicalizes lease instants and never moves a heartbeat backward", async () => {

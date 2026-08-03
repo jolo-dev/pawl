@@ -204,6 +204,11 @@ export interface PipelineReconcilerInvoker {
 	invoke(jobId?: string): Promise<void>;
 }
 
+export interface PipelineDispatchReceipt {
+	readonly executionId: string;
+	readonly mappingIdentity: string;
+}
+
 export interface PrPipelineDispatcher {
 	startReviewPipeline(input: {
 		readonly snapshot: ReviewRequest;
@@ -212,7 +217,8 @@ export interface PrPipelineDispatcher {
 		readonly eventId: string;
 		readonly refetchSnapshot: () => Promise<ReviewRequest>;
 		readonly dispatchIntent?: PipelineDispatchIntent;
-	}): Promise<void>;
+		// biome-ignore lint/suspicious/noConfusingVoidType: void preserves compatibility with existing dispatchers.
+	}): Promise<PipelineDispatchReceipt | void>;
 	completeTerminalRequest(input: {
 		readonly request: RequestKey;
 		readonly generation: number;
@@ -263,7 +269,7 @@ export class PipelineReviewDispatcher implements PrPipelineDispatcher {
 		readonly eventId: string;
 		readonly refetchSnapshot: () => Promise<ReviewRequest>;
 		readonly dispatchIntent?: PipelineDispatchIntent;
-	}): Promise<void> {
+	}): Promise<PipelineDispatchReceipt | undefined> {
 		if (input.snapshot.status !== "open") return;
 		const pinned = input.dispatchIntent;
 		let workingSnapshot =
@@ -333,6 +339,9 @@ export class PipelineReviewDispatcher implements PrPipelineDispatcher {
 			destinationRevision: workingSnapshot.destinationRevision,
 			request: workingSnapshot.key,
 			generation: input.generation,
+			...(pinned === undefined
+				? {}
+				: { dispatchIdentity: pinned.dispatchIdentity }),
 		});
 		const mapping: PipelineExecutionMapping = {
 			executionId,
@@ -345,6 +354,7 @@ export class PipelineReviewDispatcher implements PrPipelineDispatcher {
 		};
 		await this.#store.putExecutionMapping(mapping);
 		await this.#reconciler.invoke();
+		return { executionId, mappingIdentity: executionId };
 	}
 
 	async completeTerminalRequest(input: {

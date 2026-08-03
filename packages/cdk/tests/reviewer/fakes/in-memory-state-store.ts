@@ -31,6 +31,7 @@ import type {
 	PipelineClaimRecoveryInput,
 	PipelineClaimRecoveryResult,
 	PipelineDispatchIntent,
+	PipelineDispatchOwnership,
 	ReviewLifecycleState,
 	ReviewStateStore,
 	WriteReservation,
@@ -76,7 +77,7 @@ interface StoredRequest {
 	readonly events: Map<string, StoredEvent>;
 	readonly findings: Map<FindingFingerprint, PersistedFinding>;
 	readonly reservations: Map<FindingFingerprint, Reservation>;
-	readonly pipelineDispatchIntents: Map<number, PipelineDispatchIntent>;
+	readonly pipelineDispatchIntents: Map<string, PipelineDispatchIntent>;
 }
 
 function requestKey(request: RequestKey): string {
@@ -396,54 +397,68 @@ export class InMemoryStateStore implements ReviewStateStore {
 	async getPipelineDispatchIntent(
 		request: RequestKey,
 		generation: number,
+		dispatchIdentity: string,
 	): Promise<PipelineDispatchIntent | undefined> {
 		return this.#requests
 			.get(requestKey(request))
-			?.pipelineDispatchIntents.get(generation);
+			?.pipelineDispatchIntents.get(
+				this.#pipelineDispatchIntentKey(generation, dispatchIdentity),
+			);
 	}
 
 	async getOrCreatePipelineDispatchIntent(
 		intent: PipelineDispatchIntent,
-		leaseVersion: number,
+		ownership: PipelineDispatchOwnership,
 	): Promise<PipelineDispatchIntent> {
 		const state = this.#requireRequest(intent.request);
-		const existing = state.pipelineDispatchIntents.get(intent.generation);
+		const key = this.#pipelineDispatchIntentKey(
+			intent.generation,
+			intent.dispatchIdentity,
+		);
+		const existing = state.pipelineDispatchIntents.get(key);
 		if (existing !== undefined) return existing;
-		if (
-			state.generation !== intent.generation ||
-			state.leaseVersion !== leaseVersion ||
-			state.lifecycleState !== "RUNNING"
-		) {
+		if (!this.#ownsPipelineDispatch(state, intent.generation, ownership)) {
 			throw new StaleStateError();
 		}
 		const canonical = {
 			...intent,
+			status: "PENDING" as const,
 			observedAt: new Date(intent.observedAt).toISOString(),
 		};
-		state.pipelineDispatchIntents.set(intent.generation, canonical);
+		state.pipelineDispatchIntents.set(key, canonical);
 		return canonical;
 	}
 
 	async completePipelineDispatchIntent(
 		intent: PipelineDispatchIntent,
-		leaseVersion: number,
+		ownership: PipelineDispatchOwnership,
 	): Promise<CompletePipelineDispatchIntentResult> {
 		const state = this.#requests.get(requestKey(intent.request));
-		const existing = state?.pipelineDispatchIntents.get(intent.generation);
+		const key = this.#pipelineDispatchIntentKey(
+			intent.generation,
+			intent.dispatchIdentity,
+		);
+		const existing = state?.pipelineDispatchIntents.get(key);
+		if (!this.#samePipelineDispatchIntent(existing, intent)) {
+			return { completed: false, reason: "changed" };
+		}
+		if (existing.status === "COMPLETED") {
+			return existing.executionId === intent.executionId &&
+				existing.mappingIdentity === intent.mappingIdentity
+				? { completed: true }
+				: { completed: false, reason: "changed" };
+		}
 		if (
 			state === undefined ||
-			state.generation !== intent.generation ||
-			state.leaseVersion !== leaseVersion ||
-			state.lifecycleState !== "RUNNING" ||
-			existing === undefined ||
-			existing.sourceRevision !== intent.sourceRevision ||
-			existing.destinationRevision !== intent.destinationRevision ||
-			existing.observedAt !== new Date(intent.observedAt).toISOString() ||
-			existing.eventId !== intent.eventId
+			!this.#ownsPipelineDispatch(state, intent.generation, ownership)
 		) {
 			return { completed: false, reason: "changed" };
 		}
-		state.pipelineDispatchIntents.delete(intent.generation);
+		state.pipelineDispatchIntents.set(key, {
+			...intent,
+			observedAt: existing.observedAt,
+			status: "COMPLETED",
+		});
 		return { completed: true };
 	}
 
@@ -795,6 +810,41 @@ export class InMemoryStateStore implements ReviewStateStore {
 			reservations: new Map(),
 			pipelineDispatchIntents: new Map(),
 		};
+	}
+
+	#pipelineDispatchIntentKey(
+		generation: number,
+		dispatchIdentity: string,
+	): string {
+		return `${generation}:${dispatchIdentity}`;
+	}
+
+	#ownsPipelineDispatch(
+		state: StoredRequest,
+		generation: number,
+		ownership: PipelineDispatchOwnership,
+	): boolean {
+		if (state.generation !== generation) return false;
+		return (
+			ownership.kind === "reviewed" ||
+			(state.leaseVersion === ownership.leaseVersion &&
+				state.lifecycleState === "RUNNING")
+		);
+	}
+
+	#samePipelineDispatchIntent(
+		existing: PipelineDispatchIntent | undefined,
+		intent: PipelineDispatchIntent,
+	): existing is PipelineDispatchIntent {
+		return (
+			existing !== undefined &&
+			existing.generation === intent.generation &&
+			existing.dispatchIdentity === intent.dispatchIdentity &&
+			existing.sourceRevision === intent.sourceRevision &&
+			existing.destinationRevision === intent.destinationRevision &&
+			existing.observedAt === new Date(intent.observedAt).toISOString() &&
+			existing.eventId === intent.eventId
+		);
 	}
 
 	#requireRequest(request: RequestKey): StoredRequest {

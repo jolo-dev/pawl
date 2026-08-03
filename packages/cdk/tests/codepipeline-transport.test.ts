@@ -70,6 +70,16 @@ describe("AwsCodePipelineTransport", () => {
 	test("uses stable distinct client request tokens", () => {
 		const first = pipelineClientRequestToken(startInput);
 		expect(first).toBe(pipelineClientRequestToken(startInput));
+		expect(first).toBe(
+			pipelineClientRequestToken({
+				...startInput,
+				request: {
+					requestId: startInput.request.requestId,
+					provider: startInput.request.provider,
+					repository: startInput.request.repository,
+				},
+			}),
+		);
 		expect(first).toMatch(/^[a-f0-9]{64}$/);
 		expect(
 			pipelineClientRequestToken({ ...startInput, generation: 4 }),

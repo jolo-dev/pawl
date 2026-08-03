@@ -67,7 +67,9 @@ export const pipelineClientRequestToken = (
 	createHash("sha256")
 		.update(
 			JSON.stringify({
-				request: input.request,
+				provider: input.request.provider,
+				repository: input.request.repository,
+				requestId: input.request.requestId,
 				generation: input.generation,
 				sourceRevision: input.sourceRevision,
 				destinationRevision: input.destinationRevision,

@@ -175,8 +175,8 @@ class FaultInjectingStateStore extends InMemoryStateStore {
 	forceAmbiguousRequeue = false;
 	commitIntentCompletionThenThrow = false;
 
-	override async claimEvents(
-		...args: Parameters<InMemoryStateStore["claimEvents"]>
+	override async claimPipelineEvents(
+		...args: Parameters<InMemoryStateStore["claimPipelineEvents"]>
 	) {
 		this.claimCalls += 1;
 		if (this.claimCalls === this.failClaimAt) {
@@ -185,7 +185,7 @@ class FaultInjectingStateStore extends InMemoryStateStore {
 				stack: "secret claim stack",
 			});
 		}
-		return super.claimEvents(...args);
+		return super.claimPipelineEvents(...args);
 	}
 
 	override async complete(
@@ -431,6 +431,87 @@ describe("PipelineEventRouter", () => {
 			}),
 		]);
 		expect(transport.executionsByToken).toHaveLength(2);
+	});
+
+	test("replays an accepted reviewed intent after a newer revision wins", async () => {
+		const stateStore = new InMemoryStateStore({ clock: () => new Date(now) });
+		await stateStore.appendEvent({
+			id: "reviewed-old-interleaved",
+			type: "revision-updated",
+			request,
+			occurredAt: now,
+			revision: sourceOne,
+		});
+		const reconciler = new FaultInjectingReconciler();
+		reconciler.fail = true;
+		const transport = new IdempotentTransport();
+		const { router, coordinationStore } = productionRouter({
+			stateStore,
+			reconciler,
+			transport,
+		});
+		const oldEvent = {
+			id: "reviewed-old-interleaved",
+			type: "revision-updated" as const,
+			request,
+			occurredAt: now,
+			revision: sourceOne,
+		};
+
+		await expect(
+			router.dispatchReviewedEvent({
+				event: oldEvent,
+				snapshot: snapshot(sourceOne, destination),
+				generation: 1,
+				refetchSnapshot: async () => snapshot(sourceOne, destination),
+			}),
+		).rejects.toThrow("Pipeline routing failed");
+
+		const newerAt = "2026-08-01T12:00:01.000Z";
+		const newerDestination = "d".repeat(40);
+		await router.dispatchReviewedEvent({
+			event: {
+				...oldEvent,
+				id: "reviewed-new-interleaved",
+				occurredAt: newerAt,
+				revision: sourceTwo,
+			},
+			snapshot: snapshot(sourceTwo, newerDestination),
+			generation: 1,
+			refetchSnapshot: async () => snapshot(sourceTwo, newerDestination),
+		});
+
+		await router.dispatchReviewedEvent({
+			event: oldEvent,
+			snapshot: snapshot(sourceTwo, newerDestination),
+			generation: 1,
+			refetchSnapshot: async () => snapshot(sourceTwo, newerDestination),
+		});
+
+		expect(
+			transport.starts.map(({ sourceRevision }) => sourceRevision),
+		).toEqual([sourceOne, sourceTwo, sourceOne]);
+		expect(
+			pipelineClientRequestToken(
+				transport.starts[0] as StartReviewPipelineExecution,
+			),
+		).toBe(
+			pipelineClientRequestToken(
+				transport.starts[2] as StartReviewPipelineExecution,
+			),
+		);
+		expect(transport.executionsByToken).toHaveLength(2);
+		expect(coordinationStore.mappings.get("execution-1")).toMatchObject({
+			sourceRevision: sourceOne,
+			destinationRevision: destination,
+		});
+		expect(coordinationStore.mappings.get("execution-2")).toMatchObject({
+			sourceRevision: sourceTwo,
+			destinationRevision: newerDestination,
+		});
+		expect(
+			await coordinationStore.getAuthoritativeRevision(request, 1),
+		).toMatchObject({ sourceRevision: sourceTwo });
 	});
 
 	test("reviewed completion response loss uses the tombstone despite provider drift", async () => {

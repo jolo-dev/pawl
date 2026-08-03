@@ -27,10 +27,15 @@ export interface ClaimedEvents {
 	readonly throughWatermark?: string;
 }
 
+export interface PipelineClaimedEvents extends ClaimedEvents {
+	readonly claimIdentity?: string;
+}
+
 export interface FailAndRequeueClaimInput {
 	readonly request: RequestKey;
 	readonly generation: number;
 	readonly leaseVersion: number;
+	readonly claimIdentity: string;
 	readonly events: readonly ReviewEvent[];
 	readonly failedAt: string;
 	readonly failure: OperationalFailure;
@@ -39,6 +44,18 @@ export interface FailAndRequeueClaimInput {
 export type FailAndRequeueClaimResult =
 	| { readonly requeued: true; readonly leaseVersion: number }
 	| { readonly requeued: false; readonly reason: "changed" };
+
+export interface SettlePipelineClaimInput {
+	readonly request: RequestKey;
+	readonly generation: number;
+	readonly leaseVersion: number;
+	readonly claimIdentity: string;
+	readonly events: readonly ReviewEvent[];
+}
+
+export type SettlePipelineClaimResult =
+	| { readonly settled: true }
+	| { readonly settled: false; readonly reason: "changed" };
 
 export interface PipelineClaimRecoveryInput {
 	readonly request: RequestKey;
@@ -57,6 +74,7 @@ export type PipelineClaimRecoveryResult =
 			readonly recovered: true;
 			readonly generation: number;
 			readonly leaseVersion: number;
+			readonly claimIdentity: string;
 	  };
 
 export type PipelineDispatchIntentStatus = "PENDING" | "COMPLETED";
@@ -294,6 +312,14 @@ export type CompletionReason =
 export interface ReviewStateStore {
 	appendEvent(event: ReviewEvent): Promise<AppendEventResult>;
 	claimEvents(request: RequestKey, generation: number): Promise<ClaimedEvents>;
+	claimPipelineEvents(
+		request: RequestKey,
+		generation: number,
+		leaseVersion: number,
+	): Promise<PipelineClaimedEvents>;
+	settlePipelineClaim(
+		input: SettlePipelineClaimInput,
+	): Promise<SettlePipelineClaimResult>;
 	failAndRequeueClaim(
 		input: FailAndRequeueClaimInput,
 	): Promise<FailAndRequeueClaimResult>;

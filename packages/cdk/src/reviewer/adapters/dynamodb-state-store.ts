@@ -25,12 +25,15 @@ import type {
 	LeaseRecoveryInput,
 	LeaseRecoveryResult,
 	PersistedFinding,
+	PipelineClaimedEvents,
 	PipelineClaimRecoveryInput,
 	PipelineClaimRecoveryResult,
 	PipelineDispatchIntent,
 	PipelineDispatchOwnership,
 	ReviewLifecycleState,
 	ReviewStateStore,
+	SettlePipelineClaimInput,
+	SettlePipelineClaimResult,
 	WriteReservation,
 } from "../ports/state-store";
 import { sanitizedPipelineRoutingFailure } from "../ports/state-store";
@@ -116,6 +119,17 @@ function stringValue(item: Item, key: string): string | undefined {
 function numberValue(item: Item, key: string): number | undefined {
 	const value = item[key];
 	return typeof value === "number" ? value : undefined;
+}
+
+function stringArrayValue(
+	item: Item,
+	key: string,
+): readonly string[] | undefined {
+	const value = item[key];
+	return Array.isArray(value) &&
+		value.every((entry) => typeof entry === "string")
+		? value
+		: undefined;
 }
 
 function lifecycleValue(item: Item): ReviewLifecycleState {
@@ -209,12 +223,49 @@ function transactionClientRequestToken(
 		.slice(0, 36);
 }
 
+function pipelineClaimIdentity(
+	request: RequestKey,
+	generation: number,
+	leaseVersion: number,
+	eventKeys: readonly string[],
+): string {
+	return createHash("sha256")
+		.update(
+			JSON.stringify({
+				provider: request.provider,
+				repository: request.repository,
+				requestId: request.requestId,
+				generation,
+				leaseVersion,
+				eventKeys,
+			}),
+			"utf8",
+		)
+		.digest("base64url");
+}
+
+function canonicalClaimEvents(
+	events: readonly ReviewEvent[],
+): readonly ReviewEvent[] {
+	return [...events].sort((left, right) => {
+		const instant = canonicalTimestamp(left.occurredAt).localeCompare(
+			canonicalTimestamp(right.occurredAt),
+		);
+		return instant === 0 ? left.id.localeCompare(right.id) : instant;
+	});
+}
+
 function requeueClientRequestToken(input: FailAndRequeueClaimInput): string {
 	return transactionClientRequestToken("pipeline-claim-requeue", {
-		request: input.request,
+		provider: input.request.provider,
+		repository: input.request.repository,
+		requestId: input.request.requestId,
 		generation: input.generation,
 		leaseVersion: input.leaseVersion,
-		events: input.events
+		claimIdentity: input.claimIdentity,
+		failedAt: canonicalTimestamp(input.failedAt),
+		attempts: sanitizedPipelineRoutingFailure(input.failure.attempts).attempts,
+		events: canonicalClaimEvents(input.events)
 			.map((event) => ({
 				id: event.id,
 				occurredAt: canonicalTimestamp(event.occurredAt),
@@ -429,7 +480,7 @@ export class DynamoDbStateStore implements ReviewStateStore {
 					values[":heartbeat"] = now;
 					values[":leaseExpiry"] = this.#leaseExpiry(now);
 					updateExpression =
-						"SET generation = :nextGeneration, #state = :starting, leaseHeartbeatAt = :heartbeat, leaseExpiresAt = :leaseExpiry, expiresAt = :ttl REMOVE executionArn, executionName, callbackId, callbackGeneration, lastCallbackGeneration, blockedLimit, claimCursor, #cycle, sourceRevision, destinationRevision, configVersion, eventWatermark, cycleStartedAt, completionType, retryExhaustion, lastPipelineRoutingFailure ADD leaseVersion :one, pendingEventCount :one";
+						"SET generation = :nextGeneration, #state = :starting, leaseHeartbeatAt = :heartbeat, leaseExpiresAt = :leaseExpiry, expiresAt = :ttl REMOVE executionArn, executionName, callbackId, callbackGeneration, lastCallbackGeneration, blockedLimit, claimCursor, #cycle, sourceRevision, destinationRevision, configVersion, eventWatermark, cycleStartedAt, completionType, retryExhaustion, lastPipelineRoutingFailure, pipelineClaimIdentity, pipelineClaimGeneration, pipelineClaimEventKeys, settledPipelineClaimIdentity, settledPipelineClaimGeneration, settledPipelineClaimEventKeys ADD leaseVersion :one, pendingEventCount :one";
 				}
 				const observedCallbackGeneration = numberValue(
 					meta,
@@ -621,6 +672,185 @@ export class DynamoDbStateStore implements ReviewStateStore {
 		throw new Error("event claim contention did not converge");
 	}
 
+	async claimPipelineEvents(
+		request: RequestKey,
+		generation: number,
+		leaseVersion: number,
+	): Promise<PipelineClaimedEvents> {
+		const pk = this.#pk(request);
+		for (let attempt = 0; attempt < 6; attempt += 1) {
+			const meta = await this.#get(pk, "META");
+			if (
+				!meta ||
+				numberValue(meta, "generation") !== generation ||
+				numberValue(meta, "leaseVersion") !== leaseVersion
+			) {
+				throw new StaleStateError();
+			}
+			if (stringValue(meta, "pipelineClaimIdentity") !== undefined) {
+				throw new StaleStateError("an exact pipeline claim is already active");
+			}
+			const observedLifecycle = lifecycleValue(meta);
+			if (TERMINAL_STATES.has(observedLifecycle)) {
+				throw new Error("cannot claim events from a completed generation");
+			}
+			const observedPendingCount = numberValue(meta, "pendingEventCount") ?? 0;
+			const observedCursor = stringValue(meta, "claimCursor");
+			const cursorCondition =
+				observedCursor === undefined
+					? "attribute_not_exists(claimCursor)"
+					: "claimCursor = :observedCursor";
+			const cursorValues =
+				observedCursor === undefined
+					? {}
+					: { ":observedCursor": observedCursor };
+			const page = await this.#queryUnclaimedEvents(pk, observedCursor);
+			const items = page.items;
+			if (items.length === 0) {
+				if (page.continuationSk || observedCursor !== undefined) {
+					try {
+						await this.#conditionalUpdate({
+							request,
+							updateExpression: page.continuationSk
+								? "SET claimCursor = :cursor"
+								: "REMOVE claimCursor",
+							conditionExpression: `generation = :generation AND leaseVersion = :leaseVersion AND #state = :state AND pendingEventCount = :observedPendingCount AND attribute_not_exists(pipelineClaimIdentity) AND ${cursorCondition}`,
+							names: { "#state": "lifecycleState" },
+							values: {
+								...(page.continuationSk
+									? { ":cursor": page.continuationSk }
+									: {}),
+								":generation": generation,
+								":leaseVersion": leaseVersion,
+								":state": observedLifecycle,
+								":observedPendingCount": observedPendingCount,
+								...cursorValues,
+							},
+						});
+					} catch (error) {
+						if (!isConditionalFailure(error)) throw error;
+						continue;
+					}
+				}
+				return { events: [] };
+			}
+			const newestItem = items.at(-1);
+			if (newestItem === undefined) {
+				throw new Error("Expected claimed events to include a newest item");
+			}
+			const newest = stringValue(newestItem, "watermark");
+			if (newest === undefined) {
+				throw new Error("Expected claimed event to include a watermark");
+			}
+			const eventKeys = items.map((item) => {
+				const key = stringValue(item, "sk");
+				if (key === undefined) {
+					throw new Error("Expected claimed event to include a sort key");
+				}
+				return key;
+			});
+			const claimIdentity = pipelineClaimIdentity(
+				request,
+				generation,
+				leaseVersion,
+				eventKeys,
+			);
+			const existing = stringValue(meta, "eventWatermark");
+			const throughWatermark =
+				existing !== undefined && existing > newest ? existing : newest;
+			const heartbeat = this.#clock().toISOString();
+			const values = {
+				":generation": generation,
+				":leaseVersion": leaseVersion,
+				":count": items.length,
+				":observedPendingCount": observedPendingCount,
+				":negativeCount": -items.length,
+				":running": "RUNNING",
+				":observedLifecycle": observedLifecycle,
+				":watermark": throughWatermark,
+				":heartbeat": heartbeat,
+				":leaseExpiry": this.#leaseExpiry(heartbeat),
+				":ttl": this.#ttlAt(this.#ttl.metaSeconds),
+				":pipelineClaimIdentity": claimIdentity,
+				":pipelineClaimEventKeys": eventKeys,
+				...(page.continuationSk ? { ":claimCursor": page.continuationSk } : {}),
+			};
+			const transactItems: Record<string, unknown>[] = [
+				{
+					Update: {
+						TableName: this.#tableName,
+						Key: { pk, sk: "META" },
+						UpdateExpression: page.continuationSk
+							? "SET #state = :running, eventWatermark = :watermark, leaseHeartbeatAt = :heartbeat, leaseExpiresAt = :leaseExpiry, expiresAt = :ttl, claimCursor = :claimCursor, pipelineClaimIdentity = :pipelineClaimIdentity, pipelineClaimGeneration = :generation, pipelineClaimEventKeys = :pipelineClaimEventKeys REMOVE callbackId, settledPipelineClaimIdentity, settledPipelineClaimGeneration, settledPipelineClaimEventKeys, callbackGeneration, blockedLimit ADD pendingEventCount :negativeCount"
+							: "SET #state = :running, eventWatermark = :watermark, leaseHeartbeatAt = :heartbeat, leaseExpiresAt = :leaseExpiry, expiresAt = :ttl, pipelineClaimIdentity = :pipelineClaimIdentity, pipelineClaimGeneration = :generation, pipelineClaimEventKeys = :pipelineClaimEventKeys REMOVE claimCursor, callbackId, settledPipelineClaimIdentity, settledPipelineClaimGeneration, settledPipelineClaimEventKeys, callbackGeneration, blockedLimit ADD pendingEventCount :negativeCount",
+						ConditionExpression: `generation = :generation AND leaseVersion = :leaseVersion AND #state = :observedLifecycle AND pendingEventCount = :observedPendingCount AND pendingEventCount >= :count AND attribute_not_exists(pipelineClaimIdentity) AND ${cursorCondition}`,
+						ExpressionAttributeNames: { "#state": "lifecycleState" },
+						ExpressionAttributeValues: { ...values, ...cursorValues },
+					},
+				},
+				...items.map((item) => ({
+					Update: {
+						TableName: this.#tableName,
+						Key: { pk, sk: stringValue(item, "sk") },
+						UpdateExpression: "SET claimedGeneration = :generation",
+						ConditionExpression: "attribute_not_exists(claimedGeneration)",
+						ExpressionAttributeValues: { ":generation": generation },
+					},
+				})),
+			];
+			try {
+				await this.#send(
+					new TransactWriteCommand({
+						ClientRequestToken: claimIdentity.slice(0, 36),
+						TransactItems: transactItems,
+					}),
+				);
+				return {
+					events: items.map((item) => decodeEvent(item, request)),
+					throughWatermark,
+					claimIdentity,
+				};
+			} catch (error) {
+				if (!isConditionalFailure(error)) throw error;
+			}
+		}
+		throw new Error("pipeline event claim contention did not converge");
+	}
+
+	async settlePipelineClaim(
+		input: SettlePipelineClaimInput,
+	): Promise<SettlePipelineClaimResult> {
+		if (input.events.length < 1 || input.events.length > 99) {
+			throw new RangeError(
+				"settled pipeline claim must contain 1 to 99 events",
+			);
+		}
+		const eventKeys = input.events.map((event) => this.#eventSk(event));
+		try {
+			await this.#conditionalUpdate({
+				request: input.request,
+				updateExpression:
+					"SET settledPipelineClaimIdentity = :pipelineClaimIdentity, settledPipelineClaimGeneration = :generation, settledPipelineClaimEventKeys = :pipelineClaimEventKeys REMOVE pipelineClaimIdentity, pipelineClaimGeneration, pipelineClaimEventKeys",
+				conditionExpression:
+					"generation = :generation AND leaseVersion = :leaseVersion AND #state = :running AND pipelineClaimIdentity = :pipelineClaimIdentity AND pipelineClaimGeneration = :generation AND pipelineClaimEventKeys = :pipelineClaimEventKeys",
+				names: { "#state": "lifecycleState" },
+				values: {
+					":generation": input.generation,
+					":leaseVersion": input.leaseVersion,
+					":running": "RUNNING",
+					":pipelineClaimIdentity": input.claimIdentity,
+					":pipelineClaimEventKeys": eventKeys,
+				},
+			});
+			return { settled: true };
+		} catch (error) {
+			if (isConditionalFailure(error)) {
+				return { settled: false, reason: "changed" };
+			}
+			throw error;
+		}
+	}
+
 	async failAndRequeueClaim(
 		input: FailAndRequeueClaimInput,
 	): Promise<FailAndRequeueClaimResult> {
@@ -629,6 +859,8 @@ export class DynamoDbStateStore implements ReviewStateStore {
 		}
 		const failedAt = canonicalTimestamp(input.failedAt);
 		const pk = this.#pk(input.request);
+		const events = canonicalClaimEvents(input.events);
+		const eventKeys = events.map((event) => this.#eventSk(event));
 		const failure = sanitizedPipelineRoutingFailure(input.failure.attempts);
 		const transactItems: Record<string, unknown>[] = [
 			{
@@ -636,13 +868,15 @@ export class DynamoDbStateStore implements ReviewStateStore {
 					TableName: this.#tableName,
 					Key: { pk, sk: "META" },
 					UpdateExpression:
-						"SET #state = :starting, leaseHeartbeatAt = :failedAt, leaseExpiresAt = :failedAt, lastPipelineRoutingFailure = :failure, expiresAt = :ttl REMOVE executionArn, executionName, callbackId, callbackGeneration, lastCallbackGeneration, blockedLimit, claimCursor, completionType, retryExhaustion ADD pendingEventCount :claimedCount, leaseVersion :one",
+						"SET #state = :starting, leaseHeartbeatAt = :failedAt, leaseExpiresAt = :failedAt, lastPipelineRoutingFailure = :failure, expiresAt = :ttl REMOVE executionArn, executionName, callbackId, callbackGeneration, lastCallbackGeneration, blockedLimit, claimCursor, completionType, retryExhaustion, pipelineClaimIdentity, pipelineClaimGeneration, pipelineClaimEventKeys, settledPipelineClaimIdentity, settledPipelineClaimGeneration, settledPipelineClaimEventKeys ADD pendingEventCount :claimedCount, leaseVersion :one",
 					ConditionExpression:
-						"generation = :generation AND leaseVersion = :leaseVersion AND #state = :running",
+						"generation = :generation AND leaseVersion = :leaseVersion AND #state = :running AND ((pipelineClaimIdentity = :pipelineClaimIdentity AND pipelineClaimGeneration = :generation AND pipelineClaimEventKeys = :pipelineClaimEventKeys) OR (settledPipelineClaimIdentity = :pipelineClaimIdentity AND settledPipelineClaimGeneration = :generation AND settledPipelineClaimEventKeys = :pipelineClaimEventKeys))",
 					ExpressionAttributeNames: { "#state": "lifecycleState" },
 					ExpressionAttributeValues: {
 						":generation": input.generation,
 						":leaseVersion": input.leaseVersion,
+						":pipelineClaimIdentity": input.claimIdentity,
+						":pipelineClaimEventKeys": eventKeys,
 						":running": "RUNNING",
 						":starting": "STARTING",
 						":failedAt": failedAt,
@@ -653,7 +887,7 @@ export class DynamoDbStateStore implements ReviewStateStore {
 					},
 				},
 			},
-			...input.events.map((event) => ({
+			...events.map((event) => ({
 				Update: {
 					TableName: this.#tableName,
 					Key: { pk, sk: this.#eventSk(event) },
@@ -701,9 +935,24 @@ export class DynamoDbStateStore implements ReviewStateStore {
 		if (lifecycleValue(meta) !== "RUNNING") {
 			return { recovered: false, reason: "changed" };
 		}
-		const claimed = await this.#queryClaimedEvents(pk, input.generation);
-		if (claimed.length === 0) {
+		const claimIdentity = stringValue(meta, "pipelineClaimIdentity");
+		const claimGeneration = numberValue(meta, "pipelineClaimGeneration");
+		const eventKeys = stringArrayValue(meta, "pipelineClaimEventKeys");
+		const hasClaimMetadata =
+			meta.pipelineClaimIdentity !== undefined ||
+			meta.pipelineClaimGeneration !== undefined ||
+			meta.pipelineClaimEventKeys !== undefined;
+		if (!hasClaimMetadata) {
 			return { recovered: false, reason: "no-claimed-events" };
+		}
+		if (
+			claimIdentity === undefined ||
+			claimGeneration !== input.generation ||
+			eventKeys === undefined ||
+			eventKeys.length < 1 ||
+			eventKeys.length > 99
+		) {
+			return { recovered: false, reason: "changed" };
 		}
 		const transactItems: Record<string, unknown>[] = [
 			{
@@ -711,26 +960,28 @@ export class DynamoDbStateStore implements ReviewStateStore {
 					TableName: this.#tableName,
 					Key: { pk, sk: "META" },
 					UpdateExpression:
-						"SET #state = :starting, leaseHeartbeatAt = :recoveredAt, leaseExpiresAt = :recoveredAt, expiresAt = :ttl REMOVE executionArn, executionName, callbackId, callbackGeneration, lastCallbackGeneration, blockedLimit, claimCursor, completionType, retryExhaustion ADD pendingEventCount :claimedCount, leaseVersion :one",
+						"SET #state = :starting, leaseHeartbeatAt = :recoveredAt, leaseExpiresAt = :recoveredAt, expiresAt = :ttl REMOVE executionArn, executionName, callbackId, callbackGeneration, lastCallbackGeneration, blockedLimit, claimCursor, completionType, retryExhaustion, pipelineClaimIdentity, pipelineClaimGeneration, pipelineClaimEventKeys, settledPipelineClaimIdentity, settledPipelineClaimGeneration, settledPipelineClaimEventKeys ADD pendingEventCount :claimedCount, leaseVersion :one",
 					ConditionExpression:
-						"generation = :generation AND leaseVersion = :leaseVersion AND #state = :observedState AND leaseExpiresAt <= :recoveredAt",
+						"generation = :generation AND leaseVersion = :leaseVersion AND #state = :observedState AND leaseExpiresAt <= :recoveredAt AND pipelineClaimIdentity = :pipelineClaimIdentity AND pipelineClaimGeneration = :generation AND pipelineClaimEventKeys = :pipelineClaimEventKeys",
 					ExpressionAttributeNames: { "#state": "lifecycleState" },
 					ExpressionAttributeValues: {
 						":generation": input.generation,
 						":leaseVersion": input.leaseVersion,
+						":pipelineClaimIdentity": claimIdentity,
+						":pipelineClaimEventKeys": eventKeys,
 						":observedState": "RUNNING",
 						":starting": "STARTING",
 						":recoveredAt": recoveredAt,
 						":ttl": this.#ttlAt(this.#ttl.metaSeconds),
-						":claimedCount": claimed.length,
+						":claimedCount": eventKeys.length,
 						":one": 1,
 					},
 				},
 			},
-			...claimed.map((item) => ({
+			...eventKeys.map((sk) => ({
 				Update: {
 					TableName: this.#tableName,
-					Key: { pk, sk: stringValue(item, "sk") },
+					Key: { pk, sk },
 					UpdateExpression: "REMOVE claimedGeneration",
 					ConditionExpression: "claimedGeneration = :generation",
 					ExpressionAttributeValues: { ":generation": input.generation },
@@ -739,12 +990,26 @@ export class DynamoDbStateStore implements ReviewStateStore {
 		];
 		try {
 			await this.#send(
-				new TransactWriteCommand({ TransactItems: transactItems }),
+				new TransactWriteCommand({
+					ClientRequestToken: transactionClientRequestToken(
+						"pipeline-claim-recover",
+						{
+							provider: input.request.provider,
+							repository: input.request.repository,
+							requestId: input.request.requestId,
+							generation: input.generation,
+							leaseVersion: input.leaseVersion,
+							claimIdentity,
+						},
+					),
+					TransactItems: transactItems,
+				}),
 			);
 			return {
 				recovered: true,
 				generation: input.generation,
 				leaseVersion: input.leaseVersion + 1,
+				claimIdentity,
 			};
 		} catch (error) {
 			if (isConditionalFailure(error)) {
@@ -1491,7 +1756,7 @@ export class DynamoDbStateStore implements ReviewStateStore {
 			":starting": "STARTING",
 		};
 		let updateExpression =
-			"SET #state = :state, completionType = :completionType, expiresAt = :ttl REMOVE executionArn, executionName, callbackId, callbackGeneration, blockedLimit, lastPipelineRoutingFailure";
+			"SET #state = :state, completionType = :completionType, expiresAt = :ttl REMOVE executionArn, executionName, callbackId, callbackGeneration, blockedLimit, lastPipelineRoutingFailure, pipelineClaimIdentity, pipelineClaimGeneration, pipelineClaimEventKeys, settledPipelineClaimIdentity, settledPipelineClaimGeneration, settledPipelineClaimEventKeys";
 		const pendingCondition =
 			reason.type === "failed" ? "" : " AND pendingEventCount = :zero";
 		if (pendingCondition !== "") values[":zero"] = 0;
@@ -1514,7 +1779,7 @@ export class DynamoDbStateStore implements ReviewStateStore {
 				stateCondition = "#currentState = :ownedState";
 			}
 			updateExpression =
-				"SET #state = :state, completionType = :completionType, retryExhaustion = :retryFailure, expiresAt = :ttl REMOVE executionArn, executionName, callbackId, callbackGeneration, blockedLimit, lastPipelineRoutingFailure";
+				"SET #state = :state, completionType = :completionType, retryExhaustion = :retryFailure, expiresAt = :ttl REMOVE executionArn, executionName, callbackId, callbackGeneration, blockedLimit, lastPipelineRoutingFailure, pipelineClaimIdentity, pipelineClaimGeneration, pipelineClaimEventKeys, settledPipelineClaimIdentity, settledPipelineClaimGeneration, settledPipelineClaimEventKeys";
 		}
 		try {
 			await this.#conditionalUpdate({
@@ -1630,37 +1895,6 @@ export class DynamoDbStateStore implements ReviewStateStore {
 			}),
 		);
 		return output.Item;
-	}
-
-	async #queryClaimedEvents(pk: string, generation: number): Promise<Item[]> {
-		const items: Item[] = [];
-		let exclusiveStartKey: Readonly<Record<string, unknown>> | undefined;
-		do {
-			const output = await this.#send<QueryOutput>(
-				new QueryCommand({
-					TableName: this.#tableName,
-					KeyConditionExpression: "pk = :pk AND begins_with(sk, :prefix)",
-					FilterExpression: "claimedGeneration = :generation",
-					ExpressionAttributeValues: {
-						":pk": pk,
-						":prefix": "EVENT#",
-						":generation": generation,
-					},
-					ConsistentRead: true,
-					ScanIndexForward: false,
-					Limit: EVENT_CLAIM_PAGE_LIMIT,
-					ExclusiveStartKey: exclusiveStartKey,
-				}),
-			);
-			for (const item of output.Items ?? []) {
-				if (numberValue(item, "claimedGeneration") === generation) {
-					items.push(item);
-					if (items.length === 99) return items;
-				}
-			}
-			exclusiveStartKey = output.LastEvaluatedKey;
-		} while (exclusiveStartKey !== undefined);
-		return items;
 	}
 
 	async #queryUnclaimedEvents(

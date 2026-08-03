@@ -4,8 +4,8 @@ import type { ReviewRequest } from "../domain/review-request";
 import type { PrPipelineDispatcher } from "../pipeline-review-common";
 import type { SourceControlProvider } from "../ports/source-control-provider";
 import {
-	type ClaimedEvents,
 	type FailAndRequeueClaimResult,
+	type PipelineClaimedEvents,
 	type PipelineDispatchIntent,
 	type ReviewStateStore,
 	sanitizedPipelineRoutingFailure,
@@ -175,7 +175,7 @@ export class PipelineEventRouter {
 			);
 			if (existing !== undefined) {
 				if (existing.status === "COMPLETED") return;
-				const receipt = await this.#dispatchIntent(existing);
+				const receipt = await this.#dispatchIntent(existing, undefined, true);
 				const completed = await this.#store.completePipelineDispatchIntent(
 					receipt === undefined ? existing : { ...existing, ...receipt },
 					{ kind: "reviewed" },
@@ -332,14 +332,20 @@ export class PipelineEventRouter {
 		leaseVersion: number,
 	): Promise<boolean> {
 		let started = false;
-		let replayableClaim: readonly ReviewEvent[] | undefined;
+		let replayableClaim:
+			| {
+					readonly claimIdentity: string;
+					readonly events: readonly ReviewEvent[];
+			  }
+			| undefined;
 		let completion: "clean" | "merged" | "closed" = "clean";
 		for (let stage = 0; stage < MAX_DRAIN_STAGES; stage += 1) {
-			let claimed: ClaimedEvents;
+			let claimed: PipelineClaimedEvents;
 			try {
-				claimed = await this.#store.claimEvents(
+				claimed = await this.#store.claimPipelineEvents(
 					initialEvent.request,
 					generation,
+					leaseVersion,
 				);
 			} catch {
 				if (replayableClaim !== undefined) {
@@ -347,7 +353,8 @@ export class PipelineEventRouter {
 						initialEvent,
 						generation,
 						leaseVersion,
-						replayableClaim,
+						replayableClaim.claimIdentity,
+						replayableClaim.events,
 						stage + 1,
 					);
 				}
@@ -363,19 +370,23 @@ export class PipelineEventRouter {
 					if (isPendingWork(error)) continue;
 					if (isStaleState(error)) return started;
 					if (replayableClaim !== undefined) {
-						await this.#requeueClaim(
+						const requeue = await this.#requeueClaim(
 							initialEvent,
 							generation,
 							leaseVersion,
-							replayableClaim,
+							replayableClaim.claimIdentity,
+							replayableClaim.events,
 							stage + 1,
 						);
+						if (!requeue.requeued) throw new OwnedPipelineRoutingError();
 					}
 					throw new OwnedPipelineRoutingError();
 				}
 			}
+			const claimIdentity = claimed.claimIdentity;
+			if (claimIdentity === undefined) throw new OwnedPipelineRoutingError();
+			replayableClaim = { claimIdentity, events: claimed.events };
 
-			replayableClaim = claimed.events;
 			let outcome: {
 				readonly started: boolean;
 				readonly terminal?: "merged" | "closed";
@@ -391,6 +402,7 @@ export class PipelineEventRouter {
 					initialEvent,
 					generation,
 					leaseVersion,
+					claimIdentity,
 					claimed.events,
 					stage + 1,
 				);
@@ -407,12 +419,23 @@ export class PipelineEventRouter {
 					});
 					return started;
 				} catch (error) {
-					if (isPendingWork(error)) continue;
 					if (isStaleState(error)) return started;
+					if (isPendingWork(error)) {
+						const settled = await this.#settleClaim(
+							initialEvent,
+							generation,
+							leaseVersion,
+							claimIdentity,
+							claimed.events,
+						);
+						if (!settled) throw new OwnedPipelineRoutingError();
+						continue;
+					}
 					const requeue = await this.#requeueClaim(
 						initialEvent,
 						generation,
 						leaseVersion,
+						claimIdentity,
 						claimed.events,
 						stage + 1,
 					);
@@ -420,12 +443,22 @@ export class PipelineEventRouter {
 					throw new OwnedPipelineRoutingError();
 				}
 			}
+			const settled = await this.#settleClaim(
+				initialEvent,
+				generation,
+				leaseVersion,
+				claimIdentity,
+				claimed.events,
+			);
+			if (!settled) throw new OwnedPipelineRoutingError();
 		}
-		let overflow: ClaimedEvents;
+
+		let overflow: PipelineClaimedEvents;
 		try {
-			overflow = await this.#store.claimEvents(
+			overflow = await this.#store.claimPipelineEvents(
 				initialEvent.request,
 				generation,
+				leaseVersion,
 			);
 		} catch {
 			if (replayableClaim !== undefined) {
@@ -433,7 +466,8 @@ export class PipelineEventRouter {
 					initialEvent,
 					generation,
 					leaseVersion,
-					replayableClaim,
+					replayableClaim.claimIdentity,
+					replayableClaim.events,
 					MAX_DRAIN_STAGES,
 				);
 			}
@@ -449,20 +483,23 @@ export class PipelineEventRouter {
 				if (isStaleState(error)) return started;
 				if (!isPendingWork(error)) {
 					if (replayableClaim !== undefined) {
-						await this.#requeueClaim(
+						const requeue = await this.#requeueClaim(
 							initialEvent,
 							generation,
 							leaseVersion,
-							replayableClaim,
+							replayableClaim.claimIdentity,
+							replayableClaim.events,
 							MAX_DRAIN_STAGES,
 						);
+						if (!requeue.requeued) throw new OwnedPipelineRoutingError();
 					}
 					throw new OwnedPipelineRoutingError();
 				}
 				try {
-					overflow = await this.#store.claimEvents(
+					overflow = await this.#store.claimPipelineEvents(
 						initialEvent.request,
 						generation,
+						leaseVersion,
 					);
 				} catch {
 					if (replayableClaim !== undefined) {
@@ -470,7 +507,8 @@ export class PipelineEventRouter {
 							initialEvent,
 							generation,
 							leaseVersion,
-							replayableClaim,
+							replayableClaim.claimIdentity,
+							replayableClaim.events,
 							MAX_DRAIN_STAGES,
 						);
 					}
@@ -479,10 +517,14 @@ export class PipelineEventRouter {
 			}
 		}
 		if (overflow.events.length > 0) {
+			if (overflow.claimIdentity === undefined) {
+				throw new OwnedPipelineRoutingError();
+			}
 			const requeue = await this.#requeueClaim(
 				initialEvent,
 				generation,
 				leaseVersion,
+				overflow.claimIdentity,
 				overflow.events,
 				MAX_DRAIN_STAGES,
 			);
@@ -491,23 +533,47 @@ export class PipelineEventRouter {
 		throw new OwnedPipelineRoutingError();
 	}
 
+	async #settleClaim(
+		initialEvent: ReviewEvent,
+		generation: number,
+		leaseVersion: number,
+		claimIdentity: string,
+		events: readonly ReviewEvent[],
+	): Promise<boolean> {
+		try {
+			const settled = await this.#store.settlePipelineClaim({
+				request: initialEvent.request,
+				generation,
+				leaseVersion,
+				claimIdentity,
+				events,
+			});
+			return settled.settled;
+		} catch {
+			throw new OwnedPipelineRoutingError();
+		}
+	}
+
 	async #requeueClaim(
 		initialEvent: ReviewEvent,
 		generation: number,
 		leaseVersion: number,
+		claimIdentity: string,
 		events: readonly ReviewEvent[],
 		attempts: number,
 	): Promise<FailAndRequeueClaimResult> {
 		try {
+			const input = {
+				request: initialEvent.request,
+				generation,
+				leaseVersion,
+				claimIdentity,
+				events,
+				failedAt: this.#clock().toISOString(),
+				failure: sanitizedPipelineRoutingFailure(attempts),
+			};
 			const retried = await this.#retry.execute("pipeline-claim-requeue", () =>
-				this.#store.failAndRequeueClaim({
-					request: initialEvent.request,
-					generation,
-					leaseVersion,
-					events,
-					failedAt: this.#clock().toISOString(),
-					failure: sanitizedPipelineRoutingFailure(attempts),
-				}),
+				this.#store.failAndRequeueClaim(input),
 			);
 			if (!retried.ok) throw new OwnedPipelineRoutingError();
 			return retried.value;
@@ -540,7 +606,11 @@ export class PipelineEventRouter {
 			);
 			if (existingIntent === undefined) continue;
 			if (existingIntent.status === "PENDING") {
-				const receipt = await this.#dispatchIntent(existingIntent);
+				const receipt = await this.#dispatchIntent(
+					existingIntent,
+					undefined,
+					true,
+				);
 				const completed = await this.#store.completePipelineDispatchIntent(
 					receipt === undefined
 						? existingIntent
@@ -623,6 +693,7 @@ export class PipelineEventRouter {
 	async #dispatchIntent(
 		intent: PipelineDispatchIntent,
 		snapshot?: ReviewRequest,
+		replayAcceptedIntent = false,
 	) {
 		const pinnedSnapshot: ReviewRequest = snapshot ?? {
 			key: intent.request,
@@ -640,6 +711,7 @@ export class PipelineEventRouter {
 			eventId: intent.eventId,
 			refetchSnapshot: async () => pinnedSnapshot,
 			dispatchIntent: intent,
+			replayAcceptedIntent,
 		});
 	}
 }

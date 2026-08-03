@@ -198,7 +198,10 @@ it("recovers an expired pipeline-only orphan claim on the same generation", asyn
 		revision: "abcdef1",
 	};
 	await store.appendEvent(event);
-	await store.claimEvents(request, 1);
+	const claim = await store.claimPipelineEvents(request, 1, 1);
+	if (claim.claimIdentity === undefined) {
+		throw new Error("expected pipeline claim identity");
+	}
 
 	expect(
 		await store.recoverOrphanedPipelineClaim({
@@ -216,7 +219,12 @@ it("recovers an expired pipeline-only orphan claim on the same generation", asyn
 			leaseVersion: 1,
 			recoveredAt: clock.value.toISOString(),
 		}),
-	).toEqual({ recovered: true, generation: 1, leaseVersion: 2 });
+	).toEqual({
+		recovered: true,
+		generation: 1,
+		leaseVersion: 2,
+		claimIdentity: claim.claimIdentity,
+	});
 	expect(store.inspectRequest(request)).toMatchObject({
 		lifecycleState: "STARTING",
 		generation: 1,
@@ -224,6 +232,62 @@ it("recovers an expired pipeline-only orphan claim on the same generation", asyn
 		leaseExpiresAt: clock.value.toISOString(),
 		pendingEventCount: 1,
 	});
+});
+
+it("recovers only the exact active pipeline claim past historical markers", async () => {
+	const clock = { value: new Date("2026-07-18T12:00:00.000Z") };
+	const store = new InMemoryStateStore({
+		clock: () => clock.value,
+		leaseDurationSeconds: 60,
+	});
+	const request = { ...common.request, requestId: "exact-orphan" };
+	for (let index = 0; index < 405; index += 1) {
+		await store.appendEvent({
+			id: `historical-${index}`,
+			type: "revision-updated",
+			request,
+			occurredAt: new Date(clock.value.getTime() + index).toISOString(),
+			revision: "abcdef1",
+		});
+	}
+	for (let page = 0; page < 5; page += 1) {
+		await store.claimEvents(request, 1);
+	}
+	const current = {
+		id: "current-orphan",
+		type: "revision-updated" as const,
+		request,
+		occurredAt: "2026-07-18T12:01:00.000Z",
+		revision: "bcdef12",
+	};
+	await store.appendEvent(current);
+	const claim = await store.claimPipelineEvents(request, 1, 1);
+	expect(claim.events).toEqual([current]);
+	if (claim.claimIdentity === undefined) {
+		throw new Error("expected pipeline claim identity");
+	}
+
+	clock.value = new Date("2026-07-18T12:01:01.000Z");
+	expect(
+		await store.recoverOrphanedPipelineClaim({
+			request,
+			generation: 1,
+			leaseVersion: 1,
+			recoveredAt: clock.value.toISOString(),
+		}),
+	).toEqual({
+		recovered: true,
+		generation: 1,
+		leaseVersion: 2,
+		claimIdentity: claim.claimIdentity,
+	});
+	expect(store.inspectRequest(request)).toMatchObject({
+		generation: 1,
+		leaseVersion: 2,
+		pendingEventCount: 1,
+		pipelineClaimIdentity: undefined,
+	});
+	expect((await store.claimEvents(request, 1)).events).toEqual([current]);
 });
 
 it("keeps immutable per-dispatch intents as completed tombstones", async () => {

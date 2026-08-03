@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import {
 	encodeStateKeyComponent,
 	PendingWorkError,
@@ -28,12 +29,15 @@ import type {
 	LeaseRecoveryInput,
 	LeaseRecoveryResult,
 	PersistedFinding,
+	PipelineClaimedEvents,
 	PipelineClaimRecoveryInput,
 	PipelineClaimRecoveryResult,
 	PipelineDispatchIntent,
 	PipelineDispatchOwnership,
 	ReviewLifecycleState,
 	ReviewStateStore,
+	SettlePipelineClaimInput,
+	SettlePipelineClaimResult,
 	WriteReservation,
 } from "../../../src/reviewer/ports/state-store";
 import { sanitizedPipelineRoutingFailure } from "../../../src/reviewer/ports/state-store";
@@ -73,6 +77,12 @@ interface StoredRequest {
 	completionReason?: CompletionReason;
 	lastPipelineRoutingFailure?: FailAndRequeueClaimInput["failure"];
 	claimCursor?: string;
+	pipelineClaimIdentity?: string;
+	pipelineClaimGeneration?: number;
+	pipelineClaimEventKeys?: readonly string[];
+	settledPipelineClaimIdentity?: string;
+	settledPipelineClaimGeneration?: number;
+	settledPipelineClaimEventKeys?: readonly string[];
 	expiresAt: number;
 	readonly events: Map<string, StoredEvent>;
 	readonly findings: Map<FindingFingerprint, PersistedFinding>;
@@ -90,6 +100,27 @@ function eventWatermark(event: ReviewEvent): string {
 
 function eventSortKey(event: ReviewEvent): string {
 	return `EVENT#${new Date(event.occurredAt).toISOString()}#${encodeStateKeyComponent(event.id)}`;
+}
+
+function pipelineClaimIdentity(
+	request: RequestKey,
+	generation: number,
+	leaseVersion: number,
+	eventKeys: readonly string[],
+): string {
+	return createHash("sha256")
+		.update(
+			JSON.stringify({
+				provider: request.provider,
+				repository: request.repository,
+				requestId: request.requestId,
+				generation,
+				leaseVersion,
+				eventKeys,
+			}),
+			"utf8",
+		)
+		.digest("base64url");
 }
 
 function compareEvents(left: ReviewEvent, right: ReviewEvent): number {
@@ -140,6 +171,7 @@ export interface InspectedRequestState {
 	readonly eventWatermark?: string;
 	readonly blockedLimit?: BlockedLimitDetail;
 	readonly claimCursor?: string;
+	readonly pipelineClaimIdentity?: string;
 	readonly leaseHeartbeatAt: string;
 	readonly leaseExpiresAt: string;
 	readonly completionReason?: CompletionReason;
@@ -177,6 +209,7 @@ export class InMemoryStateStore implements ReviewStateStore {
 					eventWatermark: state.eventWatermark,
 					blockedLimit: state.blockedLimit,
 					claimCursor: state.claimCursor,
+					pipelineClaimIdentity: state.pipelineClaimIdentity,
 					leaseHeartbeatAt: state.leaseHeartbeatAt,
 					leaseExpiresAt: state.leaseExpiresAt,
 					completionReason: state.completionReason,
@@ -308,6 +341,99 @@ export class InMemoryStateStore implements ReviewStateStore {
 		};
 	}
 
+	async claimPipelineEvents(
+		request: RequestKey,
+		generation: number,
+		leaseVersion: number,
+	): Promise<PipelineClaimedEvents> {
+		const state = this.#requireRequest(request);
+		this.#requireGeneration(state, generation);
+		if (
+			state.leaseVersion !== leaseVersion ||
+			state.pipelineClaimIdentity !== undefined
+		) {
+			throw new StaleStateError();
+		}
+		if (
+			state.lifecycleState === "COMPLETED" ||
+			state.lifecycleState === "TIMED_OUT" ||
+			state.lifecycleState === "FAILED"
+		) {
+			throw new Error("cannot claim events from a completed generation");
+		}
+
+		const claimed = [...state.events.entries()]
+			.filter(([, entry]) => entry.claimedGeneration === undefined)
+			.sort(([, left], [, right]) => compareEvents(left.event, right.event))
+			.slice(0, 99);
+		const eventKeys = claimed.map(([key]) => key);
+		const identity =
+			claimed.length === 0
+				? undefined
+				: pipelineClaimIdentity(request, generation, leaseVersion, eventKeys);
+		for (const [, entry] of claimed) entry.claimedGeneration = generation;
+		const hasRemainingEvents = [...state.events.values()].some(
+			({ claimedGeneration }) => claimedGeneration === undefined,
+		);
+		state.claimCursor = undefined;
+		if (claimed.length > 0 && identity !== undefined) {
+			const lastClaimed = claimed.at(-1);
+			if (lastClaimed === undefined) {
+				throw new Error("Expected claimed events to include a final event");
+			}
+			if (claimed.length === 99 && hasRemainingEvents) {
+				state.claimCursor = lastClaimed[0];
+			}
+			const watermark = eventWatermark(lastClaimed[1].event);
+			if (
+				state.eventWatermark === undefined ||
+				watermark > state.eventWatermark
+			) {
+				state.eventWatermark = watermark;
+			}
+			state.lifecycleState = "RUNNING";
+			state.callbackId = undefined;
+			state.callbackGeneration = undefined;
+			state.blockedLimit = undefined;
+			state.pipelineClaimIdentity = identity;
+			state.pipelineClaimGeneration = generation;
+			state.pipelineClaimEventKeys = eventKeys;
+			this.#clearSettledPipelineClaim(state);
+			this.#refreshLease(state);
+		}
+		return {
+			events: claimed.map(([, { event }]) => event),
+			throughWatermark: claimed.length > 0 ? state.eventWatermark : undefined,
+			...(identity === undefined ? {} : { claimIdentity: identity }),
+		};
+	}
+
+	async settlePipelineClaim(
+		input: SettlePipelineClaimInput,
+	): Promise<SettlePipelineClaimResult> {
+		const state = this.#requests.get(requestKey(input.request));
+		const eventKeys = input.events.map((event) => eventSortKey(event));
+		if (
+			state === undefined ||
+			state.generation !== input.generation ||
+			state.leaseVersion !== input.leaseVersion ||
+			state.lifecycleState !== "RUNNING" ||
+			state.pipelineClaimIdentity !== input.claimIdentity ||
+			state.pipelineClaimGeneration !== input.generation ||
+			state.pipelineClaimEventKeys?.length !== eventKeys.length ||
+			state.pipelineClaimEventKeys.some(
+				(key, index) => key !== eventKeys[index],
+			)
+		) {
+			return { settled: false, reason: "changed" };
+		}
+		state.settledPipelineClaimIdentity = state.pipelineClaimIdentity;
+		state.settledPipelineClaimGeneration = state.pipelineClaimGeneration;
+		state.settledPipelineClaimEventKeys = eventKeys;
+		this.#clearPipelineClaim(state);
+		return { settled: true };
+	}
+
 	async failAndRequeueClaim(
 		input: FailAndRequeueClaimInput,
 	): Promise<FailAndRequeueClaimResult> {
@@ -315,18 +441,29 @@ export class InMemoryStateStore implements ReviewStateStore {
 			throw new RangeError("claimed event requeue must contain 1 to 99 events");
 		}
 		const state = this.#requests.get(requestKey(input.request));
+		const activeMatches =
+			state?.pipelineClaimIdentity === input.claimIdentity &&
+			state.pipelineClaimGeneration === input.generation;
+		const settledMatches =
+			state?.settledPipelineClaimIdentity === input.claimIdentity &&
+			state.settledPipelineClaimGeneration === input.generation;
 		if (
 			state === undefined ||
 			state.generation !== input.generation ||
 			state.leaseVersion !== input.leaseVersion ||
-			state.lifecycleState !== "RUNNING"
+			state.lifecycleState !== "RUNNING" ||
+			(!activeMatches && !settledMatches)
 		) {
 			return { requeued: false, reason: "changed" };
 		}
-		const claimed = input.events.map((event) =>
-			state.events.get(eventSortKey(event)),
-		);
+		const eventKeys = input.events.map((event) => eventSortKey(event));
+		const expectedEventKeys = activeMatches
+			? state.pipelineClaimEventKeys
+			: state.settledPipelineClaimEventKeys;
+		const claimed = eventKeys.map((key) => state.events.get(key));
 		if (
+			expectedEventKeys?.length !== eventKeys.length ||
+			expectedEventKeys.some((key, index) => key !== eventKeys[index]) ||
 			claimed.some((entry) => entry?.claimedGeneration !== input.generation)
 		) {
 			return { requeued: false, reason: "changed" };
@@ -346,6 +483,8 @@ export class InMemoryStateStore implements ReviewStateStore {
 		state.lastPipelineRoutingFailure = sanitizedPipelineRoutingFailure(
 			input.failure.attempts,
 		);
+		this.#clearPipelineClaim(state);
+		this.#clearSettledPipelineClaim(state);
 		state.leaseHeartbeatAt = failedAt;
 		state.leaseExpiresAt = failedAt;
 		state.leaseVersion += 1;
@@ -370,13 +509,33 @@ export class InMemoryStateStore implements ReviewStateStore {
 		if (state.lifecycleState !== "RUNNING") {
 			return { recovered: false, reason: "changed" };
 		}
-		const claimed = [...state.events.values()]
-			.filter(({ claimedGeneration }) => claimedGeneration === input.generation)
-			.slice(0, 99);
-		if (claimed.length === 0) {
+		const claimIdentity = state.pipelineClaimIdentity;
+		const eventKeys = state.pipelineClaimEventKeys;
+		const hasClaimMetadata =
+			state.pipelineClaimIdentity !== undefined ||
+			state.pipelineClaimGeneration !== undefined ||
+			state.pipelineClaimEventKeys !== undefined;
+		if (!hasClaimMetadata) {
 			return { recovered: false, reason: "no-claimed-events" };
 		}
-		for (const entry of claimed) entry.claimedGeneration = undefined;
+		if (
+			claimIdentity === undefined ||
+			state.pipelineClaimGeneration !== input.generation ||
+			eventKeys === undefined ||
+			eventKeys.length < 1 ||
+			eventKeys.length > 99
+		) {
+			return { recovered: false, reason: "changed" };
+		}
+		const claimed = eventKeys.map((key) => state.events.get(key));
+		if (
+			claimed.some((entry) => entry?.claimedGeneration !== input.generation)
+		) {
+			return { recovered: false, reason: "changed" };
+		}
+		for (const entry of claimed) {
+			if (entry !== undefined) entry.claimedGeneration = undefined;
+		}
 		state.lifecycleState = "STARTING";
 		state.executionArn = undefined;
 		state.callbackId = undefined;
@@ -384,6 +543,8 @@ export class InMemoryStateStore implements ReviewStateStore {
 		state.lastCallbackGeneration = undefined;
 		state.blockedLimit = undefined;
 		state.claimCursor = undefined;
+		this.#clearPipelineClaim(state);
+		this.#clearSettledPipelineClaim(state);
 		state.leaseHeartbeatAt = recoveredAt;
 		state.leaseExpiresAt = recoveredAt;
 		state.leaseVersion += 1;
@@ -391,6 +552,7 @@ export class InMemoryStateStore implements ReviewStateStore {
 			recovered: true,
 			generation: state.generation,
 			leaseVersion: state.leaseVersion,
+			claimIdentity,
 		};
 	}
 
@@ -778,7 +940,21 @@ export class InMemoryStateStore implements ReviewStateStore {
 		state.callbackId = undefined;
 		state.callbackGeneration = undefined;
 		state.blockedLimit = undefined;
+		this.#clearPipelineClaim(state);
+		this.#clearSettledPipelineClaim(state);
 		state.expiresAt = this.#epochSeconds() + this.#ttlSeconds;
+	}
+
+	#clearPipelineClaim(state: StoredRequest): void {
+		state.pipelineClaimIdentity = undefined;
+		state.pipelineClaimGeneration = undefined;
+		state.pipelineClaimEventKeys = undefined;
+	}
+
+	#clearSettledPipelineClaim(state: StoredRequest): void {
+		state.settledPipelineClaimIdentity = undefined;
+		state.settledPipelineClaimGeneration = undefined;
+		state.settledPipelineClaimEventKeys = undefined;
 	}
 
 	#resetGenerationLocalState(state: StoredRequest): void {
@@ -794,6 +970,8 @@ export class InMemoryStateStore implements ReviewStateStore {
 		state.completionReason = undefined;
 		state.lastPipelineRoutingFailure = undefined;
 		state.claimCursor = undefined;
+		this.#clearPipelineClaim(state);
+		this.#clearSettledPipelineClaim(state);
 	}
 
 	#newRequest(): StoredRequest {

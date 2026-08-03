@@ -2315,16 +2315,123 @@ describe("DynamoDbStateStore", () => {
 		).rejects.toBe(conflict);
 	});
 
+	it("atomically records an exact bounded pipeline claim with ownership", async () => {
+		const commands: object[] = [];
+		const events = Array.from({ length: 99 }, (_, index) => {
+			const event = revisionEvent(`pipeline-claim-${index}`);
+			return {
+				pk: "request",
+				sk: `EVENT#${index.toString().padStart(3, "0")}`,
+				eventType: event.type,
+				eventId: event.id,
+				occurredAt: event.occurredAt,
+				watermark: `${event.occurredAt}#${event.id}`,
+				revision: "abcdef1",
+			};
+		});
+		const transport: DynamoDbDocumentTransport = {
+			send: async (command) => {
+				commands.push(command);
+				if (command.constructor.name === "GetCommand") {
+					return {
+						Item: {
+							generation: 3,
+							leaseVersion: 8,
+							lifecycleState: "STARTING",
+							pendingEventCount: 99,
+						},
+					};
+				}
+				if (command.constructor.name === "QueryCommand") {
+					return { Items: events };
+				}
+				return {};
+			},
+		};
+		const store = new DynamoDbStateStore({
+			transport,
+			tableName: "review-state",
+			clock: () => new Date(now),
+		});
+
+		const claim = await store.claimPipelineEvents(request, 3, 8);
+
+		expect(claim.events).toHaveLength(99);
+		expect(claim.claimIdentity).toMatch(/^[A-Za-z0-9_-]{43}$/);
+		const transaction = commands.find(
+			(command) => command.constructor.name === "TransactWriteCommand",
+		) as {
+			input?: {
+				ClientRequestToken?: string;
+				TransactItems?: readonly Record<string, unknown>[];
+			};
+		};
+		expect(transaction.input?.TransactItems).toHaveLength(100);
+		expect(transaction.input?.ClientRequestToken).toHaveLength(36);
+		const serialized = JSON.stringify(transaction.input);
+		expect(serialized).toContain("leaseVersion = :leaseVersion");
+		expect(serialized).toContain("attribute_not_exists(pipelineClaimIdentity)");
+		expect(serialized).toContain(
+			"pipelineClaimIdentity = :pipelineClaimIdentity",
+		);
+		expect(serialized).toContain(
+			"pipelineClaimEventKeys = :pipelineClaimEventKeys",
+		);
+	});
+
+	it("settles only the exact active pipeline claim while clearing active metadata", async () => {
+		const commands: object[] = [];
+		const store = new DynamoDbStateStore({
+			transport: {
+				send: async (command) => {
+					commands.push(command);
+					return {};
+				},
+			},
+			tableName: "review-state",
+		});
+		const event = revisionEvent("settled-claim");
+
+		expect(
+			await store.settlePipelineClaim({
+				request,
+				generation: 3,
+				leaseVersion: 8,
+				claimIdentity: "exact-claim",
+				events: [event],
+			}),
+		).toEqual({ settled: true });
+		const serialized = JSON.stringify(
+			(commands[0] as { input?: unknown }).input,
+		);
+		expect(serialized).toContain(
+			"settledPipelineClaimIdentity = :pipelineClaimIdentity",
+		);
+		expect(serialized).toContain(
+			"settledPipelineClaimEventKeys = :pipelineClaimEventKeys",
+		);
+		expect(serialized).toContain(
+			"REMOVE pipelineClaimIdentity, pipelineClaimGeneration, pipelineClaimEventKeys",
+		);
+		expect(serialized).toContain(
+			"pipelineClaimEventKeys = :pipelineClaimEventKeys",
+		);
+	});
+
 	it("atomically requeues a claimed pipeline page on the same generation", async () => {
 		const store = new InMemoryStateStore({ clock: () => new Date(now) });
 		const event = revisionEvent("pipeline-requeue");
 		await store.appendEvent(event);
-		const claimed = await store.claimEvents(request, 1);
+		const claimed = await store.claimPipelineEvents(request, 1, 1);
+		if (claimed.claimIdentity === undefined) {
+			throw new Error("expected pipeline claim identity");
+		}
 
 		const result = await store.failAndRequeueClaim({
 			request,
 			generation: 1,
 			leaseVersion: 1,
+			claimIdentity: claimed.claimIdentity,
 			events: claimed.events,
 			failedAt: now,
 			failure: {
@@ -2375,6 +2482,7 @@ describe("DynamoDbStateStore", () => {
 				request,
 				generation: 3,
 				leaseVersion: 8,
+				claimIdentity: "exact-claim",
 				events,
 				failedAt: now,
 				failure: {
@@ -2392,14 +2500,15 @@ describe("DynamoDbStateStore", () => {
 			request,
 			generation: 3,
 			leaseVersion: 8,
+			claimIdentity: "exact-claim",
 			events: [...events].reverse(),
-			failedAt: "2026-07-18T12:00:01.000Z",
+			failedAt: now,
 			failure: {
 				type: "operational-failure",
 				lifecycleState: "FAILED",
 				operation: "different-secret-operation",
 				reason: "permanent-error",
-				attempts: 1,
+				attempts: 999,
 				lastError: { name: "DifferentSecret", message: "different secret" },
 			},
 		});
@@ -2416,6 +2525,9 @@ describe("DynamoDbStateStore", () => {
 		expect(transaction?.input?.ClientRequestToken).toHaveLength(36);
 		expect(retry?.input?.ClientRequestToken).toBe(
 			transaction?.input?.ClientRequestToken,
+		);
+		expect(retry?.input?.TransactItems).toEqual(
+			transaction?.input?.TransactItems,
 		);
 		const serialized = JSON.stringify(transaction?.input);
 		expect(serialized).toContain(
@@ -2469,6 +2581,7 @@ describe("DynamoDbStateStore", () => {
 				request,
 				generation: 3,
 				leaseVersion: 8,
+				claimIdentity: "response-lost-claim",
 				events: [event],
 				failedAt: now,
 				failure: {
@@ -2488,7 +2601,6 @@ describe("DynamoDbStateStore", () => {
 
 	it("uses one ownership-conditioned transaction to recover an expired orphan claim", async () => {
 		const commands: object[] = [];
-		const claimed = revisionEvent("orphaned");
 		const transport: DynamoDbDocumentTransport = {
 			send: async (command) => {
 				commands.push(command);
@@ -2500,24 +2612,14 @@ describe("DynamoDbStateStore", () => {
 							lifecycleState: "RUNNING",
 							leaseExpiresAt: "2026-07-18T11:59:00.000Z",
 							pendingEventCount: 0,
+							pipelineClaimIdentity: "exact-claim",
+							pipelineClaimGeneration: 3,
+							pipelineClaimEventKeys: ["EVENT#orphaned"],
 						},
 					};
 				}
 				if (command.constructor.name === "QueryCommand") {
-					return {
-						Items: [
-							{
-								pk: "request",
-								sk: "EVENT#orphaned",
-								eventType: claimed.type,
-								eventId: claimed.id,
-								occurredAt: claimed.occurredAt,
-								watermark: `${claimed.occurredAt}#${claimed.id}`,
-								revision: claimed.revision,
-								claimedGeneration: 3,
-							},
-						],
-					};
+					throw new Error("orphan recovery must not scan events");
 				}
 				return {};
 			},
@@ -2535,14 +2637,18 @@ describe("DynamoDbStateStore", () => {
 				leaseVersion: 8,
 				recoveredAt: now,
 			}),
-		).toEqual({ recovered: true, generation: 3, leaseVersion: 9 });
+		).toEqual({
+			recovered: true,
+			generation: 3,
+			leaseVersion: 9,
+			claimIdentity: "exact-claim",
+		});
 		const transaction = commands.find(
 			(command) => command.constructor.name === "TransactWriteCommand",
 		) as { input?: { TransactItems?: readonly Record<string, unknown>[] } };
-		const claimQuery = commands.find(
-			(command) => command.constructor.name === "QueryCommand",
-		) as { input?: { ScanIndexForward?: boolean } };
-		expect(claimQuery.input?.ScanIndexForward).toBe(false);
+		expect(
+			commands.some((command) => command.constructor.name === "QueryCommand"),
+		).toBeFalse();
 		expect(transaction.input?.TransactItems).toHaveLength(2);
 		const serialized = JSON.stringify(transaction.input);
 		expect(serialized).toContain("leaseExpiresAt <= :recoveredAt");
@@ -2553,13 +2659,58 @@ describe("DynamoDbStateStore", () => {
 			"ADD pendingEventCount :claimedCount, leaseVersion :one",
 		);
 		expect(serialized).toContain("claimedGeneration = :generation");
+		expect(serialized).toContain(
+			"pipelineClaimIdentity = :pipelineClaimIdentity",
+		);
+		expect(serialized).toContain(
+			"pipelineClaimIdentity, pipelineClaimGeneration, pipelineClaimEventKeys",
+		);
 		expect(transaction.input?.TransactItems).toHaveLength(2);
 	});
 
-	it("searches past 500 newer unclaimed events to recover an older orphan claim", async () => {
+	it("rejects ambiguous partial active pipeline claim metadata", async () => {
 		const commands: object[] = [];
-		const claimed = revisionEvent("hidden-orphan");
-		let queryPage = 0;
+		const store = new DynamoDbStateStore({
+			transport: {
+				send: async (command) => {
+					commands.push(command);
+					return command.constructor.name === "GetCommand"
+						? {
+								Item: {
+									generation: 3,
+									leaseVersion: 8,
+									lifecycleState: "RUNNING",
+									leaseExpiresAt: "2026-07-18T11:59:00.000Z",
+									pipelineClaimIdentity: "partial-claim",
+									pipelineClaimGeneration: 3,
+								},
+							}
+						: {};
+				},
+			},
+			tableName: "review-state",
+		});
+
+		expect(
+			await store.recoverOrphanedPipelineClaim({
+				request,
+				generation: 3,
+				leaseVersion: 8,
+				recoveredAt: now,
+			}),
+		).toEqual({ recovered: false, reason: "changed" });
+		expect(
+			commands.some((command) => command.constructor.name === "QueryCommand"),
+		).toBeFalse();
+		expect(
+			commands.some(
+				(command) => command.constructor.name === "TransactWriteCommand",
+			),
+		).toBeFalse();
+	});
+
+	it("ignores historical markers when exact orphan metadata names the current claim", async () => {
+		const commands: object[] = [];
 		const transport: DynamoDbDocumentTransport = {
 			send: async (command) => {
 				commands.push(command);
@@ -2571,35 +2722,14 @@ describe("DynamoDbStateStore", () => {
 							lifecycleState: "RUNNING",
 							leaseExpiresAt: "2026-07-18T11:59:00.000Z",
 							pendingEventCount: 401,
+							pipelineClaimIdentity: "current-claim",
+							pipelineClaimGeneration: 3,
+							pipelineClaimEventKeys: ["EVENT#current-orphan"],
 						},
 					};
 				}
 				if (command.constructor.name === "QueryCommand") {
-					queryPage += 1;
-					if (queryPage <= 5) {
-						return {
-							Items: [],
-							ScannedCount: 100,
-							LastEvaluatedKey: {
-								pk: "request",
-								sk: `EVENT#${queryPage * 100}`,
-							},
-						};
-					}
-					return {
-						Items: [
-							{
-								pk: "request",
-								sk: "EVENT#hidden-orphan",
-								eventType: claimed.type,
-								eventId: claimed.id,
-								occurredAt: claimed.occurredAt,
-								watermark: `${claimed.occurredAt}#${claimed.id}`,
-								revision: claimed.revision,
-								claimedGeneration: 3,
-							},
-						],
-					};
+					throw new Error("historical markers must not be scanned");
 				}
 				return {};
 			},
@@ -2617,8 +2747,12 @@ describe("DynamoDbStateStore", () => {
 				leaseVersion: 8,
 				recoveredAt: now,
 			}),
-		).toEqual({ recovered: true, generation: 3, leaseVersion: 9 });
-		expect(queryPage).toBe(6);
+		).toEqual({
+			recovered: true,
+			generation: 3,
+			leaseVersion: 9,
+			claimIdentity: "current-claim",
+		});
 		expect(
 			commands.filter(
 				(command) => command.constructor.name === "TransactWriteCommand",
@@ -2767,6 +2901,7 @@ describe("DynamoDbStateStore", () => {
 				request,
 				generation: 1,
 				leaseVersion: 2,
+				claimIdentity: "changed-claim",
 				events: [revisionEvent("changed")],
 				failedAt: now,
 				failure: {

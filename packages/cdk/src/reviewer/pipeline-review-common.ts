@@ -217,6 +217,7 @@ export interface PrPipelineDispatcher {
 		readonly eventId: string;
 		readonly refetchSnapshot: () => Promise<ReviewRequest>;
 		readonly dispatchIntent?: PipelineDispatchIntent;
+		readonly replayAcceptedIntent?: boolean;
 		// biome-ignore lint/suspicious/noConfusingVoidType: void preserves compatibility with existing dispatchers.
 	}): Promise<PipelineDispatchReceipt | void>;
 	completeTerminalRequest(input: {
@@ -269,6 +270,7 @@ export class PipelineReviewDispatcher implements PrPipelineDispatcher {
 		readonly eventId: string;
 		readonly refetchSnapshot: () => Promise<ReviewRequest>;
 		readonly dispatchIntent?: PipelineDispatchIntent;
+		readonly replayAcceptedIntent?: boolean;
 	}): Promise<PipelineDispatchReceipt | undefined> {
 		if (input.snapshot.status !== "open") return;
 		const pinned = input.dispatchIntent;
@@ -283,7 +285,7 @@ export class PipelineReviewDispatcher implements PrPipelineDispatcher {
 					};
 		let proposalObservedAt = input.observedAt;
 		let authorized = pinned !== undefined;
-		if (pinned !== undefined) {
+		if (pinned !== undefined && input.replayAcceptedIntent !== true) {
 			const winner = await this.#store.recordAuthoritativeRevision({
 				request: pinned.request,
 				generation: pinned.generation,
@@ -327,11 +329,13 @@ export class PipelineReviewDispatcher implements PrPipelineDispatcher {
 		if (!authorized) {
 			throw new AuthoritativeRevisionArbitrationExhaustedError();
 		}
-		await this.#markOlderJobsSuperseded(
-			workingSnapshot.key,
-			input.generation,
-			workingSnapshot.sourceRevision,
-		);
+		if (input.replayAcceptedIntent !== true) {
+			await this.#markOlderJobsSuperseded(
+				workingSnapshot.key,
+				input.generation,
+				workingSnapshot.sourceRevision,
+			);
+		}
 		const { executionId } = await this.#transport.startExecution({
 			pipelineName: this.#pipelineName,
 			sourceActionName: this.#sourceActionName,

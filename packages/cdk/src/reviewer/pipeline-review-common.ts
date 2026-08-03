@@ -245,6 +245,7 @@ export class PipelineReviewDispatcher implements PrPipelineDispatcher {
 	readonly #transport: ExactPipelineTransport;
 	readonly #store: PipelineCoordinationStore;
 	readonly #reconciler: PipelineReconcilerInvoker;
+	readonly #coordinateReviewJobs: boolean;
 	readonly #clock: () => Date;
 
 	constructor(options: {
@@ -253,6 +254,7 @@ export class PipelineReviewDispatcher implements PrPipelineDispatcher {
 		readonly transport: ExactPipelineTransport;
 		readonly store: PipelineCoordinationStore;
 		readonly reconciler: PipelineReconcilerInvoker;
+		readonly coordinateReviewJobs?: boolean;
 		readonly clock?: () => Date;
 	}) {
 		this.#pipelineName = options.pipelineName;
@@ -260,6 +262,7 @@ export class PipelineReviewDispatcher implements PrPipelineDispatcher {
 		this.#transport = options.transport;
 		this.#store = options.store;
 		this.#reconciler = options.reconciler;
+		this.#coordinateReviewJobs = options.coordinateReviewJobs ?? true;
 		this.#clock = options.clock ?? (() => new Date());
 	}
 
@@ -329,7 +332,7 @@ export class PipelineReviewDispatcher implements PrPipelineDispatcher {
 		if (!authorized) {
 			throw new AuthoritativeRevisionArbitrationExhaustedError();
 		}
-		if (input.replayAcceptedIntent !== true) {
+		if (this.#coordinateReviewJobs && input.replayAcceptedIntent !== true) {
 			await this.#markOlderJobsSuperseded(
 				workingSnapshot.key,
 				input.generation,
@@ -357,7 +360,7 @@ export class PipelineReviewDispatcher implements PrPipelineDispatcher {
 			createdAt: this.#clock().toISOString(),
 		};
 		await this.#store.putExecutionMapping(mapping);
-		await this.#reconciler.invoke();
+		if (this.#coordinateReviewJobs) await this.#reconciler.invoke();
 		return { executionId, mappingIdentity: executionId };
 	}
 
@@ -372,6 +375,7 @@ export class PipelineReviewDispatcher implements PrPipelineDispatcher {
 			status: input.status,
 			occurredAt: this.#clock().toISOString(),
 		});
+		if (!this.#coordinateReviewJobs) return;
 		const candidate = {
 			status: "success",
 			category:

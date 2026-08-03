@@ -84,6 +84,7 @@ export function createPipelineReviewDispatcher(
 		transport: dependencies.transport,
 		store: dependencies.store,
 		reconciler,
+		coordinateReviewJobs: options.reconcilerFunctionName !== undefined,
 	});
 }
 

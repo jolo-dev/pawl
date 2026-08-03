@@ -40,6 +40,12 @@ class RecordingKick {
 	}
 }
 
+class ListRequestJobsRejectingStore extends FakePipelineCoordinationStore {
+	override async listRequestJobs(): Promise<never> {
+		throw new Error("listRequestJobs must not be called in preparation mode");
+	}
+}
+
 class ContendedRevisionStore extends FakePipelineCoordinationStore {
 	readonly proposals: Array<{
 		readonly sourceRevision: string;
@@ -112,6 +118,87 @@ const pendingJob = (jobId: string, sourceRevision: string) => ({
 });
 
 describe("PipelineReviewDispatcher", () => {
+	test("starts and maps the exact revision without coordinating review jobs in preparation mode", async () => {
+		const store = new ListRequestJobsRejectingStore();
+		const transport = new RecordingPipelineTransport();
+		const kick = new RecordingKick();
+		const dispatcher = new PipelineReviewDispatcher({
+			pipelineName: "pipeline",
+			transport,
+			store,
+			reconciler: kick,
+			coordinateReviewJobs: false,
+			clock: () => new Date("2026-07-29T12:00:00.000Z"),
+		});
+
+		await dispatcher.startReviewPipeline({
+			snapshot,
+			generation: 3,
+			observedAt: "2026-07-29T12:00:00.000Z",
+			eventId: "revision-new",
+			refetchSnapshot: async () => snapshot,
+		});
+
+		expect(transport.starts).toEqual([
+			{
+				pipelineName: "pipeline",
+				sourceActionName: "Source",
+				sourceRevision: snapshot.sourceRevision,
+				destinationRevision: snapshot.destinationRevision,
+				request,
+				generation: 3,
+			},
+		]);
+		expect([...store.authoritativeRevisions.values()]).toEqual([
+			{
+				request,
+				generation: 3,
+				sourceRevision: snapshot.sourceRevision,
+				observedAt: "2026-07-29T12:00:00.000Z",
+				eventId: "revision-new",
+			},
+		]);
+		expect(store.mappings.get("exec-new")).toEqual({
+			executionId: "exec-new",
+			pipelineName: "pipeline",
+			request,
+			generation: 3,
+			sourceRevision: snapshot.sourceRevision,
+			destinationRevision: snapshot.destinationRevision,
+			createdAt: "2026-07-29T12:00:00.000Z",
+		});
+		expect(kick.count).toBe(0);
+	});
+
+	test("records terminal requests without querying review jobs in preparation mode", async () => {
+		const store = new ListRequestJobsRejectingStore();
+		const kick = new RecordingKick();
+		const dispatcher = new PipelineReviewDispatcher({
+			pipelineName: "pipeline",
+			transport: new RecordingPipelineTransport(),
+			store,
+			reconciler: kick,
+			coordinateReviewJobs: false,
+			clock: () => new Date("2026-07-29T12:00:00.000Z"),
+		});
+
+		await dispatcher.completeTerminalRequest({
+			request,
+			generation: 3,
+			status: "merged",
+		});
+
+		expect([...store.terminalRequests.values()]).toEqual([
+			{
+				request,
+				generation: 3,
+				status: "merged",
+				occurredAt: "2026-07-29T12:00:00.000Z",
+			},
+		]);
+		expect(kick.count).toBe(0);
+	});
+
 	test("supersedes older pending jobs only and starts the exact authoritative revision", async () => {
 		const store = new FakePipelineCoordinationStore();
 		await store.registerJob(pendingJob("old", "a".repeat(40)));

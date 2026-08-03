@@ -56,6 +56,12 @@ class RecordingReconciler {
 	}
 }
 
+class ListRequestJobsRejectingStore extends FakePipelineCoordinationStore {
+	override async listRequestJobs(): Promise<never> {
+		throw new Error("listRequestJobs must not be called in preparation mode");
+	}
+}
+
 class RecordingLambdaTransport implements LambdaTransport {
 	readonly commands: LambdaCommand[] = [];
 
@@ -467,12 +473,9 @@ describe("router", () => {
 		expect(lambda.commands).toHaveLength(0);
 	});
 
-	test.each([
-		"prepareGsi1",
-		"prepareGsi2",
-	])("starts the exact PR revision with an explicit no-op kick in %s", async () => {
+	test("composes preparation mode to start and map the exact PR revision without job coordination", async () => {
 		const sender = new IdempotentPipelineSender();
-		const coordinationStore = new FakePipelineCoordinationStore();
+		const coordinationStore = new ListRequestJobsRejectingStore();
 		let reconcilerFactoryCalls = 0;
 		const dispatcher = createPipelineReviewDispatcher(
 			{
@@ -489,14 +492,17 @@ describe("router", () => {
 			},
 		);
 
-		await dispatcher.startReviewPipeline({
-			snapshot: fakeReviewRequest,
-			generation: 1,
-			observedAt: "2026-01-01T00:00:00.000Z",
-			eventId: "event-1",
-			refetchSnapshot: async () => fakeReviewRequest,
+		const router = new PipelineEventRouter({
+			stateStore: new InMemoryStateStore(),
+			provider: fakeProvider,
+			pipelineDispatcher: dispatcher,
 		});
 
+		const result = await router.routePipelineOnly(
+			pullRequestCreatedEvent("repo"),
+		);
+
+		expect(result).toMatchObject({ started: true, generation: 1 });
 		expectPipelineStart(sender.starts[0], 1);
 		expect([...coordinationStore.mappings.values()]).toEqual([
 			expect.objectContaining({

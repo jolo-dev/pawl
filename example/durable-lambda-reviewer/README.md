@@ -56,11 +56,15 @@ CodeCommit PR event
   └──► Invoke durable reviewer ──► Bedrock AI review ──► post review comment
 ```
 
+- **Managed source** — Fluent `CodePipeline.source()` creates and seeds the
+  CodeCommit repository directly from this example; no separate source
+  construct is required.
 - **Pipeline** — `CodePipeline` with `onPullRequest: true` and
-  `CodeCommitTrigger.NONE`. The router starts executions explicitly with the
-  PR's source commit.
+  `autoReviewer: { modelId }` uses `CodeCommitTrigger.NONE`. The router starts
+  executions explicitly with the PR's source commit.
 - **Build stage** — `CodeBuildProject` in `pipelineMode` runs the repo's
-  `buildspec.yml`.
+  `buildspec.yml`; fluent artifact inference wires `SourceOutput` to the build
+  and creates `BuildOutput` automatically.
 - **Approve stage** — Manual approval gate before merge.
 - **Auto-review** — Same durable reviewer infrastructure as Stack 1, extended
   with pipeline dispatch via the common runtime module.

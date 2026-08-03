@@ -6,8 +6,6 @@ import { createLocalStackSetup } from "./localstack.setup";
 // ── Configuration ───────────────────────────────────────────────────
 
 const REPO_NAME = "codepipeline-integ-test-repo";
-const TEAM = "foo";
-const STAGE = "dev";
 const STACK_NAME = "CodePipelineIntegStack";
 
 // ── Stack function (runs during synth) ──────────────────────────────
@@ -16,18 +14,19 @@ function CodePipelineIntegStack() {
 	const scope = resolveScope();
 	const repo = new Repository(scope, "Repo", { repositoryName: REPO_NAME });
 	new CodePipeline(scope, "Pipeline", {
-		source: {
-			type: "codecommit",
+		autoReviewer: { modelId: "eu.amazon.nova-2-lite-v1:0" },
+		onPullRequest: true,
+	})
+		.source({
+			origin: "codecommit",
 			repository: repo,
 			branchName: "main",
 			repositoryName: REPO_NAME,
-		},
-		autoReview: { modelId: "eu.amazon.nova-2-lite-v1:0" },
-		onPullRequest: true,
-		stages: [{ name: "Build", actions: [] }],
-		team: TEAM,
-		stage: STAGE,
-	});
+		})
+		.stage({
+			name: "Build",
+			actions: [{ name: "Approve", type: "approval" }],
+		});
 }
 
 // ── Integration tests (run during bun test) ─────────────────────────

@@ -19,6 +19,7 @@ export interface ArtifactActionPlan {
 	readonly input: ArtifactInputPlan;
 	readonly additionalInputs?: readonly string[];
 	readonly deduplicateAdditionalInputWithInferredPrimary?: string;
+	readonly maxInputs?: number;
 	readonly outputs?: readonly string[];
 }
 
@@ -153,6 +154,13 @@ export function planStageBatch(
 					);
 				}
 				inputs.push(additionalInput);
+			}
+			if (action.maxInputs !== undefined && inputs.length > action.maxInputs) {
+				throw new PipelineDefinitionError(
+					"PIPELINE_PROP_CONFLICT",
+					`Action '${action.name}' supports at most ${action.maxInputs} input artifacts`,
+					`${path}.input`,
+				);
 			}
 			const outputs: string[] = [];
 

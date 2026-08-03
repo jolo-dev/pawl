@@ -657,12 +657,6 @@ function planCloudFormation(
 		declaredAdditional,
 		`${path}.additionalInputs`,
 	);
-	if (additionalInputs.length > 9) {
-		throw definitionError(
-			"CloudFormation actions support at most ten input artifacts",
-			`${path}.additionalInputs`,
-		);
-	}
 	if (primaryName !== undefined && additionalInputs.includes(primaryName)) {
 		throw definitionError(
 			`Artifact '${primaryName}' cannot be supplied more than once`,
@@ -699,6 +693,7 @@ function planCloudFormation(
 			additionalInputs,
 			deduplicateAdditionalInputWithInferredPrimary:
 				primaryName === undefined ? configurationInput : undefined,
+			maxInputs: 10,
 			outputs,
 		},
 		materialize({ inputs, outputs: materializedOutputs }) {

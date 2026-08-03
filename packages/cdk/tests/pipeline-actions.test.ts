@@ -301,28 +301,45 @@ describe("pipeline action runtime validation", () => {
 				project: createProject(stack, "InputProject"),
 				extraInputs: ["Two", "Three", "Four", "Five", "Six"],
 			},
+		]) {
+			expectDefinitionError(() => planPipelineAction(value as never, "action"));
+		}
+
+		const deployInputs = [
+			"Two",
+			"Three",
+			"Four",
+			"Five",
+			"Six",
+			"Seven",
+			"Eight",
+			"Nine",
+			"Ten",
+			"Eleven",
+		];
+		const deploy = planPipelineAction(
 			{
 				type: "cloudFormationDeploy",
 				name: "TooManyDeployInputs",
 				stackName: "Application",
 				templatePath: "template.json",
-				extraInputs: [
-					"Two",
-					"Three",
-					"Four",
-					"Five",
-					"Six",
-					"Seven",
-					"Eight",
-					"Nine",
-					"Ten",
-					"Eleven",
-				],
+				extraInputs: deployInputs,
 				deploymentRole,
 			},
-		]) {
-			expectDefinitionError(() => planPipelineAction(value as never, "action"));
-		}
+			"action",
+		);
+		expectDefinitionError(
+			() =>
+				planStageBatch(
+					{
+						registered: new Set(["SourceOutput", ...deployInputs]),
+						frontier: ["SourceOutput"],
+					},
+					[{ name: "Deploy", actions: [deploy.artifactPlan] }],
+				),
+			"stages[Deploy].actions[TooManyDeployInputs].input",
+			"PIPELINE_PROP_CONFLICT",
+		);
 	});
 });
 
@@ -610,6 +627,7 @@ describe("S3 and CloudFormation action adapters", () => {
 			name: "Deploy",
 			input: { mode: "required", explicit: ["Template"] },
 			additionalInputs: ["Configuration", "Parameters"],
+			maxInputs: 10,
 			outputs: ["DeployOutput"],
 		});
 		const { synthesized } = addMaterializedAction(
@@ -688,6 +706,76 @@ describe("S3 and CloudFormation action adapters", () => {
 			TemplateConfiguration: "SourceOutput::configuration.json",
 			TemplatePath: "SourceOutput::template.json",
 		});
+	});
+
+	test("accepts ten resolved inputs after inferred configuration deduplication", () => {
+		const extraInputs = Array.from(
+			{ length: 9 },
+			(_, index) => `Extra${index + 1}`,
+		);
+		const adapter = planPipelineAction(
+			{
+				type: "cloudFormationDeploy",
+				name: "Deploy",
+				stackName: "Application",
+				templatePath: "template.json",
+				templateConfiguration: {
+					input: "SourceOutput",
+					path: "configuration.json",
+				},
+				extraInputs,
+				adminPermissions: true,
+			},
+			"action",
+		);
+		const state = {
+			registered: new Set(["SourceOutput", ...extraInputs]),
+			frontier: ["SourceOutput"],
+		};
+
+		const planned = planStageBatch(state, [
+			{ name: "Deploy", actions: [adapter.artifactPlan] },
+		]);
+
+		expect(planned.stages[0]?.actions[0]?.inputs).toEqual([
+			"SourceOutput",
+			...extraInputs,
+		]);
+	});
+
+	test("rejects eleven resolved inputs before materialization", () => {
+		const extraInputs = Array.from(
+			{ length: 9 },
+			(_, index) => `Extra${index + 1}`,
+		);
+		const adapter = planPipelineAction(
+			{
+				type: "cloudFormationDeploy",
+				name: "Deploy",
+				stackName: "Application",
+				templatePath: "template.json",
+				templateConfiguration: {
+					input: "Configuration",
+					path: "configuration.json",
+				},
+				extraInputs,
+				adminPermissions: true,
+			},
+			"action",
+		);
+		const state = {
+			registered: new Set(["SourceOutput", "Configuration", ...extraInputs]),
+			frontier: ["SourceOutput"],
+		};
+
+		expectDefinitionError(
+			() =>
+				planStageBatch(state, [
+					{ name: "Deploy", actions: [adapter.artifactPlan] },
+				]),
+			"stages[Deploy].actions[Deploy].input",
+			"PIPELINE_PROP_CONFLICT",
+		);
 	});
 });
 

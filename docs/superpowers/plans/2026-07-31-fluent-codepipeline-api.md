@@ -547,14 +547,17 @@ Keep exact-revision arbitration in `PipelineReviewDispatcher`; do not duplicate 
 For `PipelineEventRouter.routePipelineOnly(value)`, the extracted service is the sole append owner. Implement and test this exact lifecycle:
 
 1. normalize the event and call `appendEvent()` once;
-2. return immediately for a duplicate/non-starting invocation unless `recoveryEligible` permits taking over an expired owner;
-3. when ownership is available, call `claimEvents(request, generation)` before dispatch; this transitions `STARTING` to `RUNNING` and decrements pending events;
-4. coalesce the claimed page to its latest authoritative open/revision signal, refetch the request, and call `PipelineReviewDispatcher` once for that revision;
-5. call `claimEvents()` again until it returns no events, dispatching a newly authoritative revision when concurrent events arrived;
-6. attempt `complete(request, generation, { type: "clean" })` only from `RUNNING` with zero pending events;
-7. if completion loses a conditional race to a concurrent append, claim/drain again instead of dropping the event;
-8. for merged/closed events, call `completeTerminalRequest()` and complete with the matching terminal reason;
-9. use bounded contention/recovery attempts and surface a retryable operational error when they are exhausted.
+2. initialize a mutable local owner tuple from the append result: `{ generation: append.generation, leaseVersion: append.leaseVersion }`;
+3. return immediately for a duplicate/non-starting invocation unless `recoveryEligible` permits taking over an expired owner;
+4. for recovery, call `recoverLease()` with that owner tuple and `remoteStatus: "NOT_FOUND"` because pipeline-only mode never records a durable reviewer execution;
+5. handle every recovery union branch explicitly: adopt both returned `generation` and `leaseVersion` on `recovered: true`; return for `active`/`no-pending-events`; treat `remote-status-required` as an invariant error; and return for `changed` because another invocation now owns the reported generation/lease;
+6. when ownership is available, call `claimEvents(request, owner.generation)` before dispatch; this transitions `STARTING` to `RUNNING` and decrements pending events;
+7. coalesce the claimed page to its latest authoritative open/revision signal, refetch the request, and call `PipelineReviewDispatcher` once for that revision;
+8. call `claimEvents()` again with the adopted owner generation until it returns no events, dispatching a newly authoritative revision when concurrent events arrived;
+9. attempt `complete(request, owner.generation, { type: "clean" })` only from `RUNNING` with zero pending events;
+10. if completion loses a conditional race to a concurrent append, claim/drain again instead of dropping the event;
+11. for merged/closed events, call `completeTerminalRequest()` and complete with the matching terminal reason;
+12. use bounded contention/recovery attempts and surface a retryable operational error when they are exhausted.
 
 Do not call `recordExecution()` because there is no durable reviewer execution ARN. Lease recovery must use `recoverLease()` only for `recoveryEligible` results and then re-enter the same claim/drain loop. Add a two-invocation concurrency test proving the non-owner returns while the owner drains the newly appended revision.
 
@@ -574,7 +577,7 @@ On failure, persist only this fixed sanitized envelope through `complete(..., { 
 }
 ```
 
-Pass the current append result's lease ownership to `complete`, for example `{ kind: "lease", leaseVersion: append.leaseVersion }`; never invent callback ownership in pipeline-only mode. Rethrow a bounded retryable error after recording failure so EventBridge retry behavior remains observable. Test the adapter/store transition, not only an in-memory happy path.
+Pass the current adopted owner to failed completion, for example `{ kind: "lease", leaseVersion: owner.leaseVersion }`; after successful recovery it is invalid to reuse `append.leaseVersion`. Never invent callback ownership in pipeline-only mode. Rethrow a bounded retryable error after recording failure so EventBridge retry behavior remains observable. Test the adapter/store transition, not only an in-memory happy path.
 
 - [ ] **Step 5: Add pipeline-only handler composition**
 
@@ -750,14 +753,14 @@ Document this table in `codepipeline.ts` JSDoc and encode it in tests before con
 
 | Pinned key | Pawl behavior |
 |---|---|
-| `artifactBucket` | pass through; when absent Pawl supplies its retained KMS bucket |
+| `artifactBucket` | pass through in external-storage mode; conflicts with `crossRegionReplicationBuckets` |
 | `role` | pass through |
 | `restartExecutionOnUpdate` | pass through |
 | `pipelineName` | pass through after the approved `pipelineNaming` conflict matrix |
-| `crossRegionReplicationBuckets` | pass through |
+| `crossRegionReplicationBuckets` | pass through in external/CDK-managed storage mode; do not also create or pass a Pawl primary bucket because pinned CDK selects the current-region entry as primary and rejects both properties |
 | `stages` | omit from TypeScript and reject JS/spread callers |
 | `crossAccountKeys` | pass through |
-| `enableKeyRotation` | with external bucket, pass through for CDK-generated cross-region/account keys; with Pawl-owned bucket, allow only `undefined`/`true` because the Pawl key always rotates and reject `false` as a prop conflict |
+| `enableKeyRotation` | pass through unchanged for CDK-generated keys; require `crossAccountKeys: true` when it is `true`; `false` is valid and does not disable rotation on a separately supplied Pawl primary key |
 | `reuseCrossRegionSupportStacks` | pass through |
 | `pipelineType` | omit/reject; force V2 |
 | `variables` | merge by name, reserving `PAWL_*` |
@@ -765,15 +768,19 @@ Document this table in `codepipeline.ts` JSDoc and encode it in tests before con
 | `executionMode` | pass through |
 | `usePipelineRoleForActions` | pass through |
 
-Also enforce:
+Also enforce and table-test these storage modes:
 
-- external artifact bucket is exposed as `IBucket`;
-- `artifactEncryptionKey` conflicts with an external bucket;
-- Pawl creates retained KMS bucket/key only when no bucket is supplied;
+- with neither `artifactBucket` nor `crossRegionReplicationBuckets`, Pawl creates and passes its retained KMS bucket/key;
+- with `artifactBucket`, use external-storage mode and expose that `IBucket`;
+- with `crossRegionReplicationBuckets`, create/pass no Pawl bucket and expose `pipeline.artifactBucket` after pinned CDK selects or creates the primary bucket;
+- `artifactBucket` plus `crossRegionReplicationBuckets` is a `PIPELINE_PROP_CONFLICT` before AWS `Pipeline` construction;
+- `artifactEncryptionKey` conflicts with either externally supplied storage property;
+- `enableKeyRotation: true` without `crossAccountKeys: true` is a `PIPELINE_PROP_CONFLICT`; otherwise forward both values exactly;
+- the Pawl-created primary key always rotates independently of the forwarded CDK generated-key option;
 - all six Pawl variables are declared for every PR-routed pipeline, reviewed or not;
 - CloudFormation coordination name is required only when the active bridge needs a concrete non-token name.
 
-Preserve existing logical IDs (`ArtifactKey`, `ArtifactBucket`, `Pipeline`) for Pawl-owned resources.
+Preserve existing logical IDs (`ArtifactKey`, `ArtifactBucket`, `Pipeline`) for Pawl-owned resources. Add table-driven tests for every storage mode and the valid/invalid `crossAccountKeys` × `enableKeyRotation` combinations.
 
 - [ ] **Step 5: Implement `.source()`**
 

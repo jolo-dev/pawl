@@ -680,19 +680,25 @@ function planCloudFormation(
 								`${path}.output.name`,
 							),
 				];
-	const additionalIndex = (name: string): number => {
-		if (name === primaryName) return 0;
-		const index = additionalInputs.indexOf(name);
+	const materializedInputIndex = (
+		name: string,
+		inputs: readonly Artifact[],
+	): number => {
+		const index = inputs.findIndex(
+			(artifact) => artifact.artifactName === name,
+		);
 		if (index < 0) {
 			throw definitionError(`Artifact '${name}' is not planned`, path);
 		}
-		return index + 1;
+		return index;
 	};
 	return {
 		artifactPlan: {
 			name: definition.name,
 			input: requiredPrimary(primaryName, `${path}.input`),
 			additionalInputs,
+			deduplicateAdditionalInputWithInferredPrimary:
+				primaryName === undefined ? configurationInput : undefined,
 			outputs,
 		},
 		materialize({ inputs, outputs: materializedOutputs }) {
@@ -704,11 +710,18 @@ function planCloudFormation(
 							inputs,
 							definition.templateConfiguration.input === undefined
 								? 0
-								: additionalIndex(definition.templateConfiguration.input),
+								: materializedInputIndex(
+										definition.templateConfiguration.input,
+										inputs,
+									),
 							`${path}.templateConfiguration.input`,
 						).atPath(definition.templateConfiguration.path);
 			const extraInputs = (definition.extraInputs ?? []).map((name) =>
-				requireArtifact(inputs, additionalIndex(name), `${path}.extraInputs`),
+				requireArtifact(
+					inputs,
+					materializedInputIndex(name, inputs),
+					`${path}.extraInputs`,
+				),
 			);
 			const output =
 				definition.output === undefined

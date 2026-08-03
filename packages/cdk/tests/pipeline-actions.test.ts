@@ -25,6 +25,7 @@ import {
 	parsePipelineActionDefinition,
 	planPipelineAction,
 } from "../src/pipeline/actions";
+import { createArtifactPlan, planStageBatch } from "../src/pipeline/artifacts";
 import { PipelineDefinitionError } from "../src/pipeline/errors";
 import { Stack } from "../src/stack";
 
@@ -652,6 +653,40 @@ describe("S3 and CloudFormation action adapters", () => {
 		);
 		expect(synthesized.Configuration).toMatchObject({
 			TemplateConfiguration: "Template::config.json",
+		});
+	});
+
+	test("deduplicates an explicit template configuration that names the inferred primary", () => {
+		const stack = createStack("CloudFormationInferredConfigurationStack");
+		const definition = {
+			type: "cloudFormationDeploy" as const,
+			name: "Deploy",
+			stackName: "Application",
+			templatePath: "template.json",
+			templateConfiguration: {
+				input: "SourceOutput",
+				path: "configuration.json",
+			},
+			adminPermissions: true as const,
+		};
+		const adapter = planPipelineAction(definition, "stages[Deploy].actions[0]");
+		const artifactPlan = planStageBatch(createArtifactPlan("SourceOutput"), [
+			{ name: "Deploy", actions: [adapter.artifactPlan] },
+		]);
+		const plannedAction = artifactPlan.stages[0]?.actions[0];
+		if (plannedAction === undefined) throw new Error("Action was not planned");
+
+		expect(plannedAction.inputs).toEqual(["SourceOutput"]);
+		const { synthesized } = addMaterializedAction(
+			stack,
+			definition,
+			plannedAction.inputs,
+			plannedAction.outputs,
+		);
+		expect(synthesized.InputArtifacts).toEqual([{ Name: "SourceOutput" }]);
+		expect(synthesized.Configuration).toMatchObject({
+			TemplateConfiguration: "SourceOutput::configuration.json",
+			TemplatePath: "SourceOutput::template.json",
 		});
 	});
 });

@@ -18,6 +18,7 @@ export interface ArtifactActionPlan {
 	readonly name: string;
 	readonly input: ArtifactInputPlan;
 	readonly additionalInputs?: readonly string[];
+	readonly deduplicateAdditionalInputWithInferredPrimary?: string;
 	readonly outputs?: readonly string[];
 }
 
@@ -116,6 +117,8 @@ export function planStageBatch(
 
 		for (const action of stage.actions) {
 			const path = actionPath(stage.name, action.name);
+			const inputWasInferred =
+				action.input.mode !== "none" && action.input.explicit === undefined;
 			const inputs = [
 				...resolveInputs(
 					action.input,
@@ -136,6 +139,13 @@ export function planStageBatch(
 					);
 				}
 				if (inputs.includes(additionalInput)) {
+					if (
+						inputWasInferred &&
+						action.deduplicateAdditionalInputWithInferredPrimary ===
+							additionalInput
+					) {
+						continue;
+					}
 					throw new PipelineDefinitionError(
 						"ARTIFACT_NAME_CONFLICT",
 						`Artifact '${additionalInput}' is already an input`,

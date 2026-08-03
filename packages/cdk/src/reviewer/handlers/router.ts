@@ -6,10 +6,13 @@ import { AwsCodePipelineTransport } from "../adapters/codepipeline-transport";
 import { DynamoDbPipelineCoordinationStore } from "../adapters/dynamodb-pipeline-coordination-store";
 import { DynamoDbStateStore } from "../adapters/dynamodb-state-store";
 import {
+	type ExactPipelineTransport,
 	handlePipelineExecutionEvent,
 	type PipelineDispatchConfig,
+	type PipelineReconcilerInvoker,
 	PipelineReviewDispatcher,
 } from "../pipeline-review-common";
+import type { PipelineCoordinationStore } from "../ports/pipeline-coordination-store";
 import type { SourceControlProvider } from "../ports/source-control-provider";
 import type { ReviewStateStore } from "../ports/state-store";
 import { EventRouter, type EventRouterOptions } from "../router/event-router";
@@ -52,6 +55,38 @@ function requiredEnvironment(name: string, value: string | undefined): string {
 	return value;
 }
 
+class NoOpReconcilerKick implements PipelineReconcilerInvoker {
+	async invoke(): Promise<void> {}
+}
+
+export function createPipelineReviewDispatcher(
+	options: {
+		readonly pipelineName: string;
+		readonly sourceActionName: string;
+		readonly reconcilerFunctionName?: string;
+	},
+	dependencies: {
+		readonly transport: ExactPipelineTransport;
+		readonly store: PipelineCoordinationStore;
+		readonly createReconcilerKick?: (
+			functionName: string,
+		) => PipelineReconcilerInvoker;
+	},
+): PipelineReviewDispatcher {
+	const reconciler =
+		options.reconcilerFunctionName === undefined
+			? new NoOpReconcilerKick()
+			: (dependencies.createReconcilerKick?.(options.reconcilerFunctionName) ??
+				new LambdaReconcilerKick(options.reconcilerFunctionName));
+	return new PipelineReviewDispatcher({
+		pipelineName: options.pipelineName,
+		sourceActionName: options.sourceActionName,
+		transport: dependencies.transport,
+		store: dependencies.store,
+		reconciler,
+	});
+}
+
 function buildFromEnvironment(): EventRouter | PipelineEventRouter {
 	const tableName = requiredEnvironment(
 		"STATE_TABLE_NAME",
@@ -87,13 +122,16 @@ function buildFromEnvironment(): EventRouter | PipelineEventRouter {
 		return new PipelineEventRouter({
 			stateStore,
 			provider,
-			pipelineDispatcher: new PipelineReviewDispatcher({
-				pipelineName: requiredPipelineName,
-				sourceActionName,
-				transport: new AwsCodePipelineTransport(),
-				store: coordinationStore,
-				reconciler: { invoke: async () => undefined },
-			}),
+			pipelineDispatcher: createPipelineReviewDispatcher(
+				{
+					pipelineName: requiredPipelineName,
+					sourceActionName,
+				},
+				{
+					transport: new AwsCodePipelineTransport(),
+					store: coordinationStore,
+				},
+			),
 			botArnPatterns,
 		});
 	}
@@ -107,16 +145,33 @@ function buildFromEnvironment(): EventRouter | PipelineEventRouter {
 		reviewerArn,
 	);
 	const reconcilerFunctionName = process.env.RECONCILER_FUNCTION_NAME;
+	if (pipelineName === undefined && reconcilerFunctionName !== undefined) {
+		requiredEnvironment("PIPELINE_NAME", pipelineName);
+	}
 	const pipelineDispatcher =
-		pipelineName && reconcilerFunctionName
-			? new PipelineReviewDispatcher({
-					pipelineName,
-					sourceActionName: process.env.PIPELINE_SOURCE_ACTION_NAME ?? "Source",
-					transport: new AwsCodePipelineTransport(),
-					store: coordinationStore,
-					reconciler: new LambdaReconcilerKick(reconcilerFunctionName),
-				})
-			: undefined;
+		pipelineName === undefined
+			? undefined
+			: createPipelineReviewDispatcher(
+					{
+						pipelineName: requiredEnvironment("PIPELINE_NAME", pipelineName),
+						sourceActionName: requiredEnvironment(
+							"PIPELINE_SOURCE_ACTION_NAME",
+							process.env.PIPELINE_SOURCE_ACTION_NAME,
+						),
+						...(reconcilerFunctionName === undefined
+							? {}
+							: {
+									reconcilerFunctionName: requiredEnvironment(
+										"RECONCILER_FUNCTION_NAME",
+										reconcilerFunctionName,
+									),
+								}),
+					},
+					{
+						transport: new AwsCodePipelineTransport(),
+						store: coordinationStore,
+					},
+				);
 	return new EventRouter({
 		stateStore,
 		lambda: new AwsLambdaTransport(),

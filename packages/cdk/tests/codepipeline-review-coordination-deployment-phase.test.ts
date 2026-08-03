@@ -102,6 +102,14 @@ function scheduledRuleLogicalIds(template: Template): readonly string[] {
 function coordinationResourceSummary(template: Template) {
 	const pipeline = pipelineProperties(template);
 	const lambdas = serializedLambdas(template);
+	const router = Object.values(
+		template.findResources("AWS::Lambda::Function"),
+	).find((resource) => JSON.stringify(resource).includes("Router-lambda"));
+	const routerEnvironment =
+		(router?.Properties.Environment?.Variables as
+			| Record<string, unknown>
+			| undefined) ?? {};
+	const eventRules = Object.values(template.findResources("AWS::Events::Rule"));
 	return {
 		indexes: stateTable(template).indexes,
 		variables: pipeline.Variables?.map(({ Name }) => Name) ?? [],
@@ -126,6 +134,16 @@ function coordinationResourceSummary(template: Template) {
 		hasReconciler: lambdas.some((resource) =>
 			resource.includes("Reconciler-lambda"),
 		),
+		routerEnvironment,
+		hasPipelineExecutionRule: eventRules.some(
+			(resource) =>
+				JSON.stringify(resource.Properties.EventPattern)?.includes(
+					"CodePipeline Pipeline Execution State Change",
+				) ?? false,
+		),
+		sourceTriggerDisabled: JSON.stringify(pipeline.Stages[0]).includes(
+			'"PollForSourceChanges":false',
+		),
 		scheduledRuleLogicalIds: scheduledRuleLogicalIds(template),
 		hasCallbackIam: JSON.stringify(
 			template.findResources("AWS::IAM::Policy"),
@@ -143,6 +161,13 @@ function expectPreparationPhase(
 	expect(summary.hasAiReview).toBeFalse();
 	expect(summary.hasBridge).toBeFalse();
 	expect(summary.hasReconciler).toBeFalse();
+	expect(summary.routerEnvironment).toMatchObject({
+		PIPELINE_SOURCE_ACTION_NAME: "Source",
+	});
+	expect(summary.routerEnvironment.PIPELINE_NAME).toBeDefined();
+	expect(summary.routerEnvironment.RECONCILER_FUNCTION_NAME).toBeUndefined();
+	expect(summary.hasPipelineExecutionRule).toBeTrue();
+	expect(summary.sourceTriggerDisabled).toBeTrue();
 	expect(summary.scheduledRuleLogicalIds).toEqual([]);
 	expect(summary.hasCallbackIam).toBeFalse();
 }

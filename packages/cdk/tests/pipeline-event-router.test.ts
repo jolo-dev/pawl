@@ -590,7 +590,7 @@ describe("PipelineEventRouter", () => {
 		});
 	});
 
-	test("a nonowner retries while the owner drains a concurrently appended revision", async () => {
+	test("a nonowner returns without retrying while the owner drains a concurrently appended revision", async () => {
 		const store = new InMemoryStateStore({ clock: () => new Date(now) });
 		const dispatcher = new RecordingDispatcher();
 		let currentSnapshot = snapshot(sourceOne);
@@ -617,9 +617,10 @@ describe("PipelineEventRouter", () => {
 			router.routePipelineOnly(
 				revisionEvent("revision-two", sourceTwo, "2026-08-01T12:01:00.000Z"),
 			),
-		).rejects.toMatchObject({
-			name: "PipelineRoutingError",
-			retryable: true,
+		).resolves.toEqual({
+			appended: true,
+			started: false,
+			generation: 1,
 		});
 		releaseFirst?.();
 		await owner;
@@ -843,7 +844,7 @@ describe("PipelineEventRouter", () => {
 			router.routePipelineOnly(
 				revisionEvent("intent-new", sourceTwo, "2026-08-01T12:00:01.000Z"),
 			),
-		).rejects.toThrow("Pipeline routing failed");
+		).resolves.toEqual({ appended: true, started: false, generation: 1 });
 		clock.value = new Date("2026-08-01T12:01:01.000Z");
 		await router.routePipelineOnly(first);
 

@@ -7,6 +7,7 @@ import {
 } from "../../../../src/reviewer/adapters/codepipeline-transport";
 import {
 	buildEventRouter,
+	createPipelineReviewDispatcher,
 	handler,
 } from "../../../../src/reviewer/handlers/router";
 import {
@@ -464,6 +465,79 @@ describe("router", () => {
 
 		expect(result).toBeUndefined();
 		expect(lambda.commands).toHaveLength(0);
+	});
+
+	test.each([
+		"prepareGsi1",
+		"prepareGsi2",
+	])("starts the exact PR revision with an explicit no-op kick in %s", async () => {
+		const sender = new IdempotentPipelineSender();
+		const coordinationStore = new FakePipelineCoordinationStore();
+		let reconcilerFactoryCalls = 0;
+		const dispatcher = createPipelineReviewDispatcher(
+			{
+				pipelineName: "review-pipeline",
+				sourceActionName: "Source",
+			},
+			{
+				transport: new AwsCodePipelineTransport(sender),
+				store: coordinationStore,
+				createReconcilerKick: () => {
+					reconcilerFactoryCalls += 1;
+					return new RecordingReconciler();
+				},
+			},
+		);
+
+		await dispatcher.startReviewPipeline({
+			snapshot: fakeReviewRequest,
+			generation: 1,
+			observedAt: "2026-01-01T00:00:00.000Z",
+			eventId: "event-1",
+			refetchSnapshot: async () => fakeReviewRequest,
+		});
+
+		expectPipelineStart(sender.starts[0], 1);
+		expect([...coordinationStore.mappings.values()]).toEqual([
+			expect.objectContaining({
+				sourceRevision: fakeReviewRequest.sourceRevision,
+				destinationRevision: fakeReviewRequest.destinationRevision,
+			}),
+		]);
+		expect(reconcilerFactoryCalls).toBe(0);
+	});
+
+	test("uses the Lambda reconciler kick when active coordination names it", async () => {
+		const sender = new IdempotentPipelineSender();
+		const reconciler = new RecordingReconciler();
+		const reconcilerNames: string[] = [];
+		const dispatcher = createPipelineReviewDispatcher(
+			{
+				pipelineName: "review-pipeline",
+				sourceActionName: "Source",
+				reconcilerFunctionName: "review-reconciler",
+			},
+			{
+				transport: new AwsCodePipelineTransport(sender),
+				store: new FakePipelineCoordinationStore(),
+				createReconcilerKick: (functionName) => {
+					reconcilerNames.push(functionName);
+					return reconciler;
+				},
+			},
+		);
+
+		await dispatcher.startReviewPipeline({
+			snapshot: fakeReviewRequest,
+			generation: 1,
+			observedAt: "2026-01-01T00:00:00.000Z",
+			eventId: "event-1",
+			refetchSnapshot: async () => fakeReviewRequest,
+		});
+
+		expectPipelineStart(sender.starts[0], 1);
+		expect(reconcilerNames).toEqual(["review-reconciler"]);
+		expect(reconciler.count).toBe(1);
 	});
 
 	test("builds pipeline-only mode without reviewer function environment", () => {

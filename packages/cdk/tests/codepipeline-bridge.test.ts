@@ -43,6 +43,95 @@ const pipelineResource = (template: Template) =>
 	};
 
 describe("CodePipeline durable review bridge", () => {
+	test.each([
+		{
+			name: "native pipeline",
+			onPullRequest: false,
+			autoReviewer: false,
+			expectsDispatcher: false,
+			expectsReviewer: false,
+		},
+		{
+			name: "PR pipeline",
+			onPullRequest: true,
+			autoReviewer: false,
+			expectsDispatcher: true,
+			expectsReviewer: false,
+		},
+		{
+			name: "standalone reviewer",
+			onPullRequest: false,
+			autoReviewer: true,
+			expectsDispatcher: false,
+			expectsReviewer: true,
+		},
+		{
+			name: "PR coordinated reviewer",
+			onPullRequest: true,
+			autoReviewer: true,
+			expectsDispatcher: true,
+			expectsReviewer: true,
+		},
+	])("keeps pipeline dispatch privileges separated in $name mode", ({
+		onPullRequest,
+		autoReviewer,
+		expectsDispatcher,
+		expectsReviewer,
+	}) => {
+		const template = createBridgePipeline({
+			onPullRequest,
+			autoReviewer: autoReviewer
+				? { modelId: "eu.anthropic.claude-sonnet-4-6" }
+				: undefined,
+		});
+		const serialized = JSON.stringify(template.toJSON());
+		const pipelineRules = Object.values(
+			template.findResources("AWS::Events::Rule"),
+		).filter(
+			(resource) =>
+				JSON.stringify(resource.Properties.EventPattern)?.includes(
+					"CodePipeline Pipeline Execution State Change",
+				) ?? false,
+		);
+		const routerLambda = Object.values(
+			template.findResources("AWS::Lambda::Function"),
+		).find((resource) => JSON.stringify(resource).includes("Router-lambda"));
+		const routerEnvironment =
+			(routerLambda?.Properties.Environment?.Variables as
+				| Record<string, unknown>
+				| undefined) ?? {};
+		const routerRoleLogicalId = (
+			routerLambda?.Properties.Role as
+				| { readonly "Fn::GetAtt"?: readonly [string, string] }
+				| undefined
+		)?.["Fn::GetAtt"]?.[0];
+		const routerPolicies = Object.values(
+			template.findResources("AWS::IAM::Policy"),
+		).filter((resource) =>
+			JSON.stringify(resource.Properties.Roles).includes(
+				routerRoleLogicalId ?? "missing-router-role",
+			),
+		);
+		const serializedRouterPolicies = JSON.stringify(routerPolicies);
+
+		expect(routerEnvironment.PIPELINE_NAME !== undefined).toBe(
+			expectsDispatcher,
+		);
+		for (const action of [
+			"codepipeline:StartPipelineExecution",
+			"codepipeline:GetPipelineExecution",
+			"codepipeline:ListActionExecutions",
+		]) {
+			expect(serializedRouterPolicies.includes(action)).toBe(expectsDispatcher);
+		}
+		expect(pipelineRules).toHaveLength(expectsDispatcher ? 1 : 0);
+		expect(serialized.includes("Reviewer-lambda")).toBe(expectsReviewer);
+		if (expectsReviewer && !expectsDispatcher) {
+			expect(serialized).toContain("AWS::CodeBuild::Project");
+			expect(serialized).not.toContain("RECONCILER_FUNCTION_NAME");
+		}
+	});
+
 	test("injects an ordinary bridge action with sanitized pipeline variables", () => {
 		const template = createBridgePipeline();
 		const pipeline = pipelineResource(template);

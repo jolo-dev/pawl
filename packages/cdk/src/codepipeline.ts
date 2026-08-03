@@ -792,33 +792,35 @@ export class CodePipeline extends BasicConstruct {
 			`${this.node.id}AutoReview`,
 			reviewerProps,
 		);
-		this.autoReviewer.router.lambda.addEnvironment(
-			"PIPELINE_NAME",
-			this.pipeline.pipelineName,
-		);
-		this.autoReviewer.router.lambda.addEnvironment(
-			"PIPELINE_SOURCE_ACTION_NAME",
-			"Source",
-		);
-		this.autoReviewer.router.lambda.addToRolePolicy(
-			new IamPolicyStatement({
-				effect: Effect.ALLOW,
-				actions: [
-					"codepipeline:StartPipelineExecution",
-					"codepipeline:GetPipelineExecution",
-					"codepipeline:ListActionExecutions",
-				],
-				resources: [this.pipeline.pipelineArn],
-			}),
-		);
-		new Rule(this.stack, `${this.node.id}PipelineExecutionRule`, {
-			eventPattern: {
-				source: ["aws.codepipeline"],
-				detailType: ["CodePipeline Pipeline Execution State Change"],
-				detail: { pipeline: [this.pipeline.pipelineName] },
-			},
-			targets: [new LambdaEventTarget(this.autoReviewer.router.lambda)],
-		});
+		if (this.props.onPullRequest === true) {
+			this.autoReviewer.router.lambda.addEnvironment(
+				"PIPELINE_NAME",
+				this.pipeline.pipelineName,
+			);
+			this.autoReviewer.router.lambda.addEnvironment(
+				"PIPELINE_SOURCE_ACTION_NAME",
+				"Source",
+			);
+			this.autoReviewer.router.lambda.addToRolePolicy(
+				new IamPolicyStatement({
+					effect: Effect.ALLOW,
+					actions: [
+						"codepipeline:StartPipelineExecution",
+						"codepipeline:GetPipelineExecution",
+						"codepipeline:ListActionExecutions",
+					],
+					resources: [this.pipeline.pipelineArn],
+				}),
+			);
+			new Rule(this.stack, `${this.node.id}PipelineExecutionRule`, {
+				eventPattern: {
+					source: ["aws.codepipeline"],
+					detailType: ["CodePipeline Pipeline Execution State Change"],
+					detail: { pipeline: [this.pipeline.pipelineName] },
+				},
+				targets: [new LambdaEventTarget(this.autoReviewer.router.lambda)],
+			});
+		}
 	}
 
 	private sourceRepository(

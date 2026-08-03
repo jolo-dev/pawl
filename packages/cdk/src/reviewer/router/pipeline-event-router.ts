@@ -254,6 +254,13 @@ export class PipelineEventRouter {
 					leaseVersion = orphan.leaseVersion;
 					shouldRecover = true;
 				} else if (orphan.reason === "active") {
+					if (appended.appended) {
+						return {
+							appended: true,
+							started: false,
+							generation,
+						};
+					}
 					throw new PipelineRoutingError();
 				} else if (!shouldRecover) {
 					if (orphan.reason === "no-claimed-events") {

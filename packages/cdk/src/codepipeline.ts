@@ -122,7 +122,29 @@ export type PipelineStageDefinitionList = readonly [
 	...PipelineStageDefinition[],
 ];
 
-/** Pipeline-level props; source and stages are configured fluently. */
+/**
+ * Pipeline-level props; source and stages are configured fluently.
+ *
+ * Pinned `PipelineProps` behavior:
+ *
+ * | Key | Pawl behavior |
+ * | --- | --- |
+ * | `artifactBucket` | Pass through in external-storage mode; conflicts with cross-region buckets. |
+ * | `role`, `restartExecutionOnUpdate` | Pass through. |
+ * | `pipelineName` | Pass through after applying the `pipelineNaming` matrix. |
+ * | `crossRegionReplicationBuckets` | Pass through without creating a Pawl primary bucket. |
+ * | `stages`, `triggers` | Omit from the type and reject at runtime. |
+ * | `crossAccountKeys` | Pass through. |
+ * | `enableKeyRotation` | Pass through; `true` requires `crossAccountKeys: true`. |
+ * | `reuseCrossRegionSupportStacks` | Pass through. |
+ * | `pipelineType` | Omit/reject and force V2. |
+ * | `variables` | Merge by name while reserving `PAWL_*`. |
+ * | `executionMode`, `usePipelineRoleForActions` | Pass through. |
+ *
+ * When no external storage is supplied, Pawl creates a retained, rotating
+ * KMS key and artifact bucket. `artifactEncryptionKey` applies only to that
+ * Pawl-managed storage and conflicts with external or cross-region storage.
+ */
 export interface CodePipelineProps
 	extends Omit<
 		PipelineProps,

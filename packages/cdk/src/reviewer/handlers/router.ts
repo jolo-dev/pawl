@@ -17,6 +17,7 @@ import {
 	AwsLambdaTransport,
 	type LambdaTransport,
 } from "../router/lambda-transport";
+import { PipelineEventRouter } from "../router/pipeline-event-router";
 import { LambdaReconcilerKick } from "./pipeline-bridge";
 
 export type { EventRouterOptions } from "../router/event-router";
@@ -42,40 +43,70 @@ function parseBotArnPatterns(value: string | undefined): readonly string[] {
 		.filter((entry) => entry !== "");
 }
 
-function buildFromEnvironment(): EventRouter {
-	const tableName = process.env.STATE_TABLE_NAME;
+function requiredEnvironment(name: string, value: string | undefined): string {
+	if (value === undefined || value === "") {
+		throw new Error(
+			`buildEventRouter: ${name} environment variable is required`,
+		);
+	}
+	return value;
+}
+
+function buildFromEnvironment(): EventRouter | PipelineEventRouter {
+	const tableName = requiredEnvironment(
+		"STATE_TABLE_NAME",
+		process.env.STATE_TABLE_NAME,
+	);
 	const reviewerFunctionName = process.env.REVIEWER_FUNCTION_NAME;
 	const reviewerArn = process.env.REVIEWER_FUNCTION_ARN;
-	if (tableName === undefined || tableName === "") {
-		throw new Error(
-			"buildEventRouter: STATE_TABLE_NAME environment variable is required",
-		);
-	}
-	if (reviewerFunctionName === undefined || reviewerFunctionName === "") {
-		throw new Error(
-			"buildEventRouter: REVIEWER_FUNCTION_NAME environment variable is required",
-		);
-	}
-	if (reviewerArn === undefined || reviewerArn === "") {
-		throw new Error(
-			"buildEventRouter: REVIEWER_FUNCTION_ARN environment variable is required",
-		);
-	}
-	const reviewerAlias = process.env.REVIEWER_FUNCTION_ALIAS || "live";
+	const reviewedMode =
+		(reviewerFunctionName !== undefined && reviewerFunctionName !== "") ||
+		(reviewerArn !== undefined && reviewerArn !== "");
 	const botArnPatterns = parseBotArnPatterns(process.env.BOT_ARN_PATTERNS);
 	const documentClient = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 	const stateStore = new DynamoDbStateStore({
 		transport: documentClient,
 		tableName,
 	});
-	const lambda = new AwsLambdaTransport();
 	const provider = new CodeCommitProvider({ reviewerArn });
 	const pipelineName = process.env.PIPELINE_NAME;
-	const reconcilerFunctionName = process.env.RECONCILER_FUNCTION_NAME;
 	const coordinationStore = new DynamoDbPipelineCoordinationStore({
 		transport: documentClient,
 		tableName,
 	});
+
+	if (!reviewedMode) {
+		const requiredPipelineName = requiredEnvironment(
+			"PIPELINE_NAME",
+			pipelineName,
+		);
+		const sourceActionName = requiredEnvironment(
+			"PIPELINE_SOURCE_ACTION_NAME",
+			process.env.PIPELINE_SOURCE_ACTION_NAME,
+		);
+		return new PipelineEventRouter({
+			stateStore,
+			provider,
+			pipelineDispatcher: new PipelineReviewDispatcher({
+				pipelineName: requiredPipelineName,
+				sourceActionName,
+				transport: new AwsCodePipelineTransport(),
+				store: coordinationStore,
+				reconciler: { invoke: async () => undefined },
+			}),
+			botArnPatterns,
+		});
+	}
+
+	const requiredReviewerFunctionName = requiredEnvironment(
+		"REVIEWER_FUNCTION_NAME",
+		reviewerFunctionName,
+	);
+	const requiredReviewerArn = requiredEnvironment(
+		"REVIEWER_FUNCTION_ARN",
+		reviewerArn,
+	);
+	const reconcilerFunctionName = process.env.RECONCILER_FUNCTION_NAME;
 	const pipelineDispatcher =
 		pipelineName && reconcilerFunctionName
 			? new PipelineReviewDispatcher({
@@ -88,11 +119,11 @@ function buildFromEnvironment(): EventRouter {
 			: undefined;
 	return new EventRouter({
 		stateStore,
-		lambda,
+		lambda: new AwsLambdaTransport(),
 		provider,
-		reviewerFunctionName,
-		reviewerAlias,
-		reviewerArn,
+		reviewerFunctionName: requiredReviewerFunctionName,
+		reviewerAlias: process.env.REVIEWER_FUNCTION_ALIAS || "live",
+		reviewerArn: requiredReviewerArn,
 		botArnPatterns,
 		pipelineDispatcher,
 	});
@@ -107,9 +138,13 @@ function buildFromEnvironment(): EventRouter {
  *   AWS SDK transports. This is the env-only path used by the deployed `handler`.
  * - With `options`, accepts injected transports/state for deterministic tests.
  */
+export function buildEventRouter(): EventRouter | PipelineEventRouter;
+export function buildEventRouter(
+	options: BuildEventRouterOverrides,
+): EventRouter;
 export function buildEventRouter(
 	options?: BuildEventRouterOverrides,
-): EventRouter {
+): EventRouter | PipelineEventRouter {
 	if (options === undefined) return buildFromEnvironment();
 	const stateStore = options.stateStore;
 	const lambda = options.lambda;
@@ -136,10 +171,10 @@ export function buildEventRouter(
 	});
 }
 
-let cachedRouter: EventRouter | undefined;
+let cachedRouter: EventRouter | PipelineEventRouter | undefined;
 let cachedPipelineConfig: PipelineDispatchConfig | undefined;
 
-function getRouter(): EventRouter {
+function getRouter(): EventRouter | PipelineEventRouter {
 	if (cachedRouter === undefined) cachedRouter = buildEventRouter();
 	return cachedRouter;
 }
@@ -148,15 +183,9 @@ function getPipelineDispatchConfig(): PipelineDispatchConfig {
 	if (cachedPipelineConfig === undefined) {
 		const pipelineName = process.env.PIPELINE_NAME;
 		const tableName = process.env.STATE_TABLE_NAME;
-		const reviewerArn = process.env.REVIEWER_FUNCTION_ARN;
 		if (tableName === undefined || tableName === "") {
 			throw new Error(
 				"getPipelineDispatchConfig: STATE_TABLE_NAME is required",
-			);
-		}
-		if (reviewerArn === undefined || reviewerArn === "") {
-			throw new Error(
-				"getPipelineDispatchConfig: REVIEWER_FUNCTION_ARN is required",
 			);
 		}
 		const documentClient = DynamoDBDocumentClient.from(new DynamoDBClient({}));
@@ -165,7 +194,7 @@ function getPipelineDispatchConfig(): PipelineDispatchConfig {
 			tableName,
 		});
 		const transport = new AwsCodePipelineTransport();
-		const provider = new CodeCommitProvider({ reviewerArn });
+		const provider = new CodeCommitProvider();
 		cachedPipelineConfig = {
 			pipelineTransport: pipelineName
 				? {
@@ -242,7 +271,10 @@ export const handler = useEventbridgeHandler<
 		>;
 	}
 
-	// Existing CodeCommit event dispatch
-	const result = await router.routeCodeCommit(event);
+	// CodeCommit event dispatch has exactly one append owner in either mode.
+	const result =
+		router instanceof PipelineEventRouter
+			? await router.routePipelineOnly(event)
+			: await router.routeCodeCommit(event);
 	logger.info("routed", { ...result });
 });

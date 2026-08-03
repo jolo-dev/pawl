@@ -18,6 +18,8 @@ import type {
 	CallbackWake,
 	ClaimedEvents,
 	CompletionReason,
+	FailAndRequeueClaimInput,
+	FailAndRequeueClaimResult,
 	FindingWrite,
 	FindingWriteResult,
 	HeartbeatInput,
@@ -29,6 +31,7 @@ import type {
 	ReviewStateStore,
 	WriteReservation,
 } from "../../../src/reviewer/ports/state-store";
+import { sanitizedPipelineRoutingFailure } from "../../../src/reviewer/ports/state-store";
 
 export interface InMemoryStateStoreOptions {
 	readonly clock?: () => Date;
@@ -63,6 +66,7 @@ interface StoredRequest {
 	destinationRevision?: string;
 	cycle?: number;
 	completionReason?: CompletionReason;
+	lastPipelineRoutingFailure?: FailAndRequeueClaimInput["failure"];
 	claimCursor?: string;
 	expiresAt: number;
 	readonly events: Map<string, StoredEvent>;
@@ -133,6 +137,8 @@ export interface InspectedRequestState {
 	readonly leaseHeartbeatAt: string;
 	readonly leaseExpiresAt: string;
 	readonly completionReason?: CompletionReason;
+	readonly lastPipelineRoutingFailure?: FailAndRequeueClaimInput["failure"];
+	readonly pendingEventCount: number;
 	readonly eventSortKeys: readonly string[];
 }
 
@@ -168,6 +174,10 @@ export class InMemoryStateStore implements ReviewStateStore {
 					leaseHeartbeatAt: state.leaseHeartbeatAt,
 					leaseExpiresAt: state.leaseExpiresAt,
 					completionReason: state.completionReason,
+					lastPipelineRoutingFailure: state.lastPipelineRoutingFailure,
+					pendingEventCount: [...state.events.values()].filter(
+						({ claimedGeneration }) => claimedGeneration === undefined,
+					).length,
 					eventSortKeys: [...state.events.keys()].sort(),
 				}
 			: undefined;
@@ -290,6 +300,50 @@ export class InMemoryStateStore implements ReviewStateStore {
 			events: claimed.map(({ event }) => event),
 			throughWatermark: claimed.length > 0 ? state.eventWatermark : undefined,
 		};
+	}
+
+	async failAndRequeueClaim(
+		input: FailAndRequeueClaimInput,
+	): Promise<FailAndRequeueClaimResult> {
+		if (input.events.length < 1 || input.events.length > 99) {
+			throw new RangeError("claimed event requeue must contain 1 to 99 events");
+		}
+		const state = this.#requests.get(requestKey(input.request));
+		if (
+			state === undefined ||
+			state.generation !== input.generation ||
+			state.leaseVersion !== input.leaseVersion ||
+			state.lifecycleState !== "RUNNING"
+		) {
+			return { requeued: false, reason: "changed" };
+		}
+		const claimed = input.events.map((event) =>
+			state.events.get(eventSortKey(event)),
+		);
+		if (
+			claimed.some((entry) => entry?.claimedGeneration !== input.generation)
+		) {
+			return { requeued: false, reason: "changed" };
+		}
+		for (const entry of claimed) {
+			if (entry !== undefined) entry.claimedGeneration = undefined;
+		}
+		const failedAt = new Date(input.failedAt).toISOString();
+		state.lifecycleState = "STARTING";
+		state.executionArn = undefined;
+		state.callbackId = undefined;
+		state.callbackGeneration = undefined;
+		state.lastCallbackGeneration = undefined;
+		state.blockedLimit = undefined;
+		state.claimCursor = undefined;
+		state.completionReason = undefined;
+		state.lastPipelineRoutingFailure = sanitizedPipelineRoutingFailure(
+			input.failure.attempts,
+		);
+		state.leaseHeartbeatAt = failedAt;
+		state.leaseExpiresAt = failedAt;
+		state.leaseVersion += 1;
+		return { requeued: true, leaseVersion: state.leaseVersion };
 	}
 
 	async recordExecution(
@@ -603,6 +657,7 @@ export class InMemoryStateStore implements ReviewStateStore {
 					? "FAILED"
 					: "COMPLETED";
 		state.completionReason = reason;
+		state.lastPipelineRoutingFailure = undefined;
 		state.executionArn = undefined;
 		state.callbackId = undefined;
 		state.callbackGeneration = undefined;
@@ -621,6 +676,7 @@ export class InMemoryStateStore implements ReviewStateStore {
 		state.cycle = undefined;
 		state.eventWatermark = undefined;
 		state.completionReason = undefined;
+		state.lastPipelineRoutingFailure = undefined;
 		state.claimCursor = undefined;
 	}
 

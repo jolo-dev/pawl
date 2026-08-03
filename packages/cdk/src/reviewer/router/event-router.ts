@@ -22,6 +22,7 @@ import {
 	normalizeCodeCommitEvent,
 } from "./codecommit-event-normalizer";
 import { AwsLambdaTransport, type LambdaTransport } from "./lambda-transport";
+import { PipelineEventRouter } from "./pipeline-event-router";
 
 export type { LambdaCommand, LambdaTransport } from "./lambda-transport";
 export interface EventRouterOptions {
@@ -175,7 +176,7 @@ export class EventRouter {
 	readonly #filters: CodeCommitEventFilterOptions;
 	readonly #retry: RetryPolicy;
 	readonly #repositoryHash: (repository: string) => string;
-	readonly #pipelineDispatcher?: PrPipelineDispatcher;
+	readonly #pipelineRouter?: PipelineEventRouter;
 	readonly #clock: () => Date;
 
 	constructor(options: EventRouterOptions) {
@@ -193,7 +194,17 @@ export class EventRouter {
 			options.retryPolicy ??
 			new RetryPolicy({ baseDelayMs: 25, maxDelayMs: 1_000, maxAttempts: 3 });
 		this.#repositoryHash = options.repositoryHash ?? hashRepository;
-		this.#pipelineDispatcher = options.pipelineDispatcher;
+		this.#pipelineRouter =
+			options.pipelineDispatcher === undefined
+				? undefined
+				: new PipelineEventRouter({
+						stateStore: options.stateStore,
+						provider: options.provider,
+						pipelineDispatcher: options.pipelineDispatcher,
+						reviewerArn: options.reviewerArn,
+						botArnPatterns: options.botArnPatterns,
+						clock: options.clock,
+					});
 		this.#clock = options.clock ?? (() => new Date());
 	}
 
@@ -274,7 +285,7 @@ export class EventRouter {
 			normalized.type === "request-opened" ||
 			normalized.type === "revision-updated";
 		const snapshot =
-			startsPipeline && this.#pipelineDispatcher !== undefined
+			startsPipeline && this.#pipelineRouter !== undefined
 				? await this.#retrySnapshot(() =>
 						this.#provider.getRequest(normalized.request),
 					)
@@ -286,33 +297,16 @@ export class EventRouter {
 				? () => this.#provider.getRequest(normalized.request)
 				: undefined,
 		);
-		if (this.#pipelineDispatcher === undefined) return result;
-		if (
-			startsPipeline &&
-			snapshot?.status === "open" &&
-			(normalized.type !== "revision-updated" ||
-				normalized.revision === snapshot.sourceRevision)
-		) {
-			await this.#pipelineDispatcher.startReviewPipeline({
-				snapshot,
-				generation: result.generation,
-				observedAt: normalized.occurredAt,
-				eventId: normalized.id,
-				refetchSnapshot: () =>
-					this.#retrySnapshot(() =>
-						this.#provider.getRequest(normalized.request),
-					),
-			});
-		} else if (
-			normalized.type === "request-merged" ||
-			normalized.type === "request-closed"
-		) {
-			await this.#pipelineDispatcher.completeTerminalRequest({
-				request: normalized.request,
-				generation: result.generation,
-				status: normalized.type === "request-merged" ? "merged" : "closed",
-			});
-		}
+		if (this.#pipelineRouter === undefined) return result;
+		await this.#pipelineRouter.dispatchReviewedEvent({
+			event: normalized,
+			snapshot,
+			generation: result.generation,
+			refetchSnapshot: () =>
+				this.#retrySnapshot(() =>
+					this.#provider.getRequest(normalized.request),
+				),
+		});
 		return result;
 	}
 

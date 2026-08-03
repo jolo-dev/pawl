@@ -2183,6 +2183,7 @@ describe("DynamoDbStateStore", () => {
 		expect(serialized).toContain("destinationRevision");
 		expect(serialized).toContain("eventWatermark");
 		expect(serialized).toContain("retryExhaustion");
+		expect(serialized).toContain("lastPipelineRoutingFailure");
 	});
 
 	it("only treats retained conditional cancellation reasons as contention", async () => {
@@ -2312,6 +2313,155 @@ describe("DynamoDbStateStore", () => {
 				recoveredAt: now,
 			}),
 		).rejects.toBe(conflict);
+	});
+
+	it("atomically requeues a claimed pipeline page on the same generation", async () => {
+		const store = new InMemoryStateStore({ clock: () => new Date(now) });
+		const event = revisionEvent("pipeline-requeue");
+		await store.appendEvent(event);
+		const claimed = await store.claimEvents(request, 1);
+
+		const result = await store.failAndRequeueClaim({
+			request,
+			generation: 1,
+			leaseVersion: 1,
+			events: claimed.events,
+			failedAt: now,
+			failure: {
+				type: "operational-failure",
+				lifecycleState: "FAILED",
+				operation: "raw secret operation",
+				reason: "retry-exhausted",
+				attempts: 999,
+				lastError: { name: "SecretError", message: "secret message" },
+			},
+		});
+
+		expect(result).toEqual({ requeued: true, leaseVersion: 2 });
+		expect(store.inspectRequest(request)).toMatchObject({
+			lifecycleState: "STARTING",
+			generation: 1,
+			leaseVersion: 2,
+			leaseExpiresAt: now,
+			lastPipelineRoutingFailure: {
+				operation: "pipeline-route",
+				attempts: 4,
+				lastError: {
+					name: "PipelineRoutingError",
+					message: "Pipeline routing failed",
+				},
+			},
+		});
+		expect((await store.claimEvents(request, 1)).events).toEqual([event]);
+	});
+
+	it("uses one conditional transaction to requeue META and claimed event markers", async () => {
+		const commands: object[] = [];
+		const transport: DynamoDbDocumentTransport = {
+			send: async (command) => {
+				commands.push(command);
+				return {};
+			},
+		};
+		const store = new DynamoDbStateStore({
+			transport,
+			tableName: "review-state",
+			clock: () => new Date(now),
+		});
+		const events = [revisionEvent("claimed-one"), revisionEvent("claimed-two")];
+
+		expect(
+			await store.failAndRequeueClaim({
+				request,
+				generation: 3,
+				leaseVersion: 8,
+				events,
+				failedAt: now,
+				failure: {
+					type: "operational-failure",
+					lifecycleState: "FAILED",
+					operation: "secret-operation",
+					reason: "permanent-error",
+					attempts: 99,
+					lastError: { name: "Secret", message: "secret payload" },
+				},
+			}),
+		).toEqual({ requeued: true, leaseVersion: 9 });
+
+		expect(commands).toHaveLength(1);
+		const transaction = commands[0] as {
+			input?: { TransactItems?: readonly Record<string, unknown>[] };
+		};
+		expect(transaction.constructor.name).toBe("TransactWriteCommand");
+		expect(transaction.input?.TransactItems).toHaveLength(3);
+		const serialized = JSON.stringify(transaction.input);
+		expect(serialized).toContain(
+			"generation = :generation AND leaseVersion = :leaseVersion AND #state = :running",
+		);
+		expect(serialized).toContain(
+			"ADD pendingEventCount :claimedCount, leaseVersion :one",
+		);
+		expect(serialized).toContain("REMOVE claimedGeneration");
+		expect(serialized).toContain("claimedGeneration = :generation");
+		expect(serialized).toContain("lastPipelineRoutingFailure");
+		expect(serialized).toContain('"operation":"pipeline-route"');
+		expect(serialized).not.toContain("secret");
+	});
+
+	it("removes non-terminal pipeline routing failure metadata on completion", async () => {
+		const commands: object[] = [];
+		const store = new DynamoDbStateStore({
+			transport: {
+				send: async (command) => {
+					commands.push(command);
+					return {};
+				},
+			},
+			tableName: "review-state",
+		});
+
+		await store.complete(request, 1, { type: "clean" });
+
+		const serialized = JSON.stringify(
+			(commands[0] as { input?: unknown }).input,
+		);
+		expect(serialized).toContain("REMOVE");
+		expect(serialized).toContain("lastPipelineRoutingFailure");
+	});
+
+	it("returns changed when the atomic claim requeue loses ownership", async () => {
+		const conditional = Object.assign(new Error("conditional"), {
+			name: "TransactionCanceledException",
+			CancellationReasons: [
+				{ Code: "ConditionalCheckFailed" },
+				{ Code: "None" },
+			],
+		});
+		const store = new DynamoDbStateStore({
+			transport: { send: async () => Promise.reject(conditional) },
+			tableName: "review-state",
+		});
+
+		expect(
+			await store.failAndRequeueClaim({
+				request,
+				generation: 1,
+				leaseVersion: 2,
+				events: [revisionEvent("changed")],
+				failedAt: now,
+				failure: {
+					type: "operational-failure",
+					lifecycleState: "FAILED",
+					operation: "pipeline-route",
+					reason: "retry-exhausted",
+					attempts: 1,
+					lastError: {
+						name: "PipelineRoutingError",
+						message: "Pipeline routing failed",
+					},
+				},
+			}),
+		).toEqual({ requeued: false, reason: "changed" });
 	});
 
 	it("canonicalizes heartbeat and callback lease conditions", async () => {

@@ -27,6 +27,43 @@ export interface ClaimedEvents {
 	readonly throughWatermark?: string;
 }
 
+export interface FailAndRequeueClaimInput {
+	readonly request: RequestKey;
+	readonly generation: number;
+	readonly leaseVersion: number;
+	readonly events: readonly ReviewEvent[];
+	readonly failedAt: string;
+	readonly failure: OperationalFailure;
+}
+
+export type FailAndRequeueClaimResult =
+	| { readonly requeued: true; readonly leaseVersion: number }
+	| { readonly requeued: false; readonly reason: "changed" };
+
+const MAX_PIPELINE_ROUTING_FAILURE_ATTEMPTS = 4;
+
+export function sanitizedPipelineRoutingFailure(
+	attempts: number,
+): OperationalFailure {
+	return {
+		type: "operational-failure",
+		lifecycleState: "FAILED",
+		operation: "pipeline-route",
+		reason: "retry-exhausted",
+		attempts: Math.max(
+			1,
+			Math.min(
+				MAX_PIPELINE_ROUTING_FAILURE_ATTEMPTS,
+				Number.isFinite(attempts) ? Math.trunc(attempts) : 1,
+			),
+		),
+		lastError: {
+			name: "PipelineRoutingError",
+			message: "Pipeline routing failed",
+		},
+	};
+}
+
 export type RemoteExecutionStatus =
 	| "RUNNING"
 	| "SUCCEEDED"
@@ -215,6 +252,9 @@ export type CompletionReason =
 export interface ReviewStateStore {
 	appendEvent(event: ReviewEvent): Promise<AppendEventResult>;
 	claimEvents(request: RequestKey, generation: number): Promise<ClaimedEvents>;
+	failAndRequeueClaim(
+		input: FailAndRequeueClaimInput,
+	): Promise<FailAndRequeueClaimResult>;
 	recordExecution(
 		request: RequestKey,
 		generation: number,

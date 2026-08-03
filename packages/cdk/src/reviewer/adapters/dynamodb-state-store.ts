@@ -15,6 +15,8 @@ import type {
 	CallbackWake,
 	ClaimedEvents,
 	CompletionReason,
+	FailAndRequeueClaimInput,
+	FailAndRequeueClaimResult,
 	FindingWrite,
 	FindingWriteResult,
 	HeartbeatInput,
@@ -26,6 +28,7 @@ import type {
 	ReviewStateStore,
 	WriteReservation,
 } from "../ports/state-store";
+import { sanitizedPipelineRoutingFailure } from "../ports/state-store";
 
 export interface DynamoDbDocumentTransport {
 	send(command: object): Promise<unknown>;
@@ -329,7 +332,7 @@ export class DynamoDbStateStore implements ReviewStateStore {
 					values[":heartbeat"] = now;
 					values[":leaseExpiry"] = this.#leaseExpiry(now);
 					updateExpression =
-						"SET generation = :nextGeneration, #state = :starting, leaseHeartbeatAt = :heartbeat, leaseExpiresAt = :leaseExpiry, expiresAt = :ttl REMOVE executionArn, executionName, callbackId, callbackGeneration, lastCallbackGeneration, blockedLimit, claimCursor, #cycle, sourceRevision, destinationRevision, configVersion, eventWatermark, cycleStartedAt, completionType, retryExhaustion ADD leaseVersion :one, pendingEventCount :one";
+						"SET generation = :nextGeneration, #state = :starting, leaseHeartbeatAt = :heartbeat, leaseExpiresAt = :leaseExpiry, expiresAt = :ttl REMOVE executionArn, executionName, callbackId, callbackGeneration, lastCallbackGeneration, blockedLimit, claimCursor, #cycle, sourceRevision, destinationRevision, configVersion, eventWatermark, cycleStartedAt, completionType, retryExhaustion, lastPipelineRoutingFailure ADD leaseVersion :one, pendingEventCount :one";
 				}
 				const observedCallbackGeneration = numberValue(
 					meta,
@@ -521,6 +524,61 @@ export class DynamoDbStateStore implements ReviewStateStore {
 		throw new Error("event claim contention did not converge");
 	}
 
+	async failAndRequeueClaim(
+		input: FailAndRequeueClaimInput,
+	): Promise<FailAndRequeueClaimResult> {
+		if (input.events.length < 1 || input.events.length > 99) {
+			throw new RangeError("claimed event requeue must contain 1 to 99 events");
+		}
+		const failedAt = canonicalTimestamp(input.failedAt);
+		const pk = this.#pk(input.request);
+		const failure = sanitizedPipelineRoutingFailure(input.failure.attempts);
+		const transactItems: Record<string, unknown>[] = [
+			{
+				Update: {
+					TableName: this.#tableName,
+					Key: { pk, sk: "META" },
+					UpdateExpression:
+						"SET #state = :starting, leaseHeartbeatAt = :failedAt, leaseExpiresAt = :failedAt, lastPipelineRoutingFailure = :failure, expiresAt = :ttl REMOVE executionArn, executionName, callbackId, callbackGeneration, lastCallbackGeneration, blockedLimit, claimCursor, completionType, retryExhaustion ADD pendingEventCount :claimedCount, leaseVersion :one",
+					ConditionExpression:
+						"generation = :generation AND leaseVersion = :leaseVersion AND #state = :running",
+					ExpressionAttributeNames: { "#state": "lifecycleState" },
+					ExpressionAttributeValues: {
+						":generation": input.generation,
+						":leaseVersion": input.leaseVersion,
+						":running": "RUNNING",
+						":starting": "STARTING",
+						":failedAt": failedAt,
+						":failure": failure,
+						":ttl": this.#ttlAt(this.#ttl.metaSeconds),
+						":claimedCount": input.events.length,
+						":one": 1,
+					},
+				},
+			},
+			...input.events.map((event) => ({
+				Update: {
+					TableName: this.#tableName,
+					Key: { pk, sk: this.#eventSk(event) },
+					UpdateExpression: "REMOVE claimedGeneration",
+					ConditionExpression: "claimedGeneration = :generation",
+					ExpressionAttributeValues: { ":generation": input.generation },
+				},
+			})),
+		];
+		try {
+			await this.#send(
+				new TransactWriteCommand({ TransactItems: transactItems }),
+			);
+			return { requeued: true, leaseVersion: input.leaseVersion + 1 };
+		} catch (error) {
+			if (isConditionalFailure(error)) {
+				return { requeued: false, reason: "changed" };
+			}
+			throw error;
+		}
+	}
+
 	async recordExecution(
 		request: RequestKey,
 		generation: number,
@@ -591,7 +649,7 @@ export class DynamoDbStateStore implements ReviewStateStore {
 		const nextGeneration = isStarting ? input.generation : input.generation + 1;
 		const generationReset = isStarting
 			? ""
-			: ", #cycle, sourceRevision, destinationRevision, configVersion, eventWatermark, cycleStartedAt, completionType, retryExhaustion";
+			: ", #cycle, sourceRevision, destinationRevision, configVersion, eventWatermark, cycleStartedAt, completionType, retryExhaustion, lastPipelineRoutingFailure";
 		const expiryCondition = terminal
 			? ""
 			: " AND leaseExpiresAt <= :recoveredAt";
@@ -1047,7 +1105,7 @@ export class DynamoDbStateStore implements ReviewStateStore {
 			":starting": "STARTING",
 		};
 		let updateExpression =
-			"SET #state = :state, completionType = :completionType, expiresAt = :ttl REMOVE executionArn, executionName, callbackId, callbackGeneration, blockedLimit";
+			"SET #state = :state, completionType = :completionType, expiresAt = :ttl REMOVE executionArn, executionName, callbackId, callbackGeneration, blockedLimit, lastPipelineRoutingFailure";
 		const pendingCondition =
 			reason.type === "failed" ? "" : " AND pendingEventCount = :zero";
 		if (pendingCondition !== "") values[":zero"] = 0;
@@ -1070,7 +1128,7 @@ export class DynamoDbStateStore implements ReviewStateStore {
 				stateCondition = "#currentState = :ownedState";
 			}
 			updateExpression =
-				"SET #state = :state, completionType = :completionType, retryExhaustion = :retryFailure, expiresAt = :ttl REMOVE executionArn, executionName, callbackId, callbackGeneration, blockedLimit";
+				"SET #state = :state, completionType = :completionType, retryExhaustion = :retryFailure, expiresAt = :ttl REMOVE executionArn, executionName, callbackId, callbackGeneration, blockedLimit, lastPipelineRoutingFailure";
 		}
 		try {
 			await this.#conditionalUpdate({

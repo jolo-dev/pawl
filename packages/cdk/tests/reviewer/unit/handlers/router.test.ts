@@ -18,6 +18,7 @@ import type {
 	LambdaCommand,
 	LambdaTransport,
 } from "../../../../src/reviewer/router/lambda-transport";
+import { PipelineEventRouter } from "../../../../src/reviewer/router/pipeline-event-router";
 import { FakePipelineCoordinationStore } from "../../../pipeline-coordination-fakes";
 import { InMemoryStateStore } from "../../fakes/in-memory-state-store";
 
@@ -464,6 +465,55 @@ describe("router", () => {
 
 		expect(result).toBeUndefined();
 		expect(lambda.commands).toHaveLength(0);
+	});
+
+	test("builds pipeline-only mode without reviewer function environment", () => {
+		const previous = { ...process.env };
+		try {
+			process.env.STATE_TABLE_NAME = "state";
+			process.env.PIPELINE_NAME = "review-pipeline";
+			process.env.PIPELINE_SOURCE_ACTION_NAME = "Source";
+			delete process.env.REVIEWER_FUNCTION_NAME;
+			delete process.env.REVIEWER_FUNCTION_ARN;
+			delete process.env.RECONCILER_FUNCTION_NAME;
+
+			expect(buildEventRouter()).toBeInstanceOf(PipelineEventRouter);
+		} finally {
+			process.env = previous;
+		}
+	});
+
+	test("fails fast when pipeline-only mode omits its source action", () => {
+		const previous = { ...process.env };
+		try {
+			process.env.STATE_TABLE_NAME = "state";
+			process.env.PIPELINE_NAME = "review-pipeline";
+			delete process.env.PIPELINE_SOURCE_ACTION_NAME;
+			delete process.env.REVIEWER_FUNCTION_NAME;
+			delete process.env.REVIEWER_FUNCTION_ARN;
+
+			expect(() => buildEventRouter()).toThrow(
+				"PIPELINE_SOURCE_ACTION_NAME environment variable is required",
+			);
+		} finally {
+			process.env = previous;
+		}
+	});
+
+	test("fails fast on partial reviewed-mode environment", () => {
+		const previous = { ...process.env };
+		try {
+			process.env.STATE_TABLE_NAME = "state";
+			process.env.REVIEWER_FUNCTION_NAME = "reviewer";
+			delete process.env.REVIEWER_FUNCTION_ARN;
+			delete process.env.PIPELINE_NAME;
+
+			expect(() => buildEventRouter()).toThrow(
+				"REVIEWER_FUNCTION_ARN environment variable is required",
+			);
+		} finally {
+			process.env = previous;
+		}
 	});
 
 	test("handler shape matches Pawl handlerFactory return (async (event) => ...)", () => {

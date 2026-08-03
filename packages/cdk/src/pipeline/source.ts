@@ -122,6 +122,8 @@ export interface MaterializedPipelineSource {
 }
 
 export interface CodeCommitSourcePlan {
+	readonly repositoryName: string;
+	readonly branchName: string;
 	materialize(scope: Stack, id: string): MaterializedPipelineSource;
 }
 
@@ -174,6 +176,8 @@ export function planCodeCommitSource(
 		const sourcePath =
 			parsed.sync === undefined ? undefined : validateSyncPath(parsed.sync);
 		return {
+			repositoryName,
+			branchName,
 			materialize(scope, id) {
 				const codeCommit = new CodeCommit(scope, id, {
 					repositoryName,
@@ -198,6 +202,8 @@ export function planCodeCommitSource(
 	if (parsed.create === false) {
 		const repositoryName = parsed.repositoryName;
 		return {
+			repositoryName,
+			branchName,
 			materialize(scope, id) {
 				const codeCommit = new CodeCommit(scope, id, { repositoryName });
 				return {
@@ -232,6 +238,8 @@ export function planCodeCommitSource(
 	const repositoryName = parsed.repositoryName ?? suppliedName;
 	const repository = parsed.repository;
 	return {
+		repositoryName,
+		branchName,
 		materialize() {
 			return { repository, repositoryName, branchName };
 		},

@@ -28,7 +28,11 @@ import {
 	type PolicyStatement as BasicPolicyStatement,
 } from "./basic-construct";
 import type { AutoReviewConfig } from "./codecommit";
-import { CodeCommitAutoReviewer } from "./codecommit-auto-reviewer";
+import {
+	CodeCommitAutoReviewer,
+	type CodeCommitAutoReviewerProps,
+	validateCodeCommitAutoReviewerProps,
+} from "./codecommit-auto-reviewer";
 import {
 	type PipelineActionDefinition,
 	type PlannedActionAdapter,
@@ -264,21 +268,22 @@ export class CodePipeline extends BasicConstruct {
 			? reviewActionTimeoutSchema.parse(props.reviewActionTimeoutMinutes ?? 15)
 			: undefined;
 
-		if (
-			props.pipelineNaming !== undefined &&
-			props.pipelineName !== undefined
-		) {
-			propertyConflict(
-				"pipelineNaming and pipelineName cannot be supplied together",
-				"pipelineName",
-			);
-		}
 		const naming =
 			props.pipelineNaming === undefined
 				? props.pipelineName === undefined
 					? ({ mode: "pawl" } as const)
 					: ({ mode: "explicit", name: props.pipelineName } as const)
 				: CodePipelineNamingSchema.parse(props.pipelineNaming);
+		if (
+			props.pipelineNaming !== undefined &&
+			props.pipelineName !== undefined &&
+			(naming.mode !== "explicit" || naming.name !== props.pipelineName)
+		) {
+			propertyConflict(
+				"pipelineNaming and pipelineName must select the same explicit name",
+				"pipelineName",
+			);
+		}
 		const pipelinePhysicalName =
 			naming.mode === "cloudFormation"
 				? undefined
@@ -401,6 +406,10 @@ export class CodePipeline extends BasicConstruct {
 		const sourcePlan = planCodeCommitSource(source, {
 			requiresConcreteName: this.props.autoReviewer !== undefined,
 		});
+		const reviewerProps = this.reviewerProps(sourcePlan.repositoryName);
+		if (reviewerProps !== undefined) {
+			validateCodeCommitAutoReviewerProps(this.stack, reviewerProps);
+		}
 		const details = sourcePlan.materialize(this.stack, `${this.node.id}Source`);
 		const sourceArtifact = new Artifact("SourceOutput");
 		const repository = this.sourceRepository(
@@ -557,7 +566,10 @@ export class CodePipeline extends BasicConstruct {
 			planned.push({ name, adapters });
 		}
 
-		if (this.reviewCoordinationDeploymentPhase === "active") {
+		if (
+			this.reviewCoordinationDeploymentPhase === "active" &&
+			this.userStageCount === 0
+		) {
 			const first = planned[0];
 			if (first !== undefined) {
 				if (
@@ -628,10 +640,33 @@ export class CodePipeline extends BasicConstruct {
 		};
 	}
 
+	private reviewerProps(
+		repositoryName: string,
+	): CodeCommitAutoReviewerProps | undefined {
+		if (this.props.autoReviewer === undefined) return undefined;
+		const { modelId, ...autoReviewerProps } = this.props.autoReviewer;
+		return {
+			...autoReviewerProps,
+			repositories: [repositoryName],
+			reviewerModelId: modelId,
+			reviewCoordinationDeployment:
+				this.reviewCoordinationDeploymentPhase === undefined
+					? undefined
+					: this.reviewCoordinationDeploymentPhase === "active"
+						? {
+								phase: "active",
+								reviewActionTimeoutMinutes:
+									this.reviewActionTimeoutMinutes ?? 15,
+							}
+						: { phase: this.reviewCoordinationDeploymentPhase },
+		};
+	}
+
 	private createReviewInfrastructure(
 		details: MaterializedPipelineSource,
 	): void {
-		if (this.props.autoReviewer === undefined) {
+		const reviewerProps = this.reviewerProps(details.repositoryName);
+		if (reviewerProps === undefined) {
 			if (this.props.onPullRequest === true) {
 				new PullRequestRouter(this.stack, `${this.node.id}PullRequest`, {
 					repository: details.repository,
@@ -642,25 +677,10 @@ export class CodePipeline extends BasicConstruct {
 			return;
 		}
 
-		const { modelId, ...autoReviewerProps } = this.props.autoReviewer;
 		this.autoReviewer = new CodeCommitAutoReviewer(
 			this.stack,
 			`${this.node.id}AutoReview`,
-			{
-				...autoReviewerProps,
-				repositories: [details.repositoryName],
-				reviewerModelId: modelId,
-				reviewCoordinationDeployment:
-					this.reviewCoordinationDeploymentPhase === undefined
-						? undefined
-						: this.reviewCoordinationDeploymentPhase === "active"
-							? {
-									phase: "active",
-									reviewActionTimeoutMinutes:
-										this.reviewActionTimeoutMinutes ?? 15,
-								}
-							: { phase: this.reviewCoordinationDeploymentPhase },
-			},
+			reviewerProps,
 		);
 		this.autoReviewer.router.lambda.addEnvironment(
 			"PIPELINE_NAME",

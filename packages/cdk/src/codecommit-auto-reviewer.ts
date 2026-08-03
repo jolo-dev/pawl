@@ -198,6 +198,84 @@ function configuredRepositoryName(repository: Repository): string {
 	return repositoryName;
 }
 
+interface ValidatedCodeCommitAutoReviewerProps {
+	readonly config: CodeCommitAutoReviewerConfig;
+	readonly repositoryResources?: ReadonlyMap<string, Repository>;
+	readonly reviewCoordinationDeployment?: ReviewCoordinationDeployment;
+	readonly team: string;
+	readonly stage: string;
+}
+
+function resolveCodeCommitAutoReviewerProps(
+	scope: Stack,
+	props: CodeCommitAutoReviewerProps,
+): ValidatedCodeCommitAutoReviewerProps {
+	const {
+		repositoryResources,
+		team: teamOverride,
+		stage: stageOverride,
+		reviewCoordinationDeployment: reviewCoordinationDeploymentInput,
+		pipelineCoordination: pipelineCoordinationInput,
+		...configInput
+	} = props;
+	const config = CodeCommitAutoReviewerConfigSchema.parse(configInput);
+	if (
+		pipelineCoordinationInput !== undefined &&
+		reviewCoordinationDeploymentInput !== undefined
+	) {
+		throw new Error(
+			"CodeCommitAutoReviewer: pipelineCoordination is deprecated; use reviewCoordinationDeployment instead. Do not specify both.",
+		);
+	}
+	const resolvedNewDeploymentInput =
+		pipelineCoordinationInput !== undefined
+			? {
+					phase: "active" as const,
+					reviewActionTimeoutMinutes:
+						pipelineCoordinationInput.reviewActionTimeoutMinutes,
+				}
+			: reviewCoordinationDeploymentInput;
+	const reviewCoordinationDeployment =
+		resolvedNewDeploymentInput === undefined
+			? undefined
+			: ReviewCoordinationDeploymentSchema.parse(resolvedNewDeploymentInput);
+	const configuredRepositories = new Set(config.repositories);
+	for (const [repositoryName, repository] of repositoryResources ?? []) {
+		if (!configuredRepositories.has(repositoryName)) {
+			throw new Error(
+				`CodeCommitAutoReviewer: unknown repository resource key ${repositoryName}`,
+			);
+		}
+		if (configuredRepositoryName(repository) !== repositoryName) {
+			throw new Error(
+				`CodeCommitAutoReviewer: repository resource name must match map key ${repositoryName}`,
+			);
+		}
+	}
+	const team = teamOverride ?? scope.node.tryGetContext("team");
+	const stage = stageOverride ?? scope.node.tryGetContext("stage");
+	if (!team || !stage) {
+		throw new Error(
+			"CodeCommitAutoReviewer: team and stage are required (set via CDK context or props)",
+		);
+	}
+	return {
+		config,
+		repositoryResources,
+		reviewCoordinationDeployment,
+		team,
+		stage,
+	};
+}
+
+/** Validate reviewer configuration and context without creating construct children. */
+export function validateCodeCommitAutoReviewerProps(
+	scope: Stack,
+	props: CodeCommitAutoReviewerProps,
+): void {
+	resolveCodeCommitAutoReviewerProps(scope, props);
+}
+
 /**
  * Deploys the full durable CodeCommit PR auto-reviewer infrastructure.
  *
@@ -223,56 +301,12 @@ export class CodeCommitAutoReviewer {
 
 	constructor(scope: Stack, id: string, props: CodeCommitAutoReviewerProps) {
 		const {
+			config,
 			repositoryResources,
-			team: teamOverride,
-			stage: stageOverride,
-			reviewCoordinationDeployment: reviewCoordinationDeploymentInput,
-			pipelineCoordination: pipelineCoordinationInput,
-			...configInput
-		} = props;
-		const config = CodeCommitAutoReviewerConfigSchema.parse(configInput);
-		// Handle deprecated pipelineCoordination alias.
-		// Destructured before Zod parsing so JS/spread callers survive.
-		if (
-			pipelineCoordinationInput !== undefined &&
-			reviewCoordinationDeploymentInput !== undefined
-		) {
-			throw new Error(
-				"CodeCommitAutoReviewer: pipelineCoordination is deprecated; use reviewCoordinationDeployment instead. Do not specify both.",
-			);
-		}
-		const resolvedNewDeploymentInput =
-			pipelineCoordinationInput !== undefined
-				? {
-						phase: "active" as const,
-						reviewActionTimeoutMinutes:
-							pipelineCoordinationInput.reviewActionTimeoutMinutes,
-					}
-				: reviewCoordinationDeploymentInput;
-		const reviewCoordinationDeployment =
-			resolvedNewDeploymentInput === undefined
-				? undefined
-				: ReviewCoordinationDeploymentSchema.parse(resolvedNewDeploymentInput);
-		const configuredRepositories = new Set(config.repositories);
-		for (const [repositoryName, repository] of repositoryResources ?? []) {
-			if (!configuredRepositories.has(repositoryName)) {
-				throw new Error(
-					`CodeCommitAutoReviewer: unknown repository resource key ${repositoryName}`,
-				);
-			}
-			if (configuredRepositoryName(repository) !== repositoryName) {
-				throw new Error(
-					`CodeCommitAutoReviewer: repository resource name must match map key ${repositoryName}`,
-				);
-			}
-		}
-		const team = teamOverride ?? scope.node.tryGetContext("team");
-		const stage = stageOverride ?? scope.node.tryGetContext("stage");
-		if (!team || !stage) {
-			throw new Error(
-				"CodeCommitAutoReviewer: team and stage are required (set via CDK context or props)",
-			);
-		}
+			reviewCoordinationDeployment,
+			team,
+			stage,
+		} = resolveCodeCommitAutoReviewerProps(scope, props);
 		const reviewerFunctionName = `${team}-${stage}-${id}Reviewer-lambda`;
 		const reviewerArn = `arn:aws:lambda:${scope.region}:${scope.account}:function:${reviewerFunctionName}:${config.reviewerAlias}`;
 		const botArnPatterns =

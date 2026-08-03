@@ -66,6 +66,40 @@ describe("CodePipeline durable review bridge", () => {
 		expect(serialized).not.toContain(":function:");
 	});
 
+	test("injects AIReview only into the first user stage across chained calls", () => {
+		const stack = new Stack(createTestApp(), "ChainedBridgePipelineStack");
+		const repository = new Repository(stack, "Repo", {
+			repositoryName: "test-repo",
+		});
+		new CodePipeline(stack, "Pipeline", {
+			onPullRequest: true,
+			autoReviewer: { modelId: "eu.anthropic.claude-sonnet-4-6" },
+		})
+			.source({
+				origin: "codecommit",
+				repository,
+				repositoryName: "test-repo",
+			})
+			.stage({
+				name: "Build",
+				actions: [{ type: "approval", name: "ApproveBuild" }],
+			})
+			.stage({
+				name: "Deploy",
+				actions: [{ type: "approval", name: "ApproveDeploy" }],
+			});
+
+		const stages = pipelineResource(Template.fromStack(stack)).Properties
+			.Stages;
+		expect(
+			stages
+				.filter(({ Actions }) =>
+					Actions.some(({ Name }) => Name === "AIReview"),
+				)
+				.map(({ Name }) => Name),
+		).toEqual(["Build"]);
+	});
+
 	test("creates bridge, reconciler, scheduled redrive, GSIs, and callback IAM", () => {
 		const template = createBridgePipeline();
 		const lambdas = Object.values(

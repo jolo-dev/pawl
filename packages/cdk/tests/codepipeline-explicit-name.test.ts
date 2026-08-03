@@ -115,7 +115,17 @@ describe("CodePipeline physical name", () => {
 		expect(pipeline.Properties?.Name).toBe("standard-pipeline-name");
 	});
 
-	test("rejects ambiguous pipelineName and pipelineNaming combinations", () => {
+	test("allows matching explicit pipelineName and pipelineNaming", () => {
+		const template = createTemplate({
+			pipelineName: "shared-explicit-name",
+			pipelineNaming: { mode: "explicit", name: "shared-explicit-name" },
+		});
+		const [, pipeline] = findPipeline(template);
+
+		expect(pipeline.Properties?.Name).toBe("shared-explicit-name");
+	});
+
+	test("rejects conflicting pipelineName and pipelineNaming combinations", () => {
 		for (const pipelineNaming of [
 			{ mode: "pawl" } as const,
 			{ mode: "explicit", name: "named-by-policy" } as const,

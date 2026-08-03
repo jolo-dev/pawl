@@ -378,6 +378,38 @@ describe("CodePipeline fluent lifecycle", () => {
 		expect(serialized).not.toContain("WouldHaveBeenAdded");
 		expect(serialized).toContain("Recovered");
 	});
+
+	test("leaves source state and children retryable after invalid reviewer config", () => {
+		const stack = new Stack(createTestApp(), "AtomicSourceStack");
+		const autoReviewer = { modelId: "invalid model" };
+		const pipeline = new CodePipeline(stack, "Pipeline", { autoReviewer });
+		const childIdsBefore = stack.node.children.map((child) => child.node.id);
+		const source = {
+			origin: "codecommit" as const,
+			create: false as const,
+			repositoryName: "atomic-source-repo",
+		};
+
+		expect(() => pipeline.source(source)).toThrow();
+		expect(stack.node.children.map((child) => child.node.id)).toEqual(
+			childIdsBefore,
+		);
+		expect(pipeline.pipeline.stages).toHaveLength(0);
+
+		autoReviewer.modelId = "eu.anthropic.claude-sonnet-4-6";
+		pipeline.source(source).stage({
+			name: "Recovered",
+			actions: [{ type: "approval", name: "Recovered" }],
+		});
+
+		const stages = pipeline.pipeline.stages.map(({ stageName }) => stageName);
+		expect(stages).toEqual(["Source", "Recovered"]);
+		expect(
+			stack.node.children.filter(({ node }) =>
+				node.id.startsWith("PipelineSource"),
+			),
+		).toHaveLength(1);
+	});
 });
 
 describe("CodePipeline props and artifact storage", () => {

@@ -106,6 +106,64 @@ describe("artifact frontier planning", () => {
 		expect(result.stages[1]?.actions[0]?.inputs).toEqual(["SourceOutput"]);
 	});
 
+	test("appends registered additional inputs after the inferred primary", () => {
+		const state: ArtifactPlanState = {
+			registered: new Set(["Primary", "Configuration", "Parameters"]),
+			frontier: ["Primary"],
+		};
+		const result = planStageBatch(state, [
+			stage("Deploy", [
+				{
+					name: "Stack",
+					input: { mode: "required" },
+					additionalInputs: ["Configuration", "Parameters"],
+				},
+			]),
+		]);
+
+		expect(result.stages[0]?.actions[0]?.inputs).toEqual([
+			"Primary",
+			"Configuration",
+			"Parameters",
+		]);
+	});
+
+	test("rejects unknown and duplicate additional inputs at their own paths", () => {
+		const state: ArtifactPlanState = {
+			registered: new Set(["Primary", "Configuration"]),
+			frontier: ["Primary"],
+		};
+
+		expectDefinitionError(
+			() =>
+				planStageBatch(state, [
+					stage("Deploy", [
+						{
+							name: "Stack",
+							input: { mode: "required" },
+							additionalInputs: ["Missing"],
+						},
+					]),
+				]),
+			"ARTIFACT_NOT_FOUND",
+			"stages[Deploy].actions[Stack].additionalInputs[0]",
+		);
+		expectDefinitionError(
+			() =>
+				planStageBatch(state, [
+					stage("Deploy", [
+						{
+							name: "Stack",
+							input: { mode: "required" },
+							additionalInputs: ["Primary"],
+						},
+					]),
+				]),
+			"ARTIFACT_NAME_CONFLICT",
+			"stages[Deploy].actions[Stack].additionalInputs[0]",
+		);
+	});
+
 	test("rejects automatic input with an empty frontier", () => {
 		const state: ArtifactPlanState = {
 			registered: new Set<string>(),

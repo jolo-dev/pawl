@@ -17,6 +17,7 @@ export type ArtifactInputPlan =
 export interface ArtifactActionPlan {
 	readonly name: string;
 	readonly input: ArtifactInputPlan;
+	readonly additionalInputs?: readonly string[];
 	readonly outputs?: readonly string[];
 }
 
@@ -115,12 +116,34 @@ export function planStageBatch(
 
 		for (const action of stage.actions) {
 			const path = actionPath(stage.name, action.name);
-			const inputs = resolveInputs(
-				action.input,
-				preStageFrontier,
-				registered,
-				`${path}.input`,
-			);
+			const inputs = [
+				...resolveInputs(
+					action.input,
+					preStageFrontier,
+					registered,
+					`${path}.input`,
+				),
+			];
+			for (const [index, additionalInput] of (
+				action.additionalInputs ?? []
+			).entries()) {
+				const additionalInputPath = `${path}.additionalInputs[${index}]`;
+				if (!registered.has(additionalInput)) {
+					throw new PipelineDefinitionError(
+						"ARTIFACT_NOT_FOUND",
+						`Artifact '${additionalInput}' is not registered`,
+						additionalInputPath,
+					);
+				}
+				if (inputs.includes(additionalInput)) {
+					throw new PipelineDefinitionError(
+						"ARTIFACT_NAME_CONFLICT",
+						`Artifact '${additionalInput}' is already an input`,
+						additionalInputPath,
+					);
+				}
+				inputs.push(additionalInput);
+			}
 			const outputs: string[] = [];
 
 			for (const [index, output] of (action.outputs ?? []).entries()) {

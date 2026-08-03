@@ -23,6 +23,7 @@ import { Topic } from "aws-cdk-lib/aws-sns";
 import { CodeBuildProject } from "../src/codebuild-project";
 import { LambdaFunction } from "../src/lambda-function";
 import {
+	PipelineActionDefinitionSchema,
 	parsePipelineActionDefinition,
 	planPipelineAction,
 } from "../src/pipeline/actions";
@@ -42,6 +43,7 @@ const publicTestNetwork = {
 
 interface SynthesizedAction {
 	readonly Name: string;
+	readonly Region?: string;
 	readonly ActionTypeId: {
 		readonly Category: string;
 		readonly Owner: string;
@@ -227,9 +229,10 @@ describe("pipeline action runtime validation", () => {
 		).toMatchObject({ input: { mode: "none" }, outputs: [] });
 	});
 
-	test("rejects unsupported built-in regions at the exact action path", () => {
+	test("schemas reject region overrides on built-in and custom actions", () => {
 		const stack = createStack("UnsupportedRegionStack");
 		const path = "stages[Release].actions[2]";
+		const customAction = new ManualApprovalAction({ actionName: "Custom" });
 		for (const definition of [
 			{
 				type: "codebuild" as const,
@@ -254,10 +257,19 @@ describe("pipeline action runtime validation", () => {
 				bucket: new Bucket(stack, "Destination"),
 				region: "us-east-1",
 			},
+			{
+				type: "custom" as const,
+				name: "Custom",
+				action: customAction,
+				region: "us-east-1",
+			},
 		]) {
+			expect(PipelineActionDefinitionSchema.safeParse(definition).success).toBe(
+				false,
+			);
 			expectDefinitionError(
-				() => planPipelineAction(definition, path),
-				`${path}.region`,
+				() => planPipelineAction(definition as never, path),
+				path,
 				"PIPELINE_PROP_CONFLICT",
 			);
 		}
@@ -724,6 +736,7 @@ describe("S3 and CloudFormation action adapters", () => {
 			Category: "Deploy",
 			Provider: "CloudFormation",
 		});
+		expect(synthesized.Region).toBe("eu-west-1");
 		expect(synthesized.Configuration).toMatchObject({
 			ActionMode: "REPLACE_ON_FAILURE",
 			Capabilities: "CAPABILITY_NAMED_IAM",
@@ -869,19 +882,23 @@ describe("custom action adapter", () => {
 		const project = createProject(stack);
 		const input = new Artifact("CustomInput");
 		const output = new Artifact("CustomOutput");
-		const action = new CodeBuildAction({
+		const baseAction = new CodeBuildAction({
 			actionName: "CustomBuild",
 			project: project.project,
 			input,
 			outputs: [output],
 		});
-		const planned = planPipelineAction(
-			{
-				type: "custom",
-				name: "CustomBuild",
+		const action: IAction = {
+			...baseAction,
+			actionProperties: {
+				...baseAction.actionProperties,
 				region: "eu-west-1",
-				action,
 			},
+			bind: baseAction.bind.bind(baseAction),
+			onStateChange: baseAction.onStateChange.bind(baseAction),
+		};
+		const planned = planPipelineAction(
+			{ type: "custom", name: "CustomBuild", action },
 			"action",
 		);
 
@@ -892,9 +909,12 @@ describe("custom action adapter", () => {
 		});
 		expect(planned.existingArtifacts?.get("CustomInput")).toBe(input);
 		expect(planned.existingArtifacts?.get("CustomOutput")).toBe(output);
-		expect(planned.materialize({ inputs: [input], outputs: [output] })).toBe(
-			action,
-		);
+		const materialized = planned.materialize({
+			inputs: [input],
+			outputs: [output],
+		});
+		expect(materialized).toBe(action);
+		expect(materialized.actionProperties.region).toBe("eu-west-1");
 	});
 
 	test("rejects mismatched names, non-default run order, and unnamed artifacts", () => {

@@ -142,7 +142,6 @@ export type CloudFormationDeployActionDefinition = CloudFormationActionBase &
 export interface CustomActionDefinition {
 	readonly type: "custom";
 	readonly name: string;
-	readonly region?: string;
 	readonly action: IAction;
 }
 
@@ -271,7 +270,6 @@ const artifactNames = z.array(artifactName).min(1);
 const commonAwsFields = {
 	name: nonemptyString,
 	role: roleSchema.optional(),
-	region: nonemptyString.optional(),
 	variablesNamespace: nonemptyString.optional(),
 };
 const environmentVariableSchema = z
@@ -362,6 +360,7 @@ const s3DeploySchema = z
 const cloudFormationBaseFields = {
 	type: z.literal("cloudFormationDeploy"),
 	...commonAwsFields,
+	region: nonemptyString.optional(),
 	stackName: nonemptyString,
 	input: artifactName.optional(),
 	templatePath: nonemptyString,
@@ -400,7 +399,6 @@ const customSchema = z
 	.object({
 		type: z.literal("custom"),
 		name: nonemptyString,
-		region: nonemptyString.optional(),
 		action: actionSchema,
 	})
 	.strict();
@@ -857,17 +855,6 @@ export function planPipelineAction(
 	path: string,
 ): PlannedActionAdapter {
 	const parsed = parsePipelineActionDefinition(definition, path);
-	if (
-		parsed.type !== "cloudFormationDeploy" &&
-		parsed.type !== "custom" &&
-		"region" in parsed &&
-		parsed.region !== undefined
-	) {
-		throw definitionError(
-			`The ${parsed.type} action does not support region`,
-			`${path}.region`,
-		);
-	}
 	validateActionName(parsed.name, `${path}.name`);
 	switch (parsed.type) {
 		case "codebuild":

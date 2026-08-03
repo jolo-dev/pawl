@@ -1,7 +1,11 @@
 import type { CfnCapabilities, Duration } from "aws-cdk-lib";
 import type { BuildEnvironmentVariable } from "aws-cdk-lib/aws-codebuild";
 import type { IRepository } from "aws-cdk-lib/aws-codecommit";
-import type { Artifact, IAction } from "aws-cdk-lib/aws-codepipeline";
+import type {
+	ActionProperties,
+	Artifact,
+	IAction,
+} from "aws-cdk-lib/aws-codepipeline";
 import type { CacheControl } from "aws-cdk-lib/aws-codepipeline-actions";
 import type { IRole } from "aws-cdk-lib/aws-iam";
 import type { IKey } from "aws-cdk-lib/aws-kms";
@@ -90,6 +94,9 @@ function verifyPipelineActionTypes(
 	topic: ITopic,
 	encryptionKey: IKey,
 	action: IAction,
+	regionalAction: IAction & {
+		readonly actionProperties: ActionProperties & { readonly region: string };
+	},
 	timeout: Duration,
 	capability: CfnCapabilities,
 	actionType: CodeBuildActionType,
@@ -156,8 +163,14 @@ function verifyPipelineActionTypes(
 	const custom: CustomActionDefinition = {
 		type: "custom",
 		name: "Custom",
-		region: "eu-west-1",
+		action: regionalAction,
+	};
+	const customWithRegionOverride: CustomActionDefinition = {
+		type: "custom",
+		name: "CustomOverride",
 		action,
+		// @ts-expect-error custom actions preserve IAction region and do not support an override
+		region: "eu-west-1",
 	};
 	const objectParameters: LambdaActionDefinition = {
 		type: "lambda",
@@ -269,6 +282,7 @@ function verifyPipelineActionTypes(
 		approval,
 		s3Deploy,
 		custom,
+		customWithRegionOverride,
 		allDefinitions,
 		objectParameters,
 		stringParameters,

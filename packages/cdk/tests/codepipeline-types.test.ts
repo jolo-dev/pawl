@@ -18,6 +18,7 @@ import type {
 	CodeBuildActionType,
 	CodeCommitPipelineSource,
 	CodePipeline,
+	CodePipelineNaming,
 	CodePipelineProps,
 	CustomActionDefinition,
 	LambdaActionDefinition,
@@ -25,7 +26,15 @@ import type {
 	PipelineActionDefinition,
 	PipelineDefinitionErrorCode,
 	PipelineStageDefinition,
+	PipelineStageDefinitionList,
 	S3DeployActionDefinition,
+} from "../index";
+import {
+	CodeCommitPipelineSourceSchema,
+	CodePipelineNameSchema,
+	CodePipelineNamingSchema,
+	PipelineActionDefinitionSchema,
+	PipelineDefinitionError,
 } from "../index";
 import type { CodeBuildProject } from "../src/codebuild-project";
 import type { DurableLambdaFunction } from "../src/durable-lambda-function";
@@ -298,6 +307,24 @@ function verifyPipelineActionTypes(
 	];
 }
 
+function verifyPipelineRootExports(): void {
+	const naming: CodePipelineNaming = { mode: "cloudFormation" };
+	const error: PipelineDefinitionError = new PipelineDefinitionError(
+		"SOURCE_REQUIRED",
+		"source is required",
+		"source",
+	);
+
+	void [
+		naming,
+		error,
+		CodeCommitPipelineSourceSchema,
+		CodePipelineNameSchema,
+		CodePipelineNamingSchema,
+		PipelineActionDefinitionSchema,
+	];
+}
+
 function verifyFluentCodePipelineTypes(
 	pipeline: CodePipeline,
 	source: CodeCommitPipelineSource,
@@ -310,13 +337,14 @@ function verifyFluentCodePipelineTypes(
 		pipelineNaming: { mode: "pawl" },
 	};
 	const stage: PipelineStageDefinition = { actions: [action] };
+	const stageList: PipelineStageDefinitionList = [
+		{ name: "First", actions: [action] },
+		{ name: "Second", actions: [action] },
+	];
 	const samePipeline: CodePipeline = pipeline
 		.source(source)
 		.stage(stage)
-		.stage([
-			{ name: "First", actions: [action] },
-			{ name: "Second", actions: [action] },
-		]);
+		.stage(stageList);
 
 	// @ts-expect-error fluent stage batches must not be empty
 	pipeline.stage([]);
@@ -343,6 +371,7 @@ function verifyFluentCodePipelineTypes(
 		errorCode,
 		props,
 		stage,
+		stageList,
 		samePipeline,
 		oldSource,
 		oldStages,
@@ -356,4 +385,5 @@ function verifyFluentCodePipelineTypes(
 
 void verifyCodeCommitPipelineSourceTypes;
 void verifyPipelineActionTypes;
+void verifyPipelineRootExports;
 void verifyFluentCodePipelineTypes;

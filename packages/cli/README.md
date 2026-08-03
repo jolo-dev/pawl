@@ -105,6 +105,59 @@ pawl init codepipeline --source codecommit --source-name my-repo --on-pr --autor
 | `--region <region>` | AWS region used for deployment |
 | `--help` | Show help |
 
+#### Generated fluent pipeline
+
+The generated stack imports the named CodeCommit repository with
+`create: false`, then adds an editable `Approval` stage containing a manual
+`Approve` action. This makes the initial pipeline complete without guessing a
+build or deployment target. Add sequential work as separate stage objects:
+
+```typescript
+new CodePipeline(this, "Pipeline")
+  .source({
+    origin: "codecommit",
+    create: false,
+    repositoryName: "my-repo",
+  })
+  .stage({
+    name: "Checks",
+    // Actions in one stage run in parallel.
+    actions: [unitAction, integrationAction],
+  })
+  .stage([
+    { name: "Deploy", actions: [deployAction] },
+    { name: "Approval", actions: [{ type: "approval", name: "Approve" }] },
+  ]);
+```
+
+A single object passed to `.stage()` adds one stage. An outer stage list adds
+stages sequentially in list order. All actions inside one stage object share a
+run order and execute in parallel.
+
+Pawl automatically selects an input when the current artifact frontier has one
+artifact. CodeBuild outputs default to `<ActionName>Output`. If parallel actions
+produce multiple artifacts, downstream consumers must name `input`/`inputs`
+explicitly; omission raises `PipelineDefinitionError` with code
+`ARTIFACT_INPUT_AMBIGUOUS`.
+
+The library also supports two source ownership modes that the generator does
+not emit: `create: true` creates a repository and can seed it once with `sync`,
+and `repository` reuses a supplied `IRepository` construct. Create, import, and
+supplied-repository fields are mutually exclusive.
+
+`onPullRequest` and `autoReviewer` are independent options:
+
+| `onPullRequest` | `autoReviewer` | Result |
+|---|---|---|
+| omitted/false | omitted | Native default-branch pipeline trigger |
+| true | omitted | Exact-revision PR pipeline runs, without AI review |
+| omitted/false | enabled | Native pipeline trigger plus standalone AI reviewer |
+| true | enabled | PR pipeline runs with the durable `AIReview` bridge |
+
+`--team` and `--stage` are written to the generated `cdk.json` context. Pawl's
+`BasicConstruct` reads that context for naming, tags, and reviewer identity;
+they are intentionally not `CodePipeline` constructor properties.
+
 ### Flue Agents (HTTP API)
 
 ```bash

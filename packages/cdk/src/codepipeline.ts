@@ -91,7 +91,14 @@ export const CodePipelineNameSchema = z
 	.max(100)
 	.regex(/^[A-Za-z0-9.@_-]+$/);
 
-/** Physical-name ownership for a CodePipeline. */
+/**
+ * Physical-name ownership for a CodePipeline.
+ *
+ * `pawl` derives the name from the `team` and `stage` CDK context, `explicit`
+ * uses the supplied name, and `cloudFormation` leaves the physical name to
+ * CloudFormation. Active PR-review coordination also requires a stable
+ * `coordinationName` when CloudFormation owns the physical name.
+ */
 export const CodePipelineNamingSchema = z.discriminatedUnion("mode", [
 	z.object({ mode: z.literal("pawl") }).strict(),
 	z
@@ -109,14 +116,22 @@ export type CodePipelineNaming = Readonly<
 	z.infer<typeof CodePipelineNamingSchema>
 >;
 
+/**
+ * One sequential pipeline stage. Every action in `actions` has the same run
+ * order and runs in parallel against the artifact frontier that existed before
+ * the stage. Use separate stage objects for sequential work.
+ */
 export interface PipelineStageDefinition {
+	/** AWS stage name; derived from action names when omitted. */
 	readonly name?: string;
+	/** One or more actions that run in parallel. */
 	readonly actions: readonly [
 		PipelineActionDefinition,
 		...PipelineActionDefinition[],
 	];
 }
 
+/** A non-empty list of stages added sequentially in array order. */
 export type PipelineStageDefinitionList = readonly [
 	PipelineStageDefinition,
 	...PipelineStageDefinition[],
@@ -197,6 +212,64 @@ function normalizeStages(
 	return stages as readonly PipelineStageDefinition[];
 }
 
+/**
+ * An opinionated V2 CodePipeline defined with ordered fluent calls.
+ *
+ * Call {@link source} exactly once before one or more calls to {@link stage}.
+ * Passing one stage object adds one stage; passing a non-empty list adds its
+ * stage objects sequentially. Actions inside one stage object run in parallel.
+ *
+ * Artifact names are inferred when the current frontier has exactly one
+ * artifact. CodeBuild also produces `<SanitizedActionName>Output` by default.
+ * After parallel producers create multiple frontier artifacts, a consuming
+ * action must select one explicitly with `input` (or `inputs`, as applicable),
+ * otherwise Pawl throws `PipelineDefinitionError` with
+ * `ARTIFACT_INPUT_AMBIGUOUS`.
+ *
+ * `onPullRequest` and `autoReviewer` are independent:
+ *
+ * | onPullRequest | autoReviewer | Behavior |
+ * | --- | --- | --- |
+ * | false/omitted | omitted | Native default-branch trigger |
+ * | true | omitted | Exact-revision PR pipeline router, without AI review |
+ * | false/omitted | present | Native trigger plus standalone AI reviewer |
+ * | true | present | PR router plus durable `AIReview` bridge in the first user stage |
+ *
+ * Team and deployment stage are supplied through CDK context (`team` and
+ * `stage`) for `BasicConstruct` naming and tags, not through
+ * {@link CodePipelineProps}.
+ *
+ * @example Single and sequential stages, with parallel build actions
+ * ```ts
+ * new CodePipeline(stack, "Pipeline")
+ * 	.source({
+ * 		origin: "codecommit",
+ * 		create: false,
+ * 		repositoryName: "orders-service",
+ * 	})
+ * 	.stage({
+ * 		name: "Checks",
+ * 		actions: [
+ * 			{ type: "codebuild", name: "Unit", project: unitProject },
+ * 			{ type: "codebuild", name: "Integration", project: integrationProject },
+ * 		],
+ * 	})
+ * 	.stage([
+ * 		{
+ * 			name: "Deploy",
+ * 			actions: [
+ * 				{
+ * 					type: "s3Deploy",
+ * 					name: "DeployUnit",
+ * 					bucket,
+ * 					input: "UnitOutput",
+ * 				},
+ * 			],
+ * 		},
+ * 		{ name: "Approval", actions: [{ type: "approval", name: "Approve" }] },
+ * 	]);
+ * ```
+ */
 export class CodePipeline extends BasicConstruct {
 	readonly pipeline: Pipeline;
 	readonly artifactBucket: IBucket;
@@ -409,6 +482,15 @@ export class CodePipeline extends BasicConstruct {
 		});
 	}
 
+	/**
+	 * Adds the required CodeCommit source before any user stage.
+	 *
+	 * Source ownership is explicit: `create: true` creates a repository (and
+	 * may initially seed it with `sync`), `create: false` imports one by name,
+	 * and `repository` reuses a supplied `IRepository`. The forms cannot be
+	 * combined. `branchName` defaults to `main`, and every form produces the
+	 * `SourceOutput` artifact.
+	 */
 	source(source: CodeCommitPipelineSource): this {
 		if (this.userStageCount > 0) {
 			throw new PipelineDefinitionError(
@@ -464,7 +546,9 @@ export class CodePipeline extends BasicConstruct {
 		return this;
 	}
 
+	/** Adds one stage object. Its actions run in parallel. */
 	stage(stage: PipelineStageDefinition): this;
+	/** Adds a non-empty list of stages sequentially in array order. */
 	stage(stages: PipelineStageDefinitionList): this;
 	stage(
 		definition: PipelineStageDefinition | PipelineStageDefinitionList,

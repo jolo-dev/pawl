@@ -48,26 +48,72 @@ CodeCommit PR event
   ├──► StartPipelineExecution (sourceRevision = PR commit)
   │         │
   │         ▼
-  │    CodePipeline (Source → Build → Approve)
-  │         │
-  │         ▼
-  │    Execution State Change ──► router ──► post CI comment on PR
+  │    Source → Build + AIReview bridge → Approve
+  │               │          │
+  │               │          └──► register pending pipeline job
+  │               └──► CodeBuild
   │
-  └──► Invoke durable reviewer ──► Bedrock AI review ──► post review comment
+  └──► start/wake durable reviewer ──► Bedrock/comments ──► outcome
+                                                            │
+                         AIReview callback ◄── reconciler ◄──┘
 ```
 
-- **Managed source** — Fluent `CodePipeline.source()` creates and seeds the
-  CodeCommit repository directly from this example; no separate source
-  construct is required.
+- **Managed source** — Fluent `CodePipeline.source()` creates and initially
+  seeds the CodeCommit repository directly from this example; `sync` is a seed
+  asset, not ongoing synchronization.
 - **Pipeline** — `CodePipeline` with `onPullRequest: true` and
-  `autoReviewer: { modelId }` uses `CodeCommitTrigger.NONE`. The router starts
-  executions explicitly with the PR's source commit.
+  `autoReviewer: { modelId }` disables the native source trigger. The router
+  starts executions explicitly with the PR's source commit.
 - **Build stage** — `CodeBuildProject` in `pipelineMode` runs the repo's
   `buildspec.yml`; fluent artifact inference wires `SourceOutput` to the build
-  and creates `BuildOutput` automatically.
-- **Approve stage** — Manual approval gate before merge.
-- **Auto-review** — Same durable reviewer infrastructure as Stack 1, extended
-  with pipeline dispatch via the common runtime module.
+  and creates `BuildOutput` automatically. In active review coordination, Pawl
+  also inserts `AIReview` into this first user stage as a parallel action.
+- **Approve stage** — A later stage provides a sequential manual approval gate
+  before merge.
+- **Auto-review** — The bridge coordinates the durable reviewer with the
+  pipeline while review comments remain replay-safe.
+
+### Fluent stages and artifacts
+
+`.stage({ ... })` adds one stage. `.stage([{ ... }, { ... }])`, as used by this
+example, adds its stage objects sequentially in list order. Actions in the same
+stage object run in parallel against the same pre-stage artifacts, so an
+approval and the deployment it protects belong in separate stage objects.
+
+Input inference is safe while there is exactly one current artifact. A
+CodeBuild action also creates `<SanitizedActionName>Output` unless `outputs` is
+set explicitly or disabled. When parallel producers leave more than one
+artifact, a downstream consumer must use explicit artifact names, for example
+`input: "WebOutput"`; otherwise Pawl throws `PipelineDefinitionError` with code
+`ARTIFACT_INPUT_AMBIGUOUS`.
+
+CodeCommit source ownership is explicit:
+
+- `{ create: true, repositoryName, sync? }` creates a Pawl-owned repository and
+  can seed it during deployment;
+- `{ create: false, repositoryName }` imports an existing repository by name;
+- `{ repository }` reuses a supplied `IRepository` construct (with an optional
+  literal `repositoryName` fallback for tokenized names used by auto-review).
+
+These ownership forms cannot be combined. `branchName` defaults to `main` in
+all three forms.
+
+### Trigger and reviewer modes
+
+`onPullRequest` and `autoReviewer` are independent:
+
+| `onPullRequest` | `autoReviewer` | Behavior |
+|---|---|---|
+| omitted/false | omitted | Native default-branch pipeline trigger |
+| true | omitted | Exact-revision PR pipeline router, no AI reviewer |
+| omitted/false | present | Native pipeline trigger plus standalone AI reviewer |
+| true | present | PR router plus durable `AIReview` bridge in the pipeline |
+
+Team and deployment stage are CDK context values (`team` and `stage`) consumed
+by `BasicConstruct` for naming, tags, and reviewer identity. They are not
+`CodePipeline` props. `pawl init codepipeline` writes this context and generates
+an editable `Approval` stage so a new pipeline is synthesis-complete without
+inventing a build or deployment target.
 
 ### Deploy Stack 2
 

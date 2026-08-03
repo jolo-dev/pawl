@@ -2408,6 +2408,119 @@ describe("DynamoDbStateStore", () => {
 		expect(serialized).not.toContain("secret");
 	});
 
+	it("uses one ownership-conditioned transaction to recover an expired orphan claim", async () => {
+		const commands: object[] = [];
+		const claimed = revisionEvent("orphaned");
+		const transport: DynamoDbDocumentTransport = {
+			send: async (command) => {
+				commands.push(command);
+				if (command.constructor.name === "GetCommand") {
+					return {
+						Item: {
+							generation: 3,
+							leaseVersion: 8,
+							lifecycleState: "RUNNING",
+							leaseExpiresAt: "2026-07-18T11:59:00.000Z",
+							pendingEventCount: 0,
+						},
+					};
+				}
+				if (command.constructor.name === "QueryCommand") {
+					return {
+						Items: [
+							{
+								pk: "request",
+								sk: "EVENT#orphaned",
+								eventType: claimed.type,
+								eventId: claimed.id,
+								occurredAt: claimed.occurredAt,
+								watermark: `${claimed.occurredAt}#${claimed.id}`,
+								revision: claimed.revision,
+								claimedGeneration: 3,
+							},
+						],
+					};
+				}
+				return {};
+			},
+		};
+		const store = new DynamoDbStateStore({
+			transport,
+			tableName: "review-state",
+			clock: () => new Date(now),
+		});
+
+		expect(
+			await store.recoverOrphanedPipelineClaim({
+				request,
+				generation: 3,
+				leaseVersion: 8,
+				recoveredAt: now,
+			}),
+		).toEqual({ recovered: true, generation: 3, leaseVersion: 9 });
+		const transaction = commands.find(
+			(command) => command.constructor.name === "TransactWriteCommand",
+		) as { input?: { TransactItems?: readonly Record<string, unknown>[] } };
+		const claimQuery = commands.find(
+			(command) => command.constructor.name === "QueryCommand",
+		) as { input?: { ScanIndexForward?: boolean } };
+		expect(claimQuery.input?.ScanIndexForward).toBe(false);
+		expect(transaction.input?.TransactItems).toHaveLength(2);
+		const serialized = JSON.stringify(transaction.input);
+		expect(serialized).toContain("leaseExpiresAt <= :recoveredAt");
+		expect(serialized).toContain(
+			"generation = :generation AND leaseVersion = :leaseVersion AND #state = :observedState",
+		);
+		expect(serialized).toContain(
+			"ADD pendingEventCount :claimedCount, leaseVersion :one",
+		);
+		expect(serialized).toContain("claimedGeneration = :generation");
+		expect(transaction.input?.TransactItems).toHaveLength(2);
+	});
+
+	it("conditionally gets, creates, and completes an immutable dispatch intent", async () => {
+		const commands: object[] = [];
+		const transport: DynamoDbDocumentTransport = {
+			send: async (command) => {
+				commands.push(command);
+				return command.constructor.name === "GetCommand" ? {} : {};
+			},
+		};
+		const store = new DynamoDbStateStore({
+			transport,
+			tableName: "review-state",
+			clock: () => new Date(now),
+		});
+		const intent = {
+			request,
+			generation: 3,
+			sourceRevision: "abcdef1",
+			destinationRevision: "1234567",
+			observedAt: now,
+			eventId: "intent-event",
+		};
+
+		expect(await store.getOrCreatePipelineDispatchIntent(intent, 8)).toEqual(
+			intent,
+		);
+		expect(await store.completePipelineDispatchIntent(intent, 8)).toEqual({
+			completed: true,
+		});
+		const transactions = commands.filter(
+			(command) => command.constructor.name === "TransactWriteCommand",
+		) as { input?: { TransactItems?: readonly Record<string, unknown>[] } }[];
+		expect(transactions).toHaveLength(2);
+		const create = JSON.stringify(transactions[0]?.input);
+		expect(create).toContain("generation = :generation");
+		expect(create).toContain("leaseVersion = :leaseVersion");
+		expect(create).toContain("#state = :running");
+		expect(create).toContain("attribute_not_exists(pk)");
+		const complete = JSON.stringify(transactions[1]?.input);
+		expect(complete).toContain("sourceRevision = :sourceRevision");
+		expect(complete).toContain("destinationRevision = :destinationRevision");
+		expect(complete).toContain("eventId = :eventId");
+	});
+
 	it("removes non-terminal pipeline routing failure metadata on completion", async () => {
 		const commands: object[] = [];
 		const store = new DynamoDbStateStore({

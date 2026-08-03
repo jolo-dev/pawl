@@ -14,6 +14,7 @@ import type {
 	CallbackRegistrationResult,
 	CallbackWake,
 	ClaimedEvents,
+	CompletePipelineDispatchIntentResult,
 	CompletionReason,
 	FailAndRequeueClaimInput,
 	FailAndRequeueClaimResult,
@@ -24,6 +25,9 @@ import type {
 	LeaseRecoveryInput,
 	LeaseRecoveryResult,
 	PersistedFinding,
+	PipelineClaimRecoveryInput,
+	PipelineClaimRecoveryResult,
+	PipelineDispatchIntent,
 	ReviewLifecycleState,
 	ReviewStateStore,
 	WriteReservation,
@@ -192,6 +196,34 @@ export function encodeStateKeyComponent(component: string): string {
 
 function eventSortKey(event: ReviewEvent): string {
 	return `EVENT#${canonicalTimestamp(event.occurredAt)}#${encodeStateKeyComponent(event.id)}`;
+}
+
+function decodePipelineDispatchIntent(
+	item: Item,
+	request: RequestKey,
+): PipelineDispatchIntent {
+	const generation = numberValue(item, "generation");
+	const sourceRevision = stringValue(item, "sourceRevision");
+	const destinationRevision = stringValue(item, "destinationRevision");
+	const observedAt = stringValue(item, "observedAt");
+	const eventId = stringValue(item, "eventId");
+	if (
+		generation === undefined ||
+		sourceRevision === undefined ||
+		destinationRevision === undefined ||
+		observedAt === undefined ||
+		eventId === undefined
+	) {
+		throw new Error("persisted pipeline dispatch intent is incomplete");
+	}
+	return {
+		request,
+		generation,
+		sourceRevision,
+		destinationRevision,
+		observedAt,
+		eventId,
+	};
 }
 
 function decodeEvent(item: Item, request: RequestKey): ReviewEvent {
@@ -574,6 +606,211 @@ export class DynamoDbStateStore implements ReviewStateStore {
 		} catch (error) {
 			if (isConditionalFailure(error)) {
 				return { requeued: false, reason: "changed" };
+			}
+			throw error;
+		}
+	}
+
+	async recoverOrphanedPipelineClaim(
+		input: PipelineClaimRecoveryInput,
+	): Promise<PipelineClaimRecoveryResult> {
+		const pk = this.#pk(input.request);
+		const recoveredAt = canonicalTimestamp(input.recoveredAt);
+		const meta = await this.#get(pk, "META");
+		if (
+			meta === undefined ||
+			numberValue(meta, "generation") !== input.generation ||
+			numberValue(meta, "leaseVersion") !== input.leaseVersion
+		) {
+			return { recovered: false, reason: "changed" };
+		}
+		if ((stringValue(meta, "leaseExpiresAt") ?? "") > recoveredAt) {
+			return { recovered: false, reason: "active" };
+		}
+		if (lifecycleValue(meta) !== "RUNNING") {
+			return { recovered: false, reason: "changed" };
+		}
+		const claimed = await this.#queryClaimedEvents(pk, input.generation);
+		if (claimed.length === 0) {
+			return { recovered: false, reason: "no-claimed-events" };
+		}
+		const transactItems: Record<string, unknown>[] = [
+			{
+				Update: {
+					TableName: this.#tableName,
+					Key: { pk, sk: "META" },
+					UpdateExpression:
+						"SET #state = :starting, leaseHeartbeatAt = :recoveredAt, leaseExpiresAt = :recoveredAt, expiresAt = :ttl REMOVE executionArn, executionName, callbackId, callbackGeneration, lastCallbackGeneration, blockedLimit, claimCursor, completionType, retryExhaustion ADD pendingEventCount :claimedCount, leaseVersion :one",
+					ConditionExpression:
+						"generation = :generation AND leaseVersion = :leaseVersion AND #state = :observedState AND leaseExpiresAt <= :recoveredAt",
+					ExpressionAttributeNames: { "#state": "lifecycleState" },
+					ExpressionAttributeValues: {
+						":generation": input.generation,
+						":leaseVersion": input.leaseVersion,
+						":observedState": "RUNNING",
+						":starting": "STARTING",
+						":recoveredAt": recoveredAt,
+						":ttl": this.#ttlAt(this.#ttl.metaSeconds),
+						":claimedCount": claimed.length,
+						":one": 1,
+					},
+				},
+			},
+			...claimed.map((item) => ({
+				Update: {
+					TableName: this.#tableName,
+					Key: { pk, sk: stringValue(item, "sk") },
+					UpdateExpression: "REMOVE claimedGeneration",
+					ConditionExpression: "claimedGeneration = :generation",
+					ExpressionAttributeValues: { ":generation": input.generation },
+				},
+			})),
+		];
+		try {
+			await this.#send(
+				new TransactWriteCommand({ TransactItems: transactItems }),
+			);
+			return {
+				recovered: true,
+				generation: input.generation,
+				leaseVersion: input.leaseVersion + 1,
+			};
+		} catch (error) {
+			if (isConditionalFailure(error)) {
+				return { recovered: false, reason: "changed" };
+			}
+			throw error;
+		}
+	}
+
+	async getPipelineDispatchIntent(
+		request: RequestKey,
+		generation: number,
+	): Promise<PipelineDispatchIntent | undefined> {
+		const item = await this.#get(
+			this.#pk(request),
+			this.#pipelineDispatchIntentSk(generation),
+		);
+		return item === undefined
+			? undefined
+			: decodePipelineDispatchIntent(item, request);
+	}
+
+	async getOrCreatePipelineDispatchIntent(
+		intent: PipelineDispatchIntent,
+		leaseVersion: number,
+	): Promise<PipelineDispatchIntent> {
+		const existing = await this.getPipelineDispatchIntent(
+			intent.request,
+			intent.generation,
+		);
+		if (existing !== undefined) return existing;
+		const pk = this.#pk(intent.request);
+		const canonical = {
+			...intent,
+			observedAt: canonicalTimestamp(intent.observedAt),
+		};
+		try {
+			await this.#send(
+				new TransactWriteCommand({
+					TransactItems: [
+						{
+							ConditionCheck: {
+								TableName: this.#tableName,
+								Key: { pk, sk: "META" },
+								ConditionExpression:
+									"generation = :generation AND leaseVersion = :leaseVersion AND #state = :running",
+								ExpressionAttributeNames: { "#state": "lifecycleState" },
+								ExpressionAttributeValues: {
+									":generation": intent.generation,
+									":leaseVersion": leaseVersion,
+									":running": "RUNNING",
+								},
+							},
+						},
+						{
+							Put: {
+								TableName: this.#tableName,
+								Item: {
+									pk,
+									sk: this.#pipelineDispatchIntentSk(intent.generation),
+									generation: canonical.generation,
+									sourceRevision: canonical.sourceRevision,
+									destinationRevision: canonical.destinationRevision,
+									observedAt: canonical.observedAt,
+									eventId: canonical.eventId,
+									provider: intent.request.provider,
+									repository: intent.request.repository,
+									requestId: intent.request.requestId,
+									expiresAt: this.#ttlAt(this.#ttl.eventSeconds),
+								},
+								ConditionExpression:
+									"attribute_not_exists(pk) AND attribute_not_exists(sk)",
+							},
+						},
+					],
+				}),
+			);
+			return canonical;
+		} catch (error) {
+			if (!isConditionalFailure(error)) throw error;
+			const winner = await this.getPipelineDispatchIntent(
+				intent.request,
+				intent.generation,
+			);
+			if (winner !== undefined) return winner;
+			throw new StaleStateError();
+		}
+	}
+
+	async completePipelineDispatchIntent(
+		intent: PipelineDispatchIntent,
+		leaseVersion: number,
+	): Promise<CompletePipelineDispatchIntentResult> {
+		const pk = this.#pk(intent.request);
+		try {
+			await this.#send(
+				new TransactWriteCommand({
+					TransactItems: [
+						{
+							ConditionCheck: {
+								TableName: this.#tableName,
+								Key: { pk, sk: "META" },
+								ConditionExpression:
+									"generation = :generation AND leaseVersion = :leaseVersion AND #state = :running",
+								ExpressionAttributeNames: { "#state": "lifecycleState" },
+								ExpressionAttributeValues: {
+									":generation": intent.generation,
+									":leaseVersion": leaseVersion,
+									":running": "RUNNING",
+								},
+							},
+						},
+						{
+							Delete: {
+								TableName: this.#tableName,
+								Key: {
+									pk,
+									sk: this.#pipelineDispatchIntentSk(intent.generation),
+								},
+								ConditionExpression:
+									"generation = :generation AND sourceRevision = :sourceRevision AND destinationRevision = :destinationRevision AND observedAt = :observedAt AND eventId = :eventId",
+								ExpressionAttributeValues: {
+									":generation": intent.generation,
+									":sourceRevision": intent.sourceRevision,
+									":destinationRevision": intent.destinationRevision,
+									":observedAt": canonicalTimestamp(intent.observedAt),
+									":eventId": intent.eventId,
+								},
+							},
+						},
+					],
+				}),
+			);
+			return { completed: true };
+		} catch (error) {
+			if (isConditionalFailure(error)) {
+				return { completed: false, reason: "changed" };
 			}
 			throw error;
 		}
@@ -1216,6 +1453,38 @@ export class DynamoDbStateStore implements ReviewStateStore {
 		return output.Item;
 	}
 
+	async #queryClaimedEvents(pk: string, generation: number): Promise<Item[]> {
+		const items: Item[] = [];
+		let exclusiveStartKey: Readonly<Record<string, unknown>> | undefined;
+		for (let page = 0; page < EVENT_CLAIM_PAGE_BUDGET; page += 1) {
+			const output = await this.#send<QueryOutput>(
+				new QueryCommand({
+					TableName: this.#tableName,
+					KeyConditionExpression: "pk = :pk AND begins_with(sk, :prefix)",
+					FilterExpression: "claimedGeneration = :generation",
+					ExpressionAttributeValues: {
+						":pk": pk,
+						":prefix": "EVENT#",
+						":generation": generation,
+					},
+					ConsistentRead: true,
+					ScanIndexForward: false,
+					Limit: EVENT_CLAIM_PAGE_LIMIT,
+					ExclusiveStartKey: exclusiveStartKey,
+				}),
+			);
+			for (const item of output.Items ?? []) {
+				if (numberValue(item, "claimedGeneration") === generation) {
+					items.push(item);
+					if (items.length === 99) return items;
+				}
+			}
+			exclusiveStartKey = output.LastEvaluatedKey;
+			if (exclusiveStartKey === undefined) return items;
+		}
+		return items;
+	}
+
 	async #queryUnclaimedEvents(
 		pk: string,
 		cursorSk?: string,
@@ -1354,6 +1623,10 @@ export class DynamoDbStateStore implements ReviewStateStore {
 
 	#findingSk(fingerprint: FindingFingerprint): string {
 		return `FINDING#${fingerprint}`;
+	}
+
+	#pipelineDispatchIntentSk(generation: number): string {
+		return `PIPELINE_DISPATCH_INTENT#${generation}`;
 	}
 
 	#eventItem(pk: string, event: ReviewEvent): Record<string, unknown> {

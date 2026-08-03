@@ -40,6 +40,38 @@ export type FailAndRequeueClaimResult =
 	| { readonly requeued: true; readonly leaseVersion: number }
 	| { readonly requeued: false; readonly reason: "changed" };
 
+export interface PipelineClaimRecoveryInput {
+	readonly request: RequestKey;
+	readonly generation: number;
+	readonly leaseVersion: number;
+	readonly recoveredAt: string;
+}
+
+export type PipelineClaimRecoveryResult =
+	| {
+			readonly recovered: false;
+			readonly reason: "active" | "no-claimed-events";
+	  }
+	| { readonly recovered: false; readonly reason: "changed" }
+	| {
+			readonly recovered: true;
+			readonly generation: number;
+			readonly leaseVersion: number;
+	  };
+
+export interface PipelineDispatchIntent {
+	readonly request: RequestKey;
+	readonly generation: number;
+	readonly sourceRevision: string;
+	readonly destinationRevision: string;
+	readonly observedAt: string;
+	readonly eventId: string;
+}
+
+export type CompletePipelineDispatchIntentResult =
+	| { readonly completed: true }
+	| { readonly completed: false; readonly reason: "changed" };
+
 const MAX_PIPELINE_ROUTING_FAILURE_ATTEMPTS = 4;
 
 export function sanitizedPipelineRoutingFailure(
@@ -255,6 +287,21 @@ export interface ReviewStateStore {
 	failAndRequeueClaim(
 		input: FailAndRequeueClaimInput,
 	): Promise<FailAndRequeueClaimResult>;
+	recoverOrphanedPipelineClaim(
+		input: PipelineClaimRecoveryInput,
+	): Promise<PipelineClaimRecoveryResult>;
+	getPipelineDispatchIntent(
+		request: RequestKey,
+		generation: number,
+	): Promise<PipelineDispatchIntent | undefined>;
+	getOrCreatePipelineDispatchIntent(
+		intent: PipelineDispatchIntent,
+		leaseVersion: number,
+	): Promise<PipelineDispatchIntent>;
+	completePipelineDispatchIntent(
+		intent: PipelineDispatchIntent,
+		leaseVersion: number,
+	): Promise<CompletePipelineDispatchIntentResult>;
 	recordExecution(
 		request: RequestKey,
 		generation: number,

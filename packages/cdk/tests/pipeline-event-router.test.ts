@@ -25,7 +25,10 @@ const sourceOne = "a".repeat(40);
 const sourceTwo = "b".repeat(40);
 const destination = "c".repeat(40);
 
-function snapshot(sourceRevision = sourceOne): ReviewRequest {
+function snapshot(
+	sourceRevision = sourceOne,
+	destinationRevision = destination,
+): ReviewRequest {
 	return {
 		key: request,
 		title: "Review orders",
@@ -33,7 +36,7 @@ function snapshot(sourceRevision = sourceOne): ReviewRequest {
 		sourceBranch: "feature",
 		destinationBranch: "main",
 		sourceRevision,
-		destinationRevision: destination,
+		destinationRevision,
 	};
 }
 
@@ -164,6 +167,7 @@ class FaultInjectingStateStore extends InMemoryStateStore {
 	requeueFailuresRemaining = 0;
 	failedCompletions = 0;
 	requeueCalls = 0;
+	failOrphanRecovery = false;
 
 	override async claimEvents(
 		...args: Parameters<InMemoryStateStore["claimEvents"]>
@@ -192,6 +196,18 @@ class FaultInjectingStateStore extends InMemoryStateStore {
 			});
 		}
 		await super.complete(requestKey, generation, reason);
+	}
+
+	override async recoverOrphanedPipelineClaim(
+		...args: Parameters<InMemoryStateStore["recoverOrphanedPipelineClaim"]>
+	) {
+		if (this.failOrphanRecovery) {
+			throw Object.assign(new Error("secret orphan recovery failure"), {
+				stack: "secret orphan stack",
+				custom: { raw: "secret raw payload" },
+			});
+		}
+		return super.recoverOrphanedPipelineClaim(...args);
 	}
 
 	override async failAndRequeueClaim(input: FailAndRequeueClaimInput) {
@@ -223,6 +239,8 @@ function productionRouter(options: {
 	readonly coordinationStore?: FaultInjectingCoordinationStore;
 	readonly reconciler?: FaultInjectingReconciler;
 	readonly retryPolicy?: RetryPolicy;
+	readonly getRequest?: () => Promise<ReviewRequest>;
+	readonly clock?: () => Date;
 }) {
 	const stateStore =
 		options.stateStore ??
@@ -238,7 +256,7 @@ function productionRouter(options: {
 		reconciler,
 		router: new PipelineEventRouter({
 			stateStore,
-			provider: { getRequest: async () => snapshot() },
+			provider: { getRequest: options.getRequest ?? (async () => snapshot()) },
 			pipelineDispatcher: new PipelineReviewDispatcher({
 				pipelineName: "review-pipeline",
 				transport,
@@ -246,7 +264,7 @@ function productionRouter(options: {
 				reconciler,
 				clock: () => new Date(now),
 			}),
-			clock: () => new Date(now),
+			clock: options.clock ?? (() => new Date(now)),
 			retryPolicy: options.retryPolicy,
 		}),
 	};
@@ -342,7 +360,7 @@ describe("PipelineEventRouter", () => {
 		});
 	});
 
-	test("a nonowner returns while the owner drains a concurrently appended revision", async () => {
+	test("a nonowner retries while the owner drains a concurrently appended revision", async () => {
 		const store = new InMemoryStateStore({ clock: () => new Date(now) });
 		const dispatcher = new RecordingDispatcher();
 		let currentSnapshot = snapshot(sourceOne);
@@ -365,10 +383,14 @@ describe("PipelineEventRouter", () => {
 		);
 		while (dispatcher.starts.length === 0) await Promise.resolve();
 		currentSnapshot = snapshot(sourceTwo);
-		const nonowner = await router.routePipelineOnly(
-			revisionEvent("revision-two", sourceTwo, "2026-08-01T12:01:00.000Z"),
-		);
-		expect(nonowner).toMatchObject({ started: false, generation: 1 });
+		await expect(
+			router.routePipelineOnly(
+				revisionEvent("revision-two", sourceTwo, "2026-08-01T12:01:00.000Z"),
+			),
+		).rejects.toMatchObject({
+			name: "PipelineRoutingError",
+			retryable: true,
+		});
 		releaseFirst?.();
 		await owner;
 
@@ -376,6 +398,64 @@ describe("PipelineEventRouter", () => {
 			dispatcher.starts.map(({ snapshot: value }) => value.sourceRevision),
 		).toEqual([sourceOne, sourceTwo]);
 		expect(store.inspectRequest(request)?.lifecycleState).toBe("COMPLETED");
+	});
+
+	test("keeps first-claim failures retryable until the active lease expires", async () => {
+		const clock = { value: new Date(now) };
+		const stateStore = new FaultInjectingStateStore({
+			clock: () => clock.value,
+			leaseDurationSeconds: 60,
+		});
+		stateStore.failClaimAt = 1;
+		const { router, transport } = productionRouter({
+			stateStore,
+			clock: () => clock.value,
+			retryPolicy: immediateRetryPolicy(),
+		});
+		const delivery = revisionEvent("first-claim-failure", sourceOne);
+
+		await expect(router.routePipelineOnly(delivery)).rejects.toThrow(
+			"Pipeline routing failed",
+		);
+		await expect(router.routePipelineOnly(delivery)).rejects.toMatchObject({
+			name: "PipelineRoutingError",
+			retryable: true,
+		});
+		expect(transport.starts).toHaveLength(0);
+
+		clock.value = new Date("2026-08-01T12:01:01.000Z");
+		await expect(router.routePipelineOnly(delivery)).resolves.toMatchObject({
+			appended: false,
+			started: true,
+			generation: 1,
+		});
+		expect(transport.starts).toHaveLength(1);
+	});
+
+	test("sanitizes orphan-recovery transport failures on duplicate delivery", async () => {
+		const stateStore = new FaultInjectingStateStore({
+			clock: () => new Date(now),
+		});
+		stateStore.failClaimAt = 1;
+		const { router } = productionRouter({
+			stateStore,
+			retryPolicy: immediateRetryPolicy(),
+		});
+		const delivery = revisionEvent("orphan-recovery-error", sourceOne);
+		await expect(router.routePipelineOnly(delivery)).rejects.toThrow(
+			"Pipeline routing failed",
+		);
+		stateStore.failOrphanRecovery = true;
+
+		const error = await router
+			.routePipelineOnly(delivery)
+			.catch((caught) => caught);
+		expect(error).toMatchObject({
+			name: "PipelineRoutingError",
+			message: "Pipeline routing failed",
+			retryable: true,
+		});
+		expect(JSON.stringify(error)).not.toContain("secret");
 	});
 
 	test("replays one accepted pipeline start with the same generation and client token", async () => {
@@ -412,6 +492,92 @@ describe("PipelineEventRouter", () => {
 		expect(transport.executionsByToken).toHaveLength(1);
 	});
 
+	test("pins source and destination intent across an accepted-start retry, then drains a newer revision", async () => {
+		const clock = { value: new Date(now) };
+		const stateStore = new FaultInjectingStateStore({
+			clock: () => clock.value,
+			leaseDurationSeconds: 60,
+		});
+		stateStore.requeueFailuresRemaining = 3;
+		const transport = new IdempotentTransport();
+		transport.failAfterAccepted = true;
+		let current = snapshot(sourceOne, destination);
+		const { router, coordinationStore } = productionRouter({
+			stateStore,
+			transport,
+			clock: () => clock.value,
+			getRequest: async () => current,
+			retryPolicy: immediateRetryPolicy(),
+		});
+		const first = revisionEvent("intent-old", sourceOne);
+
+		await expect(router.routePipelineOnly(first)).rejects.toThrow(
+			"Pipeline routing failed",
+		);
+		current = snapshot(sourceTwo, "d".repeat(40));
+		await expect(
+			router.routePipelineOnly(
+				revisionEvent("intent-new", sourceTwo, "2026-08-01T12:00:01.000Z"),
+			),
+		).rejects.toThrow("Pipeline routing failed");
+		clock.value = new Date("2026-08-01T12:01:01.000Z");
+		await router.routePipelineOnly(first);
+
+		expect(
+			transport.starts.map(({ sourceRevision }) => sourceRevision),
+		).toEqual([sourceOne, sourceOne, sourceTwo]);
+		expect(transport.starts.slice(0, 2)).toEqual([
+			expect.objectContaining({
+				sourceRevision: sourceOne,
+				destinationRevision: destination,
+			}),
+			expect.objectContaining({
+				sourceRevision: sourceOne,
+				destinationRevision: destination,
+			}),
+		]);
+		expect(transport.starts[2]).toMatchObject({
+			sourceRevision: sourceTwo,
+			destinationRevision: "d".repeat(40),
+		});
+		expect(transport.executionsByToken).toHaveLength(2);
+		expect([...coordinationStore.mappings]).toEqual([
+			["execution-1", expect.objectContaining({ sourceRevision: sourceOne })],
+			["execution-2", expect.objectContaining({ sourceRevision: sourceTwo })],
+		]);
+		expect(
+			await coordinationStore.getAuthoritativeRevision(request, 1),
+		).toMatchObject({
+			sourceRevision: sourceTwo,
+		});
+	});
+
+	test("pins destination intent while replaying mapping persistence", async () => {
+		const coordinationStore = new FaultInjectingCoordinationStore();
+		coordinationStore.failMapping = true;
+		let current = snapshot(sourceOne, destination);
+		const { router, transport } = productionRouter({
+			coordinationStore,
+			getRequest: async () => current,
+		});
+		const delivery = revisionEvent("destination-intent", sourceOne);
+
+		await expect(router.routePipelineOnly(delivery)).rejects.toThrow(
+			"Pipeline routing failed",
+		);
+		current = snapshot(sourceOne, "d".repeat(40));
+		await router.routePipelineOnly(delivery);
+
+		expect(transport.starts).toEqual([
+			expect.objectContaining({ destinationRevision: destination }),
+			expect.objectContaining({ destinationRevision: destination }),
+		]);
+		expect(coordinationStore.mappings.get("execution-1")).toMatchObject({
+			sourceRevision: sourceOne,
+			destinationRevision: destination,
+		});
+	});
+
 	test("replays mapping persistence after start with the same execution identity", async () => {
 		const coordinationStore = new FaultInjectingCoordinationStore();
 		coordinationStore.failMapping = true;
@@ -430,21 +596,38 @@ describe("PipelineEventRouter", () => {
 		]);
 	});
 
-	test("replays reconciliation after mapping and converges on the same execution", async () => {
+	test("replays reconciliation with the pinned revisions and execution identity", async () => {
 		const reconciler = new FaultInjectingReconciler();
 		reconciler.fail = true;
+		let current = snapshot(sourceOne, destination);
 		const { router, transport, coordinationStore } = productionRouter({
 			reconciler,
+			getRequest: async () => current,
 		});
 		const delivery = revisionEvent("reconciler-replay", sourceOne);
 
 		await expect(router.routePipelineOnly(delivery)).rejects.toThrow(
 			"Pipeline routing failed",
 		);
+		current = snapshot(sourceTwo, "d".repeat(40));
 		await router.routePipelineOnly(delivery);
 
+		expect(transport.starts).toEqual([
+			expect.objectContaining({
+				sourceRevision: sourceOne,
+				destinationRevision: destination,
+			}),
+			expect.objectContaining({
+				sourceRevision: sourceOne,
+				destinationRevision: destination,
+			}),
+		]);
 		expect(transport.executionsByToken).toHaveLength(1);
 		expect(coordinationStore.mappings).toHaveLength(1);
+		expect(coordinationStore.mappings.get("execution-1")).toMatchObject({
+			sourceRevision: sourceOne,
+			destinationRevision: destination,
+		});
 		expect(reconciler.count).toBe(2);
 	});
 
@@ -591,6 +774,55 @@ describe("PipelineEventRouter", () => {
 		expect(JSON.stringify(stateStore.inspectRequest(request))).not.toContain(
 			"secret",
 		);
+	});
+
+	test("recovers an orphaned claim on the same generation after its lease expires", async () => {
+		const clock = { value: new Date(now) };
+		const stateStore = new FaultInjectingStateStore({
+			clock: () => clock.value,
+			leaseDurationSeconds: 60,
+		});
+		stateStore.requeueFailuresRemaining = 3;
+		const transport = new IdempotentTransport();
+		transport.failAfterAccepted = true;
+		const { router } = productionRouter({
+			stateStore,
+			transport,
+			clock: () => clock.value,
+			retryPolicy: immediateRetryPolicy(),
+		});
+		const delivery = revisionEvent("orphaned-claim", sourceOne);
+
+		await expect(router.routePipelineOnly(delivery)).rejects.toThrow(
+			"Pipeline routing failed",
+		);
+		await expect(router.routePipelineOnly(delivery)).rejects.toMatchObject({
+			name: "PipelineRoutingError",
+			retryable: true,
+		});
+		expect(transport.starts).toHaveLength(1);
+
+		clock.value = new Date("2026-08-01T12:01:01.000Z");
+		await expect(router.routePipelineOnly(delivery)).resolves.toMatchObject({
+			appended: false,
+			started: true,
+			generation: 1,
+		});
+		expect(transport.starts).toHaveLength(2);
+		expect(
+			pipelineClientRequestToken(
+				transport.starts[0] as StartReviewPipelineExecution,
+			),
+		).toBe(
+			pipelineClientRequestToken(
+				transport.starts[1] as StartReviewPipelineExecution,
+			),
+		);
+		expect(stateStore.inspectRequest(request)).toMatchObject({
+			lifecycleState: "COMPLETED",
+			generation: 1,
+			pendingEventCount: 0,
+		});
 	});
 
 	test("bounds transient requeue retries without terminalizing claimed work", async () => {

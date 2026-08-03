@@ -74,6 +74,12 @@ describe("AwsCodePipelineTransport", () => {
 		expect(
 			pipelineClientRequestToken({ ...startInput, generation: 4 }),
 		).not.toBe(first);
+		expect(
+			pipelineClientRequestToken({
+				...startInput,
+				destinationRevision: "d".repeat(40),
+			}),
+		).not.toBe(first);
 	});
 
 	test("maps success and bounded failure callbacks", async () => {

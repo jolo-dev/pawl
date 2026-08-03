@@ -1,5 +1,8 @@
 import { expect, it } from "bun:test";
-import type { CallbackRegistration } from "../../../../src/reviewer/ports/state-store";
+import type {
+	CallbackRegistration,
+	PipelineDispatchIntent,
+} from "../../../../src/reviewer/ports/state-store";
 import { InMemoryStateStore } from "../../fakes/in-memory-state-store";
 
 const common = {
@@ -178,6 +181,93 @@ it("requires the exact current lease version after heartbeat and recovery", asyn
 			lifecycleState: "WAITING",
 		}),
 	).toMatchObject({ registered: true });
+});
+
+it("recovers an expired pipeline-only orphan claim on the same generation", async () => {
+	const clock = { value: new Date("2026-07-18T12:00:00.000Z") };
+	const store = new InMemoryStateStore({
+		clock: () => clock.value,
+		leaseDurationSeconds: 60,
+	});
+	const request = { ...common.request, requestId: "orphan" };
+	const event = {
+		id: "orphan-event",
+		type: "revision-updated" as const,
+		request,
+		occurredAt: clock.value.toISOString(),
+		revision: "abcdef1",
+	};
+	await store.appendEvent(event);
+	await store.claimEvents(request, 1);
+
+	expect(
+		await store.recoverOrphanedPipelineClaim({
+			request,
+			generation: 1,
+			leaseVersion: 1,
+			recoveredAt: clock.value.toISOString(),
+		}),
+	).toEqual({ recovered: false, reason: "active" });
+	clock.value = new Date("2026-07-18T12:01:01.000Z");
+	expect(
+		await store.recoverOrphanedPipelineClaim({
+			request,
+			generation: 1,
+			leaseVersion: 1,
+			recoveredAt: clock.value.toISOString(),
+		}),
+	).toEqual({ recovered: true, generation: 1, leaseVersion: 2 });
+	expect(store.inspectRequest(request)).toMatchObject({
+		lifecycleState: "STARTING",
+		generation: 1,
+		leaseVersion: 2,
+		leaseExpiresAt: clock.value.toISOString(),
+		pendingEventCount: 1,
+	});
+});
+
+it("gets or creates one immutable pipeline dispatch intent and clears it exactly", async () => {
+	const store = new InMemoryStateStore({
+		clock: () => new Date("2026-07-18T12:00:00.000Z"),
+	});
+	const request = { ...common.request, requestId: "dispatch-intent" };
+	await store.appendEvent({
+		id: "intent-event",
+		type: "revision-updated",
+		request,
+		occurredAt: "2026-07-18T12:00:00.000Z",
+		revision: "abcdef1",
+	});
+	await store.claimEvents(request, 1);
+	const first = {
+		request,
+		generation: 1,
+		sourceRevision: "abcdef1",
+		destinationRevision: "1234567",
+		observedAt: "2026-07-18T12:00:00.000Z",
+		eventId: "intent-event",
+	} satisfies PipelineDispatchIntent;
+	const changed = {
+		...first,
+		sourceRevision: "bcdef12",
+		destinationRevision: "2345678",
+	};
+
+	expect(await store.getOrCreatePipelineDispatchIntent(first, 1)).toEqual(
+		first,
+	);
+	expect(await store.getOrCreatePipelineDispatchIntent(changed, 1)).toEqual(
+		first,
+	);
+	expect(await store.getPipelineDispatchIntent(request, 1)).toEqual(first);
+	expect(await store.completePipelineDispatchIntent(changed, 1)).toEqual({
+		completed: false,
+		reason: "changed",
+	});
+	expect(await store.completePipelineDispatchIntent(first, 1)).toEqual({
+		completed: true,
+	});
+	expect(await store.getPipelineDispatchIntent(request, 1)).toBeUndefined();
 });
 
 it("canonicalizes lease instants and never moves a heartbeat backward", async () => {

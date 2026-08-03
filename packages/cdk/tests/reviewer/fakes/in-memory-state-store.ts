@@ -17,6 +17,7 @@ import type {
 	CallbackRegistrationResult,
 	CallbackWake,
 	ClaimedEvents,
+	CompletePipelineDispatchIntentResult,
 	CompletionReason,
 	FailAndRequeueClaimInput,
 	FailAndRequeueClaimResult,
@@ -27,6 +28,9 @@ import type {
 	LeaseRecoveryInput,
 	LeaseRecoveryResult,
 	PersistedFinding,
+	PipelineClaimRecoveryInput,
+	PipelineClaimRecoveryResult,
+	PipelineDispatchIntent,
 	ReviewLifecycleState,
 	ReviewStateStore,
 	WriteReservation,
@@ -72,6 +76,7 @@ interface StoredRequest {
 	readonly events: Map<string, StoredEvent>;
 	readonly findings: Map<FindingFingerprint, PersistedFinding>;
 	readonly reservations: Map<FindingFingerprint, Reservation>;
+	readonly pipelineDispatchIntents: Map<number, PipelineDispatchIntent>;
 }
 
 function requestKey(request: RequestKey): string {
@@ -344,6 +349,102 @@ export class InMemoryStateStore implements ReviewStateStore {
 		state.leaseExpiresAt = failedAt;
 		state.leaseVersion += 1;
 		return { requeued: true, leaseVersion: state.leaseVersion };
+	}
+
+	async recoverOrphanedPipelineClaim(
+		input: PipelineClaimRecoveryInput,
+	): Promise<PipelineClaimRecoveryResult> {
+		const recoveredAt = new Date(input.recoveredAt).toISOString();
+		const state = this.#requests.get(requestKey(input.request));
+		if (
+			state === undefined ||
+			state.generation !== input.generation ||
+			state.leaseVersion !== input.leaseVersion
+		) {
+			return { recovered: false, reason: "changed" };
+		}
+		if (state.leaseExpiresAt > recoveredAt) {
+			return { recovered: false, reason: "active" };
+		}
+		if (state.lifecycleState !== "RUNNING") {
+			return { recovered: false, reason: "changed" };
+		}
+		const claimed = [...state.events.values()]
+			.filter(({ claimedGeneration }) => claimedGeneration === input.generation)
+			.slice(0, 99);
+		if (claimed.length === 0) {
+			return { recovered: false, reason: "no-claimed-events" };
+		}
+		for (const entry of claimed) entry.claimedGeneration = undefined;
+		state.lifecycleState = "STARTING";
+		state.executionArn = undefined;
+		state.callbackId = undefined;
+		state.callbackGeneration = undefined;
+		state.lastCallbackGeneration = undefined;
+		state.blockedLimit = undefined;
+		state.claimCursor = undefined;
+		state.leaseHeartbeatAt = recoveredAt;
+		state.leaseExpiresAt = recoveredAt;
+		state.leaseVersion += 1;
+		return {
+			recovered: true,
+			generation: state.generation,
+			leaseVersion: state.leaseVersion,
+		};
+	}
+
+	async getPipelineDispatchIntent(
+		request: RequestKey,
+		generation: number,
+	): Promise<PipelineDispatchIntent | undefined> {
+		return this.#requests
+			.get(requestKey(request))
+			?.pipelineDispatchIntents.get(generation);
+	}
+
+	async getOrCreatePipelineDispatchIntent(
+		intent: PipelineDispatchIntent,
+		leaseVersion: number,
+	): Promise<PipelineDispatchIntent> {
+		const state = this.#requireRequest(intent.request);
+		const existing = state.pipelineDispatchIntents.get(intent.generation);
+		if (existing !== undefined) return existing;
+		if (
+			state.generation !== intent.generation ||
+			state.leaseVersion !== leaseVersion ||
+			state.lifecycleState !== "RUNNING"
+		) {
+			throw new StaleStateError();
+		}
+		const canonical = {
+			...intent,
+			observedAt: new Date(intent.observedAt).toISOString(),
+		};
+		state.pipelineDispatchIntents.set(intent.generation, canonical);
+		return canonical;
+	}
+
+	async completePipelineDispatchIntent(
+		intent: PipelineDispatchIntent,
+		leaseVersion: number,
+	): Promise<CompletePipelineDispatchIntentResult> {
+		const state = this.#requests.get(requestKey(intent.request));
+		const existing = state?.pipelineDispatchIntents.get(intent.generation);
+		if (
+			state === undefined ||
+			state.generation !== intent.generation ||
+			state.leaseVersion !== leaseVersion ||
+			state.lifecycleState !== "RUNNING" ||
+			existing === undefined ||
+			existing.sourceRevision !== intent.sourceRevision ||
+			existing.destinationRevision !== intent.destinationRevision ||
+			existing.observedAt !== new Date(intent.observedAt).toISOString() ||
+			existing.eventId !== intent.eventId
+		) {
+			return { completed: false, reason: "changed" };
+		}
+		state.pipelineDispatchIntents.delete(intent.generation);
+		return { completed: true };
 	}
 
 	async recordExecution(
@@ -692,6 +793,7 @@ export class InMemoryStateStore implements ReviewStateStore {
 			events: new Map(),
 			findings: new Map(),
 			reservations: new Map(),
+			pipelineDispatchIntents: new Map(),
 		};
 	}
 

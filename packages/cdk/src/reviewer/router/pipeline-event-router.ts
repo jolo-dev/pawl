@@ -5,6 +5,7 @@ import type { SourceControlProvider } from "../ports/source-control-provider";
 import {
 	type ClaimedEvents,
 	type FailAndRequeueClaimResult,
+	type PipelineDispatchIntent,
 	type ReviewStateStore,
 	sanitizedPipelineRoutingFailure,
 } from "../ports/state-store";
@@ -175,34 +176,66 @@ export class PipelineEventRouter {
 		let generation = appended.generation;
 		let leaseVersion = appended.leaseVersion;
 		if (!appended.shouldStart) {
-			if (!appended.recoveryEligible) {
+			let shouldRecover = appended.recoveryEligible;
+			const terminal =
+				appended.lifecycleState === "COMPLETED" ||
+				appended.lifecycleState === "TIMED_OUT" ||
+				appended.lifecycleState === "FAILED";
+			if (!terminal) {
+				const orphan = await this.#store
+					.recoverOrphanedPipelineClaim({
+						request: event.request,
+						generation,
+						leaseVersion,
+						recoveredAt: this.#clock().toISOString(),
+					})
+					.catch(() => {
+						throw new PipelineRoutingError();
+					});
+				if (orphan.recovered) {
+					generation = orphan.generation;
+					leaseVersion = orphan.leaseVersion;
+					shouldRecover = true;
+				} else if (orphan.reason === "active") {
+					throw new PipelineRoutingError();
+				} else if (!shouldRecover) {
+					if (orphan.reason === "no-claimed-events") {
+						return {
+							appended: appended.appended,
+							started: false,
+							generation,
+						};
+					}
+					throw new PipelineRoutingError();
+				}
+			}
+			if (!shouldRecover) {
 				return {
 					appended: appended.appended,
 					started: false,
 					generation,
 				};
 			}
-			const recovery = await this.#store.recoverLease({
-				request: event.request,
-				generation,
-				leaseVersion,
-				remoteStatus: "NOT_FOUND",
-				recoveredAt: this.#clock().toISOString(),
-			});
+			const recovery = await this.#store
+				.recoverLease({
+					request: event.request,
+					generation,
+					leaseVersion,
+					remoteStatus: "NOT_FOUND",
+					recoveredAt: this.#clock().toISOString(),
+				})
+				.catch(() => {
+					throw new PipelineRoutingError();
+				});
 			if (!recovery.recovered) {
-				if (recovery.reason === "remote-status-required") {
-					throw new Error(
-						"pipeline-only recovery unexpectedly required remote execution status",
-					);
+				if (recovery.reason === "no-pending-events") {
+					return {
+						appended: appended.appended,
+						started: false,
+						generation,
+					};
 				}
-				return {
-					appended: appended.appended,
-					started: false,
-					generation:
-						recovery.reason === "changed"
-							? (recovery.generation ?? generation)
-							: generation,
-				};
+				throw new PipelineRoutingError();
 			}
 			generation = recovery.generation;
 			leaseVersion = recovery.leaseVersion;
@@ -291,7 +324,11 @@ export class PipelineEventRouter {
 				readonly terminal?: "merged" | "closed";
 			};
 			try {
-				outcome = await this.#dispatchClaimed(claimed.events, generation);
+				outcome = await this.#dispatchClaimed(
+					claimed.events,
+					generation,
+					leaseVersion,
+				);
 			} catch {
 				const requeue = await this.#requeueClaim(
 					initialEvent,
@@ -425,6 +462,44 @@ export class PipelineEventRouter {
 	async #dispatchClaimed(
 		events: readonly ReviewEvent[],
 		generation: number,
+		leaseVersion: number,
+	): Promise<{
+		readonly started: boolean;
+		readonly terminal?: "merged" | "closed";
+	}> {
+		const existingIntent = await this.#store.getPipelineDispatchIntent(
+			initialRequest(events),
+			generation,
+		);
+		if (existingIntent !== undefined) {
+			await this.#dispatchIntent(existingIntent);
+			const completed = await this.#store.completePipelineDispatchIntent(
+				existingIntent,
+				leaseVersion,
+			);
+			if (!completed.completed) throw new PipelineRoutingError();
+			const remaining = events.filter(
+				(event) =>
+					Date.parse(event.occurredAt) >
+						Date.parse(existingIntent.observedAt) ||
+					(event.occurredAt === existingIntent.observedAt &&
+						event.id !== existingIntent.eventId),
+			);
+			if (remaining.length === 0) return { started: true };
+			const next = await this.#dispatchFreshClaimed(
+				remaining,
+				generation,
+				leaseVersion,
+			);
+			return { ...next, started: true };
+		}
+		return this.#dispatchFreshClaimed(events, generation, leaseVersion);
+	}
+
+	async #dispatchFreshClaimed(
+		events: readonly ReviewEvent[],
+		generation: number,
+		leaseVersion: number,
 	): Promise<{
 		readonly started: boolean;
 		readonly terminal?: "merged" | "closed";
@@ -452,13 +527,56 @@ export class PipelineEventRouter {
 			});
 			return { started: false, terminal: authoritative.status };
 		}
-		await this.#dispatcher.startReviewPipeline({
-			snapshot: authoritative,
-			generation,
-			observedAt: latest.occurredAt,
-			eventId: latest.id,
-			refetchSnapshot: () => this.#provider.getRequest(latest.request),
-		});
+		const intent = await this.#store.getOrCreatePipelineDispatchIntent(
+			{
+				request: authoritative.key,
+				generation,
+				sourceRevision: authoritative.sourceRevision,
+				destinationRevision: authoritative.destinationRevision,
+				observedAt: latest.occurredAt,
+				eventId: latest.id,
+			},
+			leaseVersion,
+		);
+		await this.#dispatchIntent(intent, authoritative);
+		const completed = await this.#store.completePipelineDispatchIntent(
+			intent,
+			leaseVersion,
+		);
+		if (!completed.completed) throw new PipelineRoutingError();
 		return { started: true };
 	}
+
+	async #dispatchIntent(
+		intent: PipelineDispatchIntent,
+		snapshot?: ReviewRequest,
+	): Promise<void> {
+		const pinnedSnapshot: ReviewRequest = snapshot ?? {
+			key: intent.request,
+			title: "Pipeline dispatch intent",
+			status: "open",
+			sourceBranch: "pipeline-intent-source",
+			destinationBranch: "pipeline-intent-destination",
+			sourceRevision: intent.sourceRevision,
+			destinationRevision: intent.destinationRevision,
+		};
+		await this.#dispatcher.startReviewPipeline({
+			snapshot: pinnedSnapshot,
+			generation: intent.generation,
+			observedAt: intent.observedAt,
+			eventId: intent.eventId,
+			refetchSnapshot: async () => pinnedSnapshot,
+			dispatchIntent: intent,
+		});
+	}
+}
+
+function initialRequest(
+	events: readonly ReviewEvent[],
+): ReviewEvent["request"] {
+	const event = events[0];
+	if (event === undefined) {
+		throw new Error("Expected claimed events while loading dispatch intent");
+	}
+	return event.request;
 }

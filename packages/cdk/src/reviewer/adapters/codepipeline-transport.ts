@@ -69,6 +69,7 @@ export const pipelineClientRequestToken = (
 				request: input.request,
 				generation: input.generation,
 				sourceRevision: input.sourceRevision,
+				destinationRevision: input.destinationRevision,
 			}),
 			"utf8",
 		)

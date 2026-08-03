@@ -9,6 +9,7 @@ import type {
 	PipelineCoordinationStore,
 	PipelineExecutionMapping,
 } from "./ports/pipeline-coordination-store";
+import type { PipelineDispatchIntent } from "./ports/state-store";
 
 /**
  * Runtime-only module for pipeline review coordination.
@@ -210,6 +211,7 @@ export interface PrPipelineDispatcher {
 		readonly observedAt: string;
 		readonly eventId: string;
 		readonly refetchSnapshot: () => Promise<ReviewRequest>;
+		readonly dispatchIntent?: PipelineDispatchIntent;
 	}): Promise<void>;
 	completeTerminalRequest(input: {
 		readonly request: RequestKey;
@@ -260,14 +262,36 @@ export class PipelineReviewDispatcher implements PrPipelineDispatcher {
 		readonly observedAt: string;
 		readonly eventId: string;
 		readonly refetchSnapshot: () => Promise<ReviewRequest>;
+		readonly dispatchIntent?: PipelineDispatchIntent;
 	}): Promise<void> {
 		if (input.snapshot.status !== "open") return;
-		let workingSnapshot = input.snapshot;
+		const pinned = input.dispatchIntent;
+		let workingSnapshot =
+			pinned === undefined
+				? input.snapshot
+				: {
+						...input.snapshot,
+						key: pinned.request,
+						sourceRevision: pinned.sourceRevision,
+						destinationRevision: pinned.destinationRevision,
+					};
 		let proposalObservedAt = input.observedAt;
-		let authorized = false;
+		let authorized = pinned !== undefined;
+		if (pinned !== undefined) {
+			const winner = await this.#store.recordAuthoritativeRevision({
+				request: pinned.request,
+				generation: pinned.generation,
+				sourceRevision: pinned.sourceRevision,
+				observedAt: pinned.observedAt,
+				eventId: pinned.eventId,
+			});
+			if (winner.sourceRevision !== pinned.sourceRevision) {
+				throw new AuthoritativeRevisionArbitrationExhaustedError();
+			}
+		}
 		for (
 			let attempt = 0;
-			attempt < MAX_AUTHORITATIVE_REVISION_ATTEMPTS;
+			pinned === undefined && attempt < MAX_AUTHORITATIVE_REVISION_ATTEMPTS;
 			attempt += 1
 		) {
 			const candidate = authoritativeRevisionRecordSchema.parse({

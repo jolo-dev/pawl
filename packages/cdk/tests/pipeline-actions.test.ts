@@ -10,6 +10,7 @@ import {
 	Pipeline,
 } from "aws-cdk-lib/aws-codepipeline";
 import {
+	CacheControl,
 	CodeBuildAction,
 	CodeBuildActionType,
 	ManualApprovalAction,
@@ -412,6 +413,29 @@ describe("CodeBuild action adapter", () => {
 		});
 	});
 
+	test("rejects combined batch artifacts unless batch execution is enabled during planning", () => {
+		const stack = createStack("CodeBuildBatchConflictStack");
+		const project = createProject(stack);
+		const childCount = stack.node.children.length;
+		const path = "stages[Build].actions[0]";
+
+		expectDefinitionError(
+			() =>
+				planPipelineAction(
+					{
+						type: "codebuild",
+						name: "Compile",
+						project,
+						combineBatchBuildArtifacts: true,
+					},
+					path,
+				),
+			`${path}.combineBatchBuildArtifacts`,
+			"PIPELINE_PROP_CONFLICT",
+		);
+		expect(stack.node.children).toHaveLength(childCount);
+	});
+
 	test("rejects a duplicate explicit primary and extra input", () => {
 		const stack = createStack("CodeBuildDuplicateInputStack");
 		expectDefinitionError(() =>
@@ -558,6 +582,38 @@ describe("approval and Lambda action adapters", () => {
 });
 
 describe("S3 and CloudFormation action adapters", () => {
+	test("normalizes empty S3 cache control while preserving non-empty values", () => {
+		const emptyStack = createStack("S3EmptyCacheControlStack");
+		const { synthesized: emptyCacheControl } = addMaterializedAction(
+			emptyStack,
+			{
+				type: "s3Deploy",
+				name: "Publish",
+				bucket: new Bucket(emptyStack, "Destination"),
+				cacheControl: [],
+			},
+			["Site"],
+			[],
+		);
+		expect(emptyCacheControl.Configuration?.CacheControl).toBeUndefined();
+
+		const populatedStack = createStack("S3PopulatedCacheControlStack");
+		const { synthesized: populatedCacheControl } = addMaterializedAction(
+			populatedStack,
+			{
+				type: "s3Deploy",
+				name: "Publish",
+				bucket: new Bucket(populatedStack, "Destination"),
+				cacheControl: [CacheControl.maxAge(Duration.days(1))],
+			},
+			["Site"],
+			[],
+		);
+		expect(populatedCacheControl.Configuration?.CacheControl).toBe(
+			"max-age=86400",
+		);
+	});
+
 	test("infers S3 input and maps deploy properties", () => {
 		const stack = createStack("S3DeployStack");
 		const bucket = new Bucket(stack, "Destination");
@@ -598,6 +654,34 @@ describe("S3 and CloudFormation action adapters", () => {
 			Extract: "false",
 			ObjectKey: "site.zip",
 		});
+	});
+
+	test("rejects CloudFormation action role with account during planning", () => {
+		const stack = createStack("CloudFormationRoleAccountConflictStack");
+		const actionRole = new Role(stack, "ActionRole", {
+			assumedBy: new ServicePrincipal("codepipeline.amazonaws.com"),
+		});
+		const childCount = stack.node.children.length;
+		const path = "stages[Deploy].actions[0]";
+
+		expectDefinitionError(
+			() =>
+				planPipelineAction(
+					{
+						type: "cloudFormationDeploy",
+						name: "Deploy",
+						stackName: "Application",
+						templatePath: "template.json",
+						adminPermissions: true,
+						role: actionRole,
+						account: "210987654321",
+					},
+					path,
+				),
+			`${path}.account`,
+			"PIPELINE_PROP_CONFLICT",
+		);
+		expect(stack.node.children).toHaveLength(childCount);
 	});
 
 	test("plans and maps CloudFormation primary, configuration, extras, role, and output", () => {

@@ -512,6 +512,15 @@ function planCodeBuild(
 	definition: CodeBuildActionDefinition,
 	path: string,
 ): PlannedActionAdapter {
+	if (
+		definition.combineBatchBuildArtifacts === true &&
+		definition.executeBatchBuild !== true
+	) {
+		throw definitionError(
+			"combineBatchBuildArtifacts requires executeBatchBuild",
+			`${path}.combineBatchBuildArtifacts`,
+		);
+	}
 	const additionalInputs = validateNames(
 		definition.extraInputs ?? [],
 		`${path}.extraInputs`,
@@ -629,7 +638,8 @@ function planS3Deploy(
 				objectKey: definition.objectKey,
 				accessControl: definition.accessControl,
 				cacheControl:
-					definition.cacheControl === undefined
+					definition.cacheControl === undefined ||
+					definition.cacheControl.length === 0
 						? undefined
 						: [...definition.cacheControl],
 				encryptionKey: definition.encryptionKey,
@@ -642,6 +652,12 @@ function planCloudFormation(
 	definition: CloudFormationDeployActionDefinition,
 	path: string,
 ): PlannedActionAdapter {
+	if (definition.role !== undefined && definition.account !== undefined) {
+		throw definitionError(
+			"CloudFormation action account cannot be used with role",
+			`${path}.account`,
+		);
+	}
 	const primaryName =
 		definition.input === undefined
 			? undefined

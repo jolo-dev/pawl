@@ -1,5 +1,6 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { Duration, RemovalPolicy } from "aws-cdk-lib";
 import type { IRepository } from "aws-cdk-lib/aws-codecommit";
 import type { Pipeline } from "aws-cdk-lib/aws-codepipeline";
 import { Rule } from "aws-cdk-lib/aws-events";
@@ -8,6 +9,8 @@ import {
 	Effect,
 	PolicyStatement as IamPolicyStatement,
 } from "aws-cdk-lib/aws-iam";
+import { Queue, QueueEncryption } from "aws-cdk-lib/aws-sqs";
+import { NagSuppressions } from "cdk-nag";
 import type { Construct } from "constructs";
 import { z } from "zod";
 import {
@@ -18,7 +21,6 @@ import {
 	normalizeRepositoryTarget,
 	type RepositoryTarget,
 } from "../codecommit-repository";
-import { CodeCommitReviewEvents } from "../codecommit-review-events";
 import { DynamoDbTable } from "../dynamodb-table";
 import { LambdaFunction } from "../lambda-function";
 import type { Stack } from "../stack";
@@ -53,7 +55,9 @@ export class PullRequestRouter extends BasicConstruct {
 	readonly repository: IRepository;
 	readonly router: LambdaFunction;
 	readonly stateTable: DynamoDbTable;
-	readonly reviewEvents: CodeCommitReviewEvents;
+	readonly deadLetterQueue: Queue;
+	readonly pullRequestRule: Rule;
+	readonly commentRule: Rule;
 	readonly pipelineExecutionRule: Rule;
 
 	constructor(scope: Stack, id: string, props: PullRequestRouterProps) {
@@ -90,30 +94,89 @@ export class PullRequestRouter extends BasicConstruct {
 				PIPELINE_SOURCE_ACTION_NAME: sourceActionName,
 			},
 		});
-		this.stateTable.grantReadWrite(this.router);
+		this.router.lambda.addToRolePolicy(
+			new IamPolicyStatement({
+				effect: Effect.ALLOW,
+				actions: [
+					"dynamodb:GetItem",
+					"dynamodb:PutItem",
+					"dynamodb:UpdateItem",
+					"dynamodb:TransactWriteItems",
+				],
+				resources: [this.stateTable.tableArn],
+			}),
+		);
+		this.router.lambda.addToRolePolicy(
+			new IamPolicyStatement({
+				effect: Effect.ALLOW,
+				actions: ["dynamodb:Query"],
+				resources: [
+					this.stateTable.tableArn,
+					`${this.stateTable.tableArn}/index/GSI2`,
+				],
+			}),
+		);
 		this.router.lambda.addToRolePolicy(
 			new IamPolicyStatement({
 				effect: Effect.ALLOW,
 				actions: [
 					"codepipeline:StartPipelineExecution",
 					"codepipeline:GetPipelineExecution",
-					"codepipeline:ListPipelineExecutions",
 					"codepipeline:ListActionExecutions",
 				],
 				resources: [props.pipeline.pipelineArn],
 			}),
 		);
+		this.router.lambda.addToRolePolicy(
+			new IamPolicyStatement({
+				effect: Effect.ALLOW,
+				actions: [
+					"codecommit:GetPullRequest",
+					"codecommit:PostCommentForPullRequest",
+				],
+				resources: [this.repository.repositoryArn],
+			}),
+		);
 
-		this.reviewEvents = new CodeCommitReviewEvents(scope, `${id}Events`, {
-			repository: this.repository,
-			router: this.router,
+		this.deadLetterQueue = new Queue(this, "DeadLetterQueue", {
+			encryption: QueueEncryption.KMS_MANAGED,
+			enforceSSL: true,
+			retentionPeriod: Duration.days(14),
+			removalPolicy: RemovalPolicy.RETAIN,
 		});
-		this.reviewEvents
-			.grantRead(this.router)
-			.grantConfigRead(this.router)
-			.grantComment(this.router);
-
-		this.pipelineExecutionRule = new Rule(scope, `${id}PipelineExecutionRule`, {
+		NagSuppressions.addResourceSuppressions(this.deadLetterQueue, [
+			{
+				id: "AwsSolutions-SQS3",
+				reason:
+					"This retained queue is itself the terminal EventBridge dead-letter queue and must not forward failures to another queue.",
+			},
+		]);
+		const target = () =>
+			new LambdaEventTarget(this.router.lambda, {
+				deadLetterQueue: this.deadLetterQueue,
+				retryAttempts: 3,
+				maxEventAge: Duration.minutes(60),
+			});
+		const repositoryEventPattern = {
+			source: ["aws.codecommit"],
+			resources: [this.repository.repositoryArn],
+			detail: { repositoryName: [this.repository.repositoryName] },
+		};
+		this.pullRequestRule = new Rule(this, "PullRequestStateRule", {
+			eventPattern: {
+				...repositoryEventPattern,
+				detailType: ["CodeCommit Pull Request State Change"],
+			},
+			targets: [target()],
+		});
+		this.commentRule = new Rule(this, "PullRequestCommentRule", {
+			eventPattern: {
+				...repositoryEventPattern,
+				detailType: ["CodeCommit Comment on Pull Request"],
+			},
+			targets: [target()],
+		});
+		this.pipelineExecutionRule = new Rule(this, "PipelineExecutionRule", {
 			eventPattern: {
 				source: ["aws.codepipeline"],
 				detailType: ["CodePipeline Pipeline Execution State Change"],
@@ -121,10 +184,11 @@ export class PullRequestRouter extends BasicConstruct {
 			},
 			targets: [new LambdaEventTarget(this.router.lambda)],
 		});
+		this.createAlarm(this.stack);
 	}
 
-	createAlarm(_scope: Stack): void {
-		// Child constructs register their own Lambda, table, and DLQ monitoring.
+	createAlarm(scope: Stack): void {
+		scope.monitoring.monitorSqsQueue({ queue: this.deadLetterQueue });
 	}
 
 	protected applyPermissionPolicy(

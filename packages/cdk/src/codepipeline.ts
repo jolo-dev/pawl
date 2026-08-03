@@ -404,7 +404,6 @@ export class CodePipeline extends BasicConstruct {
 					actions: [
 						"codepipeline:StartPipelineExecution",
 						"codepipeline:GetPipelineExecution",
-						"codepipeline:ListPipelineExecutions",
 						"codepipeline:ListActionExecutions",
 					],
 					resources: [this.pipeline.pipelineArn],

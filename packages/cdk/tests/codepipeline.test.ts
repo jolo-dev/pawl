@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { Match, Template } from "aws-cdk-lib/assertions";
+import { Aspects } from "aws-cdk-lib";
+import { Annotations, Match, Template } from "aws-cdk-lib/assertions";
 import { Repository } from "aws-cdk-lib/aws-codecommit";
+import { AwsSolutionsChecks } from "cdk-nag";
 import { CodePipeline } from "../src/codepipeline";
 import { Stack } from "../src/stack";
 import { createTestApp } from "./utils";
@@ -255,15 +257,34 @@ describe("CodePipeline PR-gated mode", () => {
 			throw new Error("Expected router Lambda");
 		const rules = Object.values(template.findResources("AWS::Events::Rule"));
 		expect(rules).toHaveLength(3);
+		const repositoryNamePattern = {
+			repositoryName: [
+				{
+					"Fn::GetAtt": [expect.stringContaining("Repo"), "Name"],
+				},
+			],
+		};
 		expect(rules.map(({ Properties }) => Properties.EventPattern)).toEqual(
 			expect.arrayContaining([
 				expect.objectContaining({
 					source: ["aws.codecommit"],
+					resources: [
+						{
+							"Fn::GetAtt": [expect.stringContaining("Repo"), "Arn"],
+						},
+					],
 					"detail-type": ["CodeCommit Pull Request State Change"],
+					detail: repositoryNamePattern,
 				}),
 				expect.objectContaining({
 					source: ["aws.codecommit"],
+					resources: [
+						{
+							"Fn::GetAtt": [expect.stringContaining("Repo"), "Arn"],
+						},
+					],
 					"detail-type": ["CodeCommit Comment on Pull Request"],
+					detail: repositoryNamePattern,
 				}),
 				{
 					source: ["aws.codepipeline"],
@@ -282,6 +303,48 @@ describe("CodePipeline PR-gated mode", () => {
 		}
 	});
 
+	test("isolates PR rules when two pipelines share one repository", () => {
+		const stack = new Stack(createTestApp(), "SharedRepositoryStack");
+		const repository = new Repository(stack, "SharedRepo", {
+			repositoryName: "shared-repo",
+		});
+		for (const id of ["First", "Second"]) {
+			new CodePipeline(stack, id, {
+				source: { type: "codecommit", repository, branchName: "main" },
+				onPullRequest: true,
+			});
+		}
+
+		const template = Template.fromStack(stack);
+		const lambdas = Object.keys(
+			template.findResources("AWS::Lambda::Function"),
+		);
+		expect(lambdas).toHaveLength(2);
+		const rules = Object.values(template.findResources("AWS::Events::Rule"));
+		expect(rules).toHaveLength(6);
+		const repositoryRules = rules.filter(({ Properties }) =>
+			(Properties.EventPattern.source as string[]).includes("aws.codecommit"),
+		);
+		expect(repositoryRules).toHaveLength(4);
+		for (const detailType of [
+			"CodeCommit Pull Request State Change",
+			"CodeCommit Comment on Pull Request",
+		]) {
+			expect(
+				repositoryRules.filter(({ Properties }) => {
+					const eventTypes = Properties.EventPattern["detail-type"] as string[];
+					return eventTypes.includes(detailType);
+				}),
+			).toHaveLength(2);
+		}
+		const targetCounts = new Map<string, number>();
+		for (const rule of rules) {
+			const target = JSON.stringify(rule.Properties.Targets[0]?.Arn);
+			targetCounts.set(target, (targetCounts.get(target) ?? 0) + 1);
+		}
+		expect([...targetCounts.values()].sort()).toEqual([3, 3]);
+	});
+
 	test("grants only exact repository, table, and pipeline access to the router", () => {
 		const { template } = createPipelineStack("PRGrants", {
 			onPullRequest: true,
@@ -297,16 +360,8 @@ describe("CodePipeline PR-gated mode", () => {
 		);
 		expect(codeCommitStatements.flatMap(actionsOf).sort()).toEqual(
 			[
-				"codecommit:BatchGetCommits",
-				"codecommit:GetCommentsForPullRequest",
-				"codecommit:GetCommit",
-				"codecommit:GetDifferences",
-				"codecommit:GetFile",
 				"codecommit:GetPullRequest",
 				"codecommit:PostCommentForPullRequest",
-				"codecommit:PostCommentReply",
-				"codecommit:PutCommentReaction",
-				"codecommit:UpdateComment",
 			].sort(),
 		);
 		for (const statement of codeCommitStatements) {
@@ -321,7 +376,6 @@ describe("CodePipeline PR-gated mode", () => {
 		expect(pipelineStatement && actionsOf(pipelineStatement)).toEqual([
 			"codepipeline:StartPipelineExecution",
 			"codepipeline:GetPipelineExecution",
-			"codepipeline:ListPipelineExecutions",
 			"codepipeline:ListActionExecutions",
 		]);
 		expect(JSON.stringify(pipelineStatement?.Resource)).toContain(
@@ -334,14 +388,14 @@ describe("CodePipeline PR-gated mode", () => {
 		);
 		expect(dynamoStatements.length).toBeGreaterThan(0);
 		const dynamoActions = dynamoStatements.flatMap(actionsOf);
-		expect(dynamoActions).toEqual(
-			expect.arrayContaining([
+		expect(dynamoActions.sort()).toEqual(
+			[
 				"dynamodb:GetItem",
-				"dynamodb:Query",
 				"dynamodb:PutItem",
+				"dynamodb:Query",
+				"dynamodb:TransactWriteItems",
 				"dynamodb:UpdateItem",
-				"dynamodb:DeleteItem",
-			]),
+			].sort(),
 		);
 		const [tableLogicalId] = Object.keys(
 			template.findResources("AWS::DynamoDB::GlobalTable"),
@@ -350,11 +404,53 @@ describe("CodePipeline PR-gated mode", () => {
 		for (const statement of dynamoStatements) {
 			expect(JSON.stringify(statement.Resource)).toContain(tableLogicalId);
 		}
+		const queryStatement = dynamoStatements.find((statement) =>
+			actionsOf(statement).includes("dynamodb:Query"),
+		);
+		expect(JSON.stringify(queryStatement?.Resource)).toContain("index/GSI2");
+		expect(JSON.stringify(queryStatement?.Resource)).not.toContain("index/*");
+		for (const statement of dynamoStatements.filter(
+			(statement) => !actionsOf(statement).includes("dynamodb:Query"),
+		)) {
+			expect(JSON.stringify(statement.Resource)).not.toContain("/index/");
+		}
 
 		const serialized = JSON.stringify(statements);
+		for (const unusedAction of [
+			"codepipeline:ListPipelineExecutions",
+			"dynamodb:Scan",
+			"dynamodb:BatchGetItem",
+			"dynamodb:GetRecords",
+			"dynamodb:GetShardIterator",
+			"dynamodb:DescribeStream",
+			"dynamodb:ListStreams",
+			"codecommit:UpdateComment",
+			"codecommit:MergePullRequestByFastForward",
+		]) {
+			expect(serialized).not.toContain(unusedAction);
+		}
 		expect(serialized).not.toContain("lambda:InvokeFunction");
 		expect(serialized).not.toContain("lambda:InvokeFunctionUrl");
 		expect(serialized).not.toContain("durable-execution");
 		expect(serialized).not.toContain("codepipeline:PutJob");
+	});
+
+	test("introduces no AwsSolutions findings for pipeline-only routing resources", () => {
+		const { stack } = createPipelineStack("PRNag", {
+			onPullRequest: true,
+		});
+		Aspects.of(stack).add(new AwsSolutionsChecks({ verbose: true }));
+		const errors = Annotations.fromStack(stack).findError(
+			"*",
+			Match.stringLikeRegexp("AwsSolutions-"),
+		);
+		const unexpectedRouterErrors = errors.filter((error) => {
+			if (!error.id.includes("PullRequestRouter")) return false;
+			const finding = JSON.stringify(error);
+			return !["AwsSolutions-L1", "AwsSolutions-IAM4"].some((knownFinding) =>
+				finding.includes(knownFinding),
+			);
+		});
+		expect(unexpectedRouterErrors).toEqual([]);
 	});
 });

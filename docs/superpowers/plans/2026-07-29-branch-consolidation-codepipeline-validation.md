@@ -120,7 +120,22 @@ If either step fails, use `superpowers:systematic-debugging`. Add or update a fo
 
 ## Task 3: Prepare the committed outer-repository deployment source
 
-- [ ] **Step 1: Verify deployment isolation and workspace dependency**
+- [ ] **Step 1: Remove and verify absence of the obsolete external deployment worktree**
+
+The external nested deployment worktree is obsolete and must be absent before any deployment preparation or validation. Remove it through the original nested repository, then verify both its absence and the protected original state:
+
+```bash
+cd /Users/jolo/Development/pawl/example/durable-lambda-reviewer
+git worktree remove --force /Users/jolo/Development/worktrees/durable-lambda-reviewer-deploy
+test ! -e /Users/jolo/Development/worktrees/durable-lambda-reviewer-deploy
+git branch --show-current
+git status --short
+git worktree list --porcelain
+```
+
+Expected: the external path is absent and no longer appears in the nested repository worktree list; the original remains on `pr-test-evil` with its pre-existing dirty `cdk.json` and `stacks/pipeline-stack.ts` unchanged. Record that the obsolete deployment worktree is absent. Stop if removal would alter the protected original state.
+
+- [ ] **Step 2: Verify deployment isolation and workspace dependency**
 
 Run:
 
@@ -133,25 +148,20 @@ git -C /Users/jolo/Development/pawl/.worktrees/consolidate-validate status --sho
 
 Expected: `.git` is absent, `@pawl/cdk` is the `workspace:*` dependency resolved by the outer workspace, and the committed deployment source has no local edits. Do not enter or edit the original nested repository for deployment.
 
-- [ ] **Step 2: Run focused tests and prove source-archive exclusions**
+- [ ] **Step 3: Run focused tests**
 
 Run:
 
 ```bash
 bun test tests/constructs/pipeline-stack.test.ts tests/unit/scaffold-baseline.test.ts
 test ! -e .git
-find . -path './node_modules' -prune -o -path './cdk.out' -prune -o -path './.git' -prune -o -type f -print | sort > /tmp/durable-lambda-reviewer-deployment-source-files.txt
-if grep -E '(^|/)(\.git|node_modules|cdk\.out)(/|$)' /tmp/durable-lambda-reviewer-deployment-source-files.txt; then
-  echo "source archive candidate contains an excluded path" >&2
-  exit 1
-fi
 ```
 
-Expected: focused tests pass and the source-archive candidate file list excludes `.git`, `node_modules`, and `cdk.out`; retain the list as validation evidence. Do not create a symlink, a nested worktree, or any deployment-source edit.
+Expected: focused tests pass. Do not create a symlink, a nested worktree, or any deployment-source edit.
 
-- [ ] **Step 3: Confirm the fluent deployment API is already committed**
+- [ ] **Step 4: Confirm the fluent deployment API is already committed**
 
-Inspect the deployment source and the synthesized configuration without editing it. The CodePipeline source must use the current fluent API already committed in this worktree. Supply the reviewer model only with `-c reviewerModelId=eu.amazon.nova-2-lite-v1:0` in synth, diff, and deploy commands; do not modify `cdk.json`, `pipeline-stack.ts`, a lockfile, or `.gitignore`.
+Inspect the deployment source and the synthesized configuration without editing it. The CodePipeline source must use the current fluent API already committed in this worktree. Supply `-c reviewerModelId=eu.amazon.nova-2-lite-v1:0` explicitly in synth, diff, and deploy commands as a redundant safety override: `cdk.json` already commits that same value, and the override must not edit `cdk.json`. Do not modify `pipeline-stack.ts`, a lockfile, or `.gitignore`.
 
 ## Task 4: Validate the example before deployment
 
@@ -174,9 +184,25 @@ AWS_PROFILE=jolo bunx cdk synth CodePipelineReviewerStack \
   -c reviewerModelId=eu.amazon.nova-2-lite-v1:0
 ```
 
-Expected: successful synth; template contains bridge/reconciler Lambdas, two table GSIs, one-minute rule, and six pipeline variables. No recursive `cdk.out` asset inclusion.
+Expected: successful synth; template contains bridge/reconciler Lambdas, two table GSIs, one-minute rule, and six pipeline variables.
 
-- [ ] **Step 3: Run and save the real AWS diff**
+- [ ] **Step 3: Inspect the generated CodeCommit source asset**
+
+The synthesized CodeCommit source asset is the `cdk.out/codecommit-source-*.zip` archive (not a pruned source-tree listing). Inspect that actual archive after synth:
+
+```bash
+source_asset=$(/usr/bin/find cdk.out -maxdepth 1 -type f -name 'codecommit-source-*.zip' -print -quit)
+test -n "$source_asset"
+unzip -Z1 "$source_asset" | tee /tmp/durable-lambda-reviewer-codecommit-source-asset-files.txt
+if grep -E '(^|/)(\.git|node_modules|cdk\.out)(/|$)' /tmp/durable-lambda-reviewer-codecommit-source-asset-files.txt; then
+  echo "generated CodeCommit source asset contains an excluded path" >&2
+  exit 1
+fi
+```
+
+Expected: the archive exists and its retained file list contains no nested `.git/`, `node_modules/`, or `cdk.out/` paths. Retain the list as validation evidence. Stop before diff or deploy if an excluded path is found.
+
+- [ ] **Step 4: Run and save the real AWS diff**
 
 Run:
 
@@ -306,34 +332,19 @@ Record only execution/action status, callback category, PR ID, generation, revis
 
 ## Task 8: Cleanup and consolidate the operational branch
 
-- [ ] **Step 1: Remove the obsolete external deployment worktree immediately**
-
-The external nested deployment worktree is obsolete and must be absent before deployment. Remove it through the original nested repository, then verify both its absence and the protected original state:
-
-```bash
-cd /Users/jolo/Development/pawl/example/durable-lambda-reviewer
-git worktree remove --force /Users/jolo/Development/worktrees/durable-lambda-reviewer-deploy
-test ! -e /Users/jolo/Development/worktrees/durable-lambda-reviewer-deploy
-git branch --show-current
-git status --short
-git worktree list --porcelain
-```
-
-Expected: the external path is absent and no longer appears in the nested repository worktree list; the original remains on `pr-test-evil` with its pre-existing dirty `cdk.json` and `stacks/pipeline-stack.ts` unchanged. Record that the obsolete deployment worktree is absent.
-
-- [ ] **Step 2: Retain independent and absent worktree paths**
+- [ ] **Step 1: Retain independent and absent worktree paths**
 
 No already-incorporated outer worktrees remain to remove. `/Users/jolo/Development/worktrees/building-library-57o` is absent. `/Users/jolo/Development/pawl/.worktrees/example-ci` is an independent clean nested repository with its own `.git` directory, not an outer worktree; retain it and do not plan Git worktree removal, branch-ref deletion, or directory deletion unless separately authorized. Retain divergent superseded/broken branches and all remote refs.
 
-- [ ] **Step 3: Commit any verified fixes**
+- [ ] **Step 2: Commit any verified fixes**
 
 If AWS validation required a Pawl code fix, run focused tests/builds and commit only the code and tests. Do not commit generated `cdk.out`, deployment-worktree edits, `.pi-subagents`, `.serena`, or the preserved local modifications.
 
-- [ ] **Step 4: Merge `ops/consolidate-validate` into outer `main`**
+- [ ] **Step 3: Merge `ops/consolidate-validate` into outer `main`**
 
 Preserve the dirty outer files with a path-limited stash if necessary, then fast-forward or merge the operational branch. Before restoring the stash, run the bridge-focused suite and package builds against the clean committed `HEAD` and record that result as the post-merge validation. Then restore the exact stash without using restored dirty user files as validation evidence. In particular, leave the user-owned legacy `packages/cdk/tests/codepipeline.test.ts` untouched; its known failure against the committed fluent API must be reported separately from the clean-`HEAD` result and is not a bridge regression.
 
-- [ ] **Step 5: Report final state**
+- [ ] **Step 4: Report final state**
 
 Report:
 

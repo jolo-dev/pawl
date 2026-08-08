@@ -32,7 +32,7 @@ git stash list
 git worktree list --porcelain
 ```
 
-Expected: `AGENTS.md`, `example/durable-lambda-reviewer/README.md`, `example/durable-lambda-reviewer/stacks/pipeline-stack.ts`, `example/durable-lambda-reviewer/tests/constructs/pipeline-stack.test.ts`, and `packages/cdk/tests/codepipeline.test.ts` remain modified; `.pi-subagents/` and `.serena/` remain untracked. Do not stash, commit, or delete these paths.
+Expected: `AGENTS.md`, `example/durable-lambda-reviewer/README.md`, `example/durable-lambda-reviewer/stacks/pipeline-stack.ts`, `example/durable-lambda-reviewer/tests/constructs/pipeline-stack.test.ts`, and the user-owned legacy `packages/cdk/tests/codepipeline.test.ts` remain modified; `.pi-subagents/` and `.serena/` remain untracked. Do not stash, commit, delete, or otherwise alter these paths.
 
 - [ ] **Step 2: Prove incorporated branches are ancestors**
 
@@ -79,11 +79,12 @@ Expected: `git status --short` has no output, `.git` is a directory, the indepen
 
 ## Task 2: Establish the consolidated Pawl baseline
 
-- [ ] **Step 1: Run the bridge-focused suite on `main`**
+- [ ] **Step 1: Run the bridge-focused suite from the clean operational worktree**
 
-Run from `/Users/jolo/Development/pawl`:
+Run from the clean `ops/consolidate-validate` worktree, which is the committed baseline under validation—not from the dirty, moving outer `main` worktree:
 
 ```bash
+cd /Users/jolo/Development/pawl/.worktrees/consolidate-validate
 bun test \
   packages/lambda/tests/codepipeline-handler.test.ts \
   packages/cdk/tests/codepipeline-bridge.test.ts \
@@ -101,11 +102,11 @@ bun test \
   packages/cdk/tests/codebuild-project.test.ts
 ```
 
-Expected: 118 passing, 0 failing.
+Expected: 118 passing, 0 failing. The outer `main` worktree's user-owned, uncommitted legacy `packages/cdk/tests/codepipeline.test.ts` is excluded from baseline evidence and must remain untouched. It currently fails against the committed fluent API; that failure is not a bridge regression.
 
 - [ ] **Step 2: Build affected packages**
 
-Run:
+Continue in `/Users/jolo/Development/pawl/.worktrees/consolidate-validate` and run:
 
 ```bash
 bun run --filter '@pawl/lambda' build
@@ -338,7 +339,7 @@ If AWS validation required a Pawl code fix, run focused tests/builds and commit 
 
 - [ ] **Step 4: Merge `ops/consolidate-validate` into outer `main`**
 
-Preserve the dirty outer files with a path-limited stash if necessary, fast-forward or merge the operational branch, rerun the bridge-focused suite and package builds, then restore the exact stash.
+Preserve the dirty outer files with a path-limited stash if necessary, then fast-forward or merge the operational branch. Before restoring the stash, run the bridge-focused suite and package builds against the clean committed `HEAD` and record that result as the post-merge validation. Then restore the exact stash without using restored dirty user files as validation evidence. In particular, leave the user-owned legacy `packages/cdk/tests/codepipeline.test.ts` untouched; its known failure against the committed fluent API must be reported separately from the clean-`HEAD` result and is not a bridge regression.
 
 - [ ] **Step 5: Report final state**
 

@@ -69,7 +69,10 @@ git status --short
 test -d .git
 example_ci_head=$(git rev-parse HEAD)
 git -C /Users/jolo/Development/pawl merge-base --is-ancestor "$example_ci_head" main
-git -C /Users/jolo/Development/pawl worktree list --porcelain | grep -F -- '/Users/jolo/Development/pawl/.worktrees/example-ci' && exit 1 || true
+if git -C /Users/jolo/Development/pawl worktree list --porcelain | grep -F -- '/Users/jolo/Development/pawl/.worktrees/example-ci'; then
+  echo "example-ci must not appear in the outer worktree list" >&2
+  exit 1
+fi
 ```
 
 Expected: `git status --short` has no output, `.git` is a directory, the independent repository HEAD is an ancestor of outer `main`, and the outer worktree list does not contain this path. Explicitly retain this independent repository unless separately authorized to remove it. `/Users/jolo/Development/worktrees/building-library-57o` is already absent; do not clean-check it.

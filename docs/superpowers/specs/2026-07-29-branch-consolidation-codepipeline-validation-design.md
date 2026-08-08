@@ -9,7 +9,7 @@ Consolidate viable Pawl development into `main` without reintroducing obsolete o
 - Preserve the uncommitted outer-repository edits in `AGENTS.md` and `packages/cdk/tests/codepipeline.test.ts`.
 - Do not merge stale checkpoint branches, deliberate evil-test branches, or branches already contained by `main`.
 - Do not persist or expose CodePipeline artifact credentials, raw job events, prompts, diffs, comments, or model output.
-- Use an isolated worktree for deployment so the nested example repository's current `pr-test-evil` branch and uncommitted infrastructure edits remain recoverable.
+- Deploy directly from the committed outer-repository copy at `/Users/jolo/Development/pawl/.worktrees/consolidate-validate/example/durable-lambda-reviewer`; it has no nested Git repository and is isolated from the original nested repository's `pr-test-evil` branch and uncommitted infrastructure edits.
 - Review `cdk diff` before deploying and deploy only `CodePipelineReviewerStack`.
 - Use AWS profile `jolo` in `eu-central-1`.
 
@@ -26,17 +26,11 @@ Before deleting any worktree or branch, verify that its worktree is clean and th
 
 ## Example deployment isolation
 
-`example/durable-lambda-reviewer` is a nested Git repository whose `origin` is the existing CodeCommit repository `codepipeline-autoreviewer-demo`. Its working tree is currently on `pr-test-evil` with two uncommitted infrastructure edits. Validation uses a temporary nested-repository worktree based on its clean `main`, not the broken PR branch.
+The original `example/durable-lambda-reviewer` directory is a nested Git repository whose `origin` is the existing CodeCommit repository `codepipeline-autoreviewer-demo`. Its working tree remains on `pr-test-evil` with two uncommitted infrastructure edits. Deployment instead runs directly from the outer repository's committed copy at `/Users/jolo/Development/pawl/.worktrees/consolidate-validate/example/durable-lambda-reviewer`. That directory has no nested `.git`, consumes `@pawl/cdk` through the outer workspace, and uses the current fluent API already committed in the ops worktree.
 
-Create the deployment worktree outside the outer repository at `/Users/jolo/Development/worktrees/durable-lambda-reviewer-deploy`. This avoids changing either Git index and prevents the deployment source archive from recursively including a worktree. Reuse the example's installed dependencies through a temporary `node_modules` symlink; its existing `@pawl/cdk` link resolves to the consolidated outer workspace. Do not regenerate or commit a lockfile in the deployment worktree.
+Do not make deployment-source edits, create symlinks, regenerate a lockfile, or create another deployment worktree. Before synth, prove the deployment directory is not a nested repository and that its source archive excludes repository metadata and generated/output directories. Supply the selected model only at invocation time with CDK context: `-c reviewerModelId=eu.amazon.nova-2-lite-v1:0`.
 
-The deployment worktree receives only the intended infrastructure configuration:
-
-- pass `repositoryName` with the CodeCommit source;
-- use the currently selected `eu.amazon.nova-2-lite-v1:0` reviewer model context;
-- consume `@pawl/cdk` from the consolidated outer workspace.
-
-No `evil.ts` source is introduced into the deployment worktree's `main` snapshot. The existing open PR remains the deliberate failure fixture.
+The deployment source contains no `evil.ts`; the existing open PR remains the deliberate failure fixture in the original nested repository.
 
 ## Pre-deployment validation
 
@@ -44,8 +38,8 @@ Run, in order:
 
 1. focused Pawl Lambda/CDK tests and package builds;
 2. example construct/unit tests relevant to `CodePipelineReviewerStack`;
-3. CDK synth for `CodePipelineReviewerStack`;
-4. `AWS_PROFILE=jolo` CDK diff against the deployed stack.
+3. CDK synth for `CodePipelineReviewerStack` with `-c reviewerModelId=eu.amazon.nova-2-lite-v1:0`;
+4. `AWS_PROFILE=jolo` CDK diff against the deployed stack with the same context override.
 
 The diff must show the expected bridge architecture: six V2 pipeline variables, ordinary bridge Lambda action, bridge and reconciler functions, DynamoDB GSIs, one-minute reconciliation rule, environment variables, and callback IAM. Unexpected replacements, repository deletion, or unrelated stack changes stop deployment for review.
 

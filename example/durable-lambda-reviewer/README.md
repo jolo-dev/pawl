@@ -58,9 +58,9 @@ CodeCommit PR event
                          AIReview callback ◄── reconciler ◄──┘
 ```
 
-- **Managed source** — Fluent `CodePipeline.source()` creates and initially
-  seeds the CodeCommit repository directly from this example; `sync` is a seed
-  asset, not ongoing synchronization.
+- **Managed source** — `CodeCommit` explicitly creates and initially seeds the
+  CodeCommit repository directly from this example. Fluent `CodePipeline.source()`
+  reuses that concrete repository; the seed asset is not ongoing synchronization.
 - **Pipeline** — `CodePipeline` with `onPullRequest: true` and
   `autoReviewer: { modelId }` disables the native source trigger. The router
   starts executions explicitly with the PR's source commit.

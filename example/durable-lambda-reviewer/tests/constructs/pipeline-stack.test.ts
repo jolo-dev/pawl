@@ -14,7 +14,7 @@ const DEFAULT_CONTEXT: Record<string, unknown> = {
 };
 
 function createStack(
-	id = "PipelineStack",
+	id = "CodePipelineReviewerStack",
 	context: Record<string, unknown> = DEFAULT_CONTEXT,
 ): { stack: CodePipelineReviewerStack; template: Template } {
 	const app = new App();
@@ -192,22 +192,46 @@ describe("CodePipelineReviewerStack", () => {
 		);
 	});
 
-	test("retains the historical per-repository review logical IDs", () => {
+	test("retains every deployed per-repository review resource logical ID", () => {
 		const { template } = createStack();
 		const resourceIds = Object.keys(
 			template.toJSON().Resources as Record<string, unknown>,
 		);
 
+		const deployedResourceIds = [
+			"PipelineAutoReviewCheckscodepipelineautoreviewerdemoEncryptionKeyFD8D9D72",
+			"PipelineAutoReviewCheckscodepipelineautoreviewerdemoLogGroupC7A369B8",
+			"PipelineAutoReviewCheckscodepipelineautoreviewerdemoPipelinePlaceholderBucketB86467FE",
+			"PipelineAutoReviewCheckscodepipelineautoreviewerdemoPipelinePlaceholderBucketPolicy7C8113ED",
+			"PipelineAutoReviewCheckscodepipelineautoreviewerdemoPipelinePlaceholderBucketAutoDeleteObjectsCustomResourceBE1E3A7A",
+			"PipelineAutoReviewCheckscodepipelineautoreviewerdemoProjectRole60319D62",
+			"PipelineAutoReviewCheckscodepipelineautoreviewerdemoProjectRoleDefaultPolicyEC8D6E7D",
+			"PipelineAutoReviewCheckscodepipelineautoreviewerdemoProjectE9B40273",
+			"PipelineAutoReviewCheckscodepipelineautoreviewerdemoReviewerRunAndReadPolicyc8622a63ad6b326af57cc84b463c4adba03e425e24542FF2BF",
+			"PipelineAutoReviewEventscodepipelineautoreviewerdemoRepositoryPullRequestRuleB55FBF62",
+			"PipelineAutoReviewEventscodepipelineautoreviewerdemoRepositoryPullRequestRuleAllowEventRuleCodePipelineReviewerStackPipelineAutoReviewRouterLambdaFunctionD20803889A0C2B86",
+			"PipelineAutoReviewEventscodepipelineautoreviewerdemoRepositoryCommentRuleA270519F",
+			"PipelineAutoReviewEventscodepipelineautoreviewerdemoRepositoryCommentRuleAllowEventRuleCodePipelineReviewerStackPipelineAutoReviewRouterLambdaFunctionD20803882947935F",
+			"PipelineAutoReviewEventscodepipelineautoreviewerdemoDeadLetterQueue844FE052",
+			"PipelineAutoReviewEventscodepipelineautoreviewerdemoDeadLetterQueuePolicy638B5AF2",
+		];
+		for (const deployedResourceId of deployedResourceIds) {
+			expect(resourceIds).toContain(deployedResourceId);
+		}
 		expect(
 			resourceIds.some((id) =>
-				id.startsWith("PipelineAutoReviewCheckscodepipelineautoreviewerdemo"),
+				id.startsWith(
+					"PipelineAutoReviewCheckscodepipelineautoreviewerdemo4ecc0b91",
+				),
 			),
-		).toBe(true);
+		).toBe(false);
 		expect(
 			resourceIds.some((id) =>
-				id.startsWith("PipelineAutoReviewEventscodepipelineautoreviewerdemo"),
+				id.startsWith(
+					"PipelineAutoReviewEventscodepipelineautoreviewerdemo4ecc0b91",
+				),
 			),
-		).toBe(true);
+		).toBe(false);
 	});
 
 	test("requires reviewerModelId context", () => {

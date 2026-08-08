@@ -14,11 +14,11 @@ import {
  * PR-gated triggering.
  *
  * Flow:
- * 1. `CodePipeline.source()` creates and seeds a managed CodeCommit repository
- *    from `sourcePath` (this directory). The initial commit includes all
- *    project files.
- * 2. `CodePipeline` creates a CI/CD pipeline using its managed repository as
- *    the source. With `onPullRequest: true`, the pipeline only starts when a
+ * 1. `CodeCommit` explicitly creates and seeds the repository from
+ *    `sourcePath` (this directory). The initial commit includes all project
+ *    files.
+ * 2. `CodePipeline` creates a CI/CD pipeline that reuses that concrete
+ *    repository as its source. With `onPullRequest: true`, the pipeline only starts when a
  *    PR is opened — the router starts executions with the PR's source commit.
  * 3. `autoReviewer` deploys the durable reviewer infrastructure. On each PR
  *    event, the router starts the pipeline (CI) and invokes the durable
@@ -89,8 +89,9 @@ export class CodePipelineReviewerStack extends Stack {
 			},
 		});
 
-		// The pipeline owns source creation and seeding. Fluent stages infer the
-		// SourceOutput input and BuildOutput output artifacts automatically.
+		// The fluent pipeline reuses the concrete CodeCommit repository above.
+		// Fluent stages infer the SourceOutput input and BuildOutput output artifacts
+		// automatically.
 		new CodePipeline(this, "Pipeline", {
 			onPullRequest: true,
 			autoReviewer: {

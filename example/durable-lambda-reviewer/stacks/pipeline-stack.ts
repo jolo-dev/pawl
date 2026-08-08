@@ -1,6 +1,12 @@
 import path from "node:path";
 import type { Construct } from "@pawl/cdk";
-import { CodeBuildProject, CodePipeline, Stack } from "@pawl/cdk";
+import {
+	BuildSpec,
+	CodeBuildProject,
+	CodeCommit,
+	CodePipeline,
+	Stack,
+} from "@pawl/cdk";
 
 /**
  * Example stack showcasing `CodePipeline` with a CodeCommit repository
@@ -37,14 +43,43 @@ export class CodePipelineReviewerStack extends Stack {
 		if (modelId === undefined) {
 			throw new Error("reviewerModelId context is required");
 		}
+		const pipelineCoordinationName = this.node.tryGetContext(
+			"pipelineCoordinationName",
+		) as string | undefined;
+		if (pipelineCoordinationName === undefined) {
+			throw new Error("pipelineCoordinationName context is required");
+		}
 
 		// The source path is this example directory itself (parent of stacks/)
 		const sourcePath = path.resolve(import.meta.dirname, "..");
+		const repository = new CodeCommit(this, "Repository", {
+			repositoryName,
+			create: {
+				branchName,
+				description: "Durable Lambda reviewer example with CodePipeline",
+				sourcePath,
+				// Retain the deployed seed asset identity; changing Code replaces the repository.
+				sourceAssetHash:
+					"6b52ebe09ae185b7d29d3f63654fb5beb7966e50befc17b752ce7cc905a1301a",
+			},
+		});
 
 		// Create a pipeline-mode CodeBuild project before defining its fluent
 		// pipeline action.
 		const buildProject = new CodeBuildProject(this, "BuildProject", {
 			pipelineMode: true,
+			// Preserve the deployed buildspec while source migration is in flight.
+			buildSpec: BuildSpec.fromObject({
+				version: "0.2",
+				phases: {
+					install: { "runtime-versions": { nodejs: 22 } },
+					build: {
+						commands: [
+							`test -d src && bash -o pipefail -c 'find src -type f -name "*.ts" -print0 | while IFS= read -r -d "" file; do node --check "$file" || exit; done'`,
+						],
+					},
+				},
+			}),
 			networkPolicy: {
 				mode: "public-test",
 				packageAccess: {
@@ -58,15 +93,20 @@ export class CodePipelineReviewerStack extends Stack {
 		// SourceOutput input and BuildOutput output artifacts automatically.
 		new CodePipeline(this, "Pipeline", {
 			onPullRequest: true,
-			autoReviewer: { modelId },
+			autoReviewer: {
+				modelId,
+				legacyResourceIdSuffix: "codepipeline-autoreviewer-demo",
+			},
+			pipelineNaming: {
+				mode: "cloudFormation",
+				coordinationName: pipelineCoordinationName,
+			},
 		})
 			.source({
 				origin: "codecommit",
-				create: true,
+				repository: repository.repository,
 				repositoryName,
 				branchName,
-				description: "Durable Lambda reviewer example with CodePipeline",
-				sync: sourcePath,
 			})
 			.stage([
 				{

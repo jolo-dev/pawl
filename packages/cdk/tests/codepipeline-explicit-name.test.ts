@@ -171,6 +171,32 @@ describe("CodePipeline physical name", () => {
 		expect(userParameters).not.toContain(pipelineLogicalId);
 	});
 
+	test("propagates the single-repository legacy suffix to review resources", () => {
+		const template = createTemplate({
+			...prGatedAutoReviewProps(),
+			autoReviewer: {
+				modelId: "eu.amazon.nova-2-lite-v1:0",
+				legacyResourceIdSuffix: "historical-reviewer",
+			},
+			pipelineNaming: {
+				mode: "cloudFormation",
+				coordinationName: "existing-pipeline-ABC123",
+			},
+		});
+		const resourceIds = Object.keys(resources(template));
+
+		expect(
+			resourceIds.some((id) =>
+				id.startsWith("PipelineAutoReviewCheckshistoricalreviewer"),
+			),
+		).toBe(true);
+		expect(
+			resourceIds.some((id) =>
+				id.startsWith("PipelineAutoReviewEventshistoricalreviewer"),
+			),
+		).toBe(true);
+	});
+
 	test("CloudFormation naming still uses pipeline tokens outside the resource", () => {
 		const template = createTemplate({
 			...prGatedAutoReviewProps(),

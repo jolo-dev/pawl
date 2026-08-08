@@ -151,11 +151,28 @@ export type CodeCommitAutoReviewerConfig = z.infer<
 	typeof CodeCommitAutoReviewerConfigSchema
 >;
 
+export const LegacyResourceIdSuffixSchema = z
+	.string()
+	.min(1)
+	.max(128)
+	.regex(
+		/^[A-Za-z0-9_-]+$/,
+		"must use only letters, numbers, underscores, and hyphens",
+	);
+
 export type CodeCommitAutoReviewerProps = z.input<
 	typeof CodeCommitAutoReviewerConfigSchema
 > & {
 	/** Concrete repositories to reuse, keyed by configured repository name. */
 	readonly repositoryResources?: ReadonlyMap<string, Repository>;
+	/**
+	 * Migration-only construct-ID suffixes, keyed by configured repository name.
+	 *
+	 * Omit this map for the collision-safe hashed defaults. Use an override only
+	 * to retain the logical IDs of resources already deployed by an earlier
+	 * version of the construct.
+	 */
+	readonly legacyResourceIdSuffixes?: ReadonlyMap<string, string>;
 	/** Override the team context value (defaults to CDK context `team`). */
 	readonly team?: string;
 	/** Override the stage context value (defaults to CDK context `stage`). */
@@ -230,6 +247,7 @@ function resolveCodeCommitAutoReviewerProps(
 ): ValidatedCodeCommitAutoReviewerProps {
 	const {
 		repositoryResources,
+		legacyResourceIdSuffixes,
 		team: teamOverride,
 		stage: stageOverride,
 		reviewCoordinationDeployment: reviewCoordinationDeploymentInput,
@@ -293,8 +311,18 @@ function resolveCodeCommitAutoReviewerProps(
 	dynamoDbTableNameSchema.parse(`${basicPrefix}${id}State-table`);
 
 	const repositoryResourceSuffixes = new Map<string, string>();
+	for (const [repositoryName, suffix] of legacyResourceIdSuffixes ?? []) {
+		if (!configuredRepositories.has(repositoryName)) {
+			throw new Error(
+				`CodeCommitAutoReviewer: unknown legacy resource suffix key ${repositoryName}`,
+			);
+		}
+		LegacyResourceIdSuffixSchema.parse(suffix);
+	}
 	for (const repositoryName of config.repositories) {
-		const resourceSuffix = repositoryResourceSuffix(repositoryName);
+		const resourceSuffix =
+			legacyResourceIdSuffixes?.get(repositoryName) ??
+			repositoryResourceSuffix(repositoryName);
 		repositoryResourceSuffixes.set(repositoryName, resourceSuffix);
 		const repositoryResource = repositoryResources?.get(repositoryName);
 		const repositoryTarget = repositoryResource
@@ -316,6 +344,14 @@ function resolveCodeCommitAutoReviewerProps(
 				"The public-test CodeBuild network policy is not allowed in prod",
 			);
 		}
+	}
+	if (
+		new Set(repositoryResourceSuffixes.values()).size !==
+		repositoryResourceSuffixes.size
+	) {
+		throw new Error(
+			"CodeCommitAutoReviewer: effective legacy resource suffixes must be unique",
+		);
 	}
 	return {
 		config,

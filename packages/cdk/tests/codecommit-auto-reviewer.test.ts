@@ -180,6 +180,64 @@ describe("CodeCommitAutoReviewer", () => {
 		Template.fromStack(stack).resourceCountIs("AWS::CodeBuild::Project", 2);
 	});
 
+	test("uses validated legacy suffixes only for the configured repositories", () => {
+		const stack = createStack("LegacySuffixStack");
+		const reviewer = createReviewer(stack, {
+			repositories: ["legacy-repository"],
+			legacyResourceIdSuffixes: new Map([
+				["legacy-repository", "codepipeline-autoreviewer-demo"],
+			]),
+		});
+
+		expect(reviewer.codeBuildProjects.get("legacy-repository")?.node.id).toBe(
+			"AutoReviewerChecks-codepipeline-autoreviewer-demo",
+		);
+		expect(reviewer.eventConstructs.get("legacy-repository")?.node.id).toBe(
+			"AutoReviewerEvents-codepipeline-autoreviewer-demo",
+		);
+	});
+
+	test("validates legacy suffix keys, values, and effective uniqueness before creating children", () => {
+		const invalidSuffixStack = createStack("InvalidLegacySuffixStack");
+		expect(() =>
+			createReviewer(invalidSuffixStack, {
+				legacyResourceIdSuffixes: new Map([["repo", "invalid suffix"]]),
+			}),
+		).toThrow(/letters/i);
+		expectNoReviewerChildren(invalidSuffixStack);
+
+		const unknownKeyStack = createStack("UnknownLegacySuffixStack");
+		expect(() =>
+			createReviewer(unknownKeyStack, {
+				legacyResourceIdSuffixes: new Map([["other", "legacy"]]),
+			}),
+		).toThrow(/unknown/i);
+		expectNoReviewerChildren(unknownKeyStack);
+
+		const duplicateStack = createStack("DuplicateLegacySuffixStack");
+		expect(() =>
+			createReviewer(duplicateStack, {
+				repositories: ["first", "second"],
+				legacyResourceIdSuffixes: new Map([
+					["first", "same"],
+					["second", "same"],
+				]),
+			}),
+		).toThrow(/unique/i);
+		expectNoReviewerChildren(duplicateStack);
+	});
+
+	test("keeps punctuation-colliding repository names distinct with hashed defaults", () => {
+		const stack = createStack("DefaultSuffixCollisionStack");
+		const reviewer = createReviewer(stack, {
+			repositories: ["foo.bar", "foo-bar"],
+		});
+
+		expect(reviewer.codeBuildProjects.get("foo.bar")?.node.id).not.toBe(
+			reviewer.codeBuildProjects.get("foo-bar")?.node.id,
+		);
+	});
+
 	test("retains dotted repository identity while deriving safe deterministic build names", () => {
 		const firstStack = createStack("DottedRepositoryStack");
 		const repository = new Repository(firstStack, "Repository", {

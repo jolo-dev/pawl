@@ -32,6 +32,23 @@ Do not make deployment-source edits, create symlinks, regenerate a lockfile, or 
 
 The deployment source contains no `evil.ts`; the existing open PR remains the deliberate failure fixture in the original nested repository.
 
+## Migration compatibility
+
+The committed outer example may be updated only to preserve the existing stack's
+resource identity. `CodeCommitAutoReviewer` supports migration-only legacy
+per-repository construct-ID suffixes: direct multi-repository callers supply a
+repository-keyed map, while the single-repository `CodePipeline` and
+`CodeCommit` APIs expose one validated suffix and translate it internally.
+Defaults remain hashed so punctuation-colliding repository names stay distinct.
+
+For the existing pipeline stack, create and seed `Repository` explicitly, pass
+that concrete repository to the fluent source, retain the historical reviewer
+suffix, and let CloudFormation own the pipeline name. Active review
+coordination must instead use the committed current physical pipeline name.
+The safe target diff retains `RepositoryRepository412D33BA`, the pipeline, and
+historical per-repository checks/events logical IDs; it must not delete or
+replace the repository or pipeline.
+
 ## Pre-deployment validation
 
 Run, in order:

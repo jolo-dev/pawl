@@ -754,10 +754,15 @@ export class CodePipeline extends BasicConstruct {
 		repositoryName: string,
 	): CodeCommitAutoReviewerProps | undefined {
 		if (this.props.autoReviewer === undefined) return undefined;
-		const { modelId, ...autoReviewerProps } = this.props.autoReviewer;
+		const { modelId, legacyResourceIdSuffix, ...autoReviewerProps } =
+			this.props.autoReviewer;
 		return {
 			...autoReviewerProps,
 			repositories: [repositoryName],
+			legacyResourceIdSuffixes:
+				legacyResourceIdSuffix === undefined
+					? undefined
+					: new Map([[repositoryName, legacyResourceIdSuffix]]),
 			reviewerModelId: modelId,
 			reviewCoordinationDeployment:
 				this.reviewCoordinationDeploymentPhase === undefined

@@ -1,42 +1,39 @@
 {
-  "app": "bun ./index.ts",
-  "watch": {
-    "include": [
-      "**"
-    ],
-    "exclude": [
-      "README.md",
-      "cdk*.json",
-      "**/*.d.ts",
-      "**/*.js",
-      "tsconfig.json",
-      "package*.json",
-      "node_modules",
-      "test"
-    ]
-  },
-  "context": {
-    "awsProfile": "jolo",
-    "projectName": "durable-lambda-reviewer",
-    "testMode": "none",
-    "team": "jolo",
-    "stage": "dev",
-    "repositories": [
-      "durable-reviewer-demo"
-    ],
-    "reviewerExecutionTimeoutSeconds": 2592000,
-    "reviewerRetentionDays": 14,
-    "reviewerModelId": "eu.amazon.nova-2-lite-v1:0",
-    "reviewerCodeBuildRegistryEndpoint": "https://registry.npmjs.org",
-    "repositoryName": "durable-reviewer-demo",
-    "branchName": "main",
-    "Construct-Annotations::@aws-cdk/aws-codepipeline:unspecifiedPipelineType": {
-      "metadataIcon": "🔗",
-      "description": "Pipeline type is set to V2 in the CodePipeline construct."
-    },
-    "Construct-Annotations::aws-lambda:Function.DurableConfig": {
-      "metadataIcon": "🔗",
-      "description": "Durable Lambda functions require resource replacement. This is expected."
-    }
-  }
+	"app": "bun ./index.ts",
+	"watch": {
+		"include": ["**"],
+		"exclude": [
+			"README.md",
+			"cdk*.json",
+			"**/*.d.ts",
+			"**/*.js",
+			"tsconfig.json",
+			"package*.json",
+			"node_modules",
+			"test"
+		]
+	},
+	"context": {
+		"awsProfile": "jolo",
+		"projectName": "durable-lambda-reviewer",
+		"testMode": "none",
+		"team": "jolo",
+		"stage": "dev",
+		"repositories": ["durable-reviewer-demo"],
+		"reviewerExecutionTimeoutSeconds": 2592000,
+		"reviewerRetentionDays": 14,
+		"reviewerModelId": "eu.amazon.nova-2-lite-v1:0",
+		"reviewerCodeBuildRegistryEndpoint": "https://registry.npmjs.org",
+		"repositoryName": "durable-reviewer-demo",
+		"branchName": "main",
+		"pipelineCoordinationName": "CodePipelineReviewerStack-Pipeline9850B417-41iImnwp8TWb",
+		"Construct-Annotations::@aws-cdk/aws-codepipeline:unspecifiedPipelineType": {
+			"metadataIcon": "🔗",
+			"description": "Pipeline type is set to V2 in the CodePipeline construct."
+		},
+		"Construct-Annotations::aws-lambda:Function.DurableConfig": {
+			"metadataIcon": "🔗",
+			"description": "Durable Lambda functions require resource replacement. This is expected."
+		}
+	}
 }

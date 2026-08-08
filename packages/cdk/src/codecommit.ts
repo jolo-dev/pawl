@@ -18,6 +18,7 @@ import { CodeBuildNetworkPolicySchema } from "./codebuild-project";
 import {
 	BedrockModelIdSchema,
 	CodeCommitAutoReviewer,
+	LegacyResourceIdSuffixSchema,
 } from "./codecommit-auto-reviewer";
 import {
 	CodeCommitBranchNameSchema,
@@ -73,6 +74,8 @@ const autoReviewConfigSchema = z.object({
 		},
 	}),
 	botArnPatterns: z.string().default(""),
+	/** Migration-only suffix retaining pre-hash per-repository logical IDs. */
+	legacyResourceIdSuffix: LegacyResourceIdSuffixSchema.optional(),
 });
 
 export type AutoReviewConfig = z.input<typeof autoReviewConfigSchema>;
@@ -373,6 +376,10 @@ export class CodeCommit {
 						createdRepository === undefined
 							? undefined
 							: new Map([[repositoryName, createdRepository]]),
+					legacyResourceIdSuffixes:
+						autoReview.legacyResourceIdSuffix === undefined
+							? undefined
+							: new Map([[repositoryName, autoReview.legacyResourceIdSuffix]]),
 				},
 			);
 			this.events = this.autoReviewer.eventConstructs.get(repositoryName);

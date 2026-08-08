@@ -145,7 +145,9 @@ cd /Users/jolo/Development/worktrees/durable-lambda-reviewer-deploy
 ln -s /Users/jolo/Development/pawl/example/durable-lambda-reviewer/node_modules node_modules
 ```
 
-Expected: a clean worktree on nested-repository `main`; dependency symlink exists; original PR worktree is untouched.
+Add an exact `node_modules` entry (without a trailing slash) to the deployment worktree `.gitignore`, retaining the existing `node_modules/` entry. This ensures Git ignores the dependency symlink as well as directory contents.
+
+Expected: a clean worktree on nested-repository `main`; dependency symlink exists and is ignored by Git/source filtering; original PR worktree is untouched.
 
 - [ ] **Step 3: Apply only deployment configuration edits**
 
@@ -166,7 +168,7 @@ source: {
 },
 ```
 
-Expected: `git diff --check` passes and `git diff --name-only` lists only those two files.
+Expected: `git check-ignore -v node_modules` succeeds; `git diff --check` passes; `git diff --name-only` lists only `.gitignore`, `cdk.json`, and `stacks/pipeline-stack.ts`; and no files are staged.
 
 ## Task 4: Validate the example before deployment
 

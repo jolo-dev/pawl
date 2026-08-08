@@ -177,9 +177,10 @@ Expected: functional synthesis assertions pass. If stale repository-name or CDK 
 
 - [ ] **Step 2: Synthesize only the target stack**
 
-Run:
+Remove the isolated generated output before synthesis so source packaging cannot inspect a stale asset. Run:
 
 ```bash
+rm -rf cdk.out
 AWS_PROFILE=jolo bunx cdk synth CodePipelineReviewerStack \
   -c reviewerModelId=eu.amazon.nova-2-lite-v1:0
 ```
@@ -188,11 +189,14 @@ Expected: successful synth; template contains bridge/reconciler Lambdas, two tab
 
 - [ ] **Step 3: Inspect the generated CodeCommit source asset**
 
-The synthesized CodeCommit source asset is the `cdk.out/codecommit-source-*.zip` archive (not a pruned source-tree listing). Inspect that actual archive after synth:
+The synthesized CodeCommit source asset is the `cdk.out/codecommit-source-*.zip` archive (not a pruned source-tree listing). Require exactly one generated archive, verify it is a file, then inspect it. This uses POSIX-compatible shell constructs supported by macOS Bash 3:
 
 ```bash
-source_asset=$(/usr/bin/find cdk.out -maxdepth 1 -type f -name 'codecommit-source-*.zip' -print -quit)
-test -n "$source_asset"
+source_assets=$(/usr/bin/find cdk.out -maxdepth 1 -type f -name 'codecommit-source-*.zip' -print)
+source_asset_count=$(printf '%s\n' "$source_assets" | sed '/^$/d' | wc -l | tr -d ' ')
+test "$source_asset_count" -eq 1
+source_asset=$source_assets
+test -f "$source_asset"
 unzip -Z1 "$source_asset" | tee /tmp/durable-lambda-reviewer-codecommit-source-asset-files.txt
 if grep -E '(^|/)(\.git|node_modules|cdk\.out)(/|$)' /tmp/durable-lambda-reviewer-codecommit-source-asset-files.txt; then
   echo "generated CodeCommit source asset contains an excluded path" >&2

@@ -32,20 +32,22 @@ git stash list
 git worktree list --porcelain
 ```
 
-Expected: `AGENTS.md` and `packages/cdk/tests/codepipeline.test.ts` remain modified; `.pi-subagents/` and `.serena/` remain untracked. Do not stash, commit, or delete these paths.
+Expected: `AGENTS.md`, `example/durable-lambda-reviewer/README.md`, `example/durable-lambda-reviewer/stacks/pipeline-stack.ts`, `example/durable-lambda-reviewer/tests/constructs/pipeline-stack.test.ts`, and `packages/cdk/tests/codepipeline.test.ts` remain modified; `.pi-subagents/` and `.serena/` remain untracked. Do not stash, commit, or delete these paths.
 
 - [ ] **Step 2: Prove incorporated branches are ancestors**
 
 Run:
 
 ```bash
-for branch in example/ci-test feat/cli-harness-extraction feat/codecommit-construct emdash/building-library-57o; do
+for branch in feat/cli-harness-extraction feat/codecommit-construct; do
   git merge-base --is-ancestor "$branch" main
   echo "$branch=$?"
 done
+git merge-base --is-ancestor origin/emdash/building-library-57o main
+echo "origin/emdash/building-library-57o=$?"
 ```
 
-Expected: every result is `0`.
+Expected: every result is `0`. The local `example/ci-test` and `emdash/building-library-57o` refs are already absent; verify the detached `example-ci` worktree HEAD separately. Retain all remote refs.
 
 - [ ] **Step 3: Prove remaining divergent branches are excluded**
 
@@ -57,16 +59,18 @@ Inspect unique commits and diff sizes for `chore/packages`, `entire/3062434-e3b0
 
 Expected: none qualifies for merge. Record the reason in the final report; retain these local/remote refs unless the user separately requests deletion.
 
-- [ ] **Step 4: Verify completed worktrees are clean**
+- [ ] **Step 4: Verify completed worktree state**
 
-Run `git status --short` in:
+Run in the detached `example-ci` worktree:
 
-```text
-/Users/jolo/Development/pawl/.worktrees/example-ci
-/Users/jolo/Development/worktrees/building-library-57o
+```bash
+cd /Users/jolo/Development/pawl/.worktrees/example-ci
+git status --short
+example_ci_head=$(git rev-parse HEAD)
+git -C /Users/jolo/Development/pawl merge-base --is-ancestor "$example_ci_head" main
 ```
 
-Expected: no output.
+Expected: `git status --short` has no output and the detached worktree HEAD is an ancestor of outer `main`. `/Users/jolo/Development/worktrees/building-library-57o` is already removed; do not clean-check it.
 
 ## Task 2: Establish the consolidated Pawl baseline
 
@@ -319,16 +323,15 @@ git worktree remove --force /Users/jolo/Development/worktrees/durable-lambda-rev
 
 Expected: original nested `pr-test-evil` branch and its two uncommitted files remain intact.
 
-- [ ] **Step 2: Remove clean already-incorporated outer worktrees**
+- [ ] **Step 2: Remove the clean already-incorporated `example-ci` outer worktree**
 
 From outer `main`, remove:
 
 ```text
 /Users/jolo/Development/pawl/.worktrees/example-ci
-/Users/jolo/Development/worktrees/building-library-57o
 ```
 
-Delete their local branch refs only after worktree removal and another ancestor check. Retain divergent superseded/broken branches and all remote refs.
+Delete its local branch ref only after worktree removal and another ancestor check, if the ref exists. The `emdash/building-library-57o` local ref and `/Users/jolo/Development/worktrees/building-library-57o` worktree are already absent; record that worktree as already removed and retain `origin/emdash/building-library-57o`. Retain divergent superseded/broken branches and all remote refs.
 
 - [ ] **Step 3: Commit any verified fixes**
 

@@ -102,7 +102,7 @@ bun test \
   packages/cdk/tests/codebuild-project.test.ts
 ```
 
-Expected: 118 passing, 0 failing. The outer `main` worktree's user-owned, uncommitted legacy `packages/cdk/tests/codepipeline.test.ts` is excluded from baseline evidence and must remain untouched. It currently fails against the committed fluent API; that failure is not a bridge regression.
+Expected: 239 passing, 0 failing. The outer `main` worktree's user-owned, uncommitted legacy `packages/cdk/tests/codepipeline.test.ts` is excluded from baseline evidence and must remain untouched. It currently fails against the committed fluent API; that failure is not a bridge regression.
 
 - [ ] **Step 2: Build affected packages**
 

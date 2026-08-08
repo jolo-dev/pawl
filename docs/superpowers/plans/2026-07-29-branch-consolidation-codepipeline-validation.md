@@ -47,7 +47,7 @@ git merge-base --is-ancestor origin/emdash/building-library-57o main
 echo "origin/emdash/building-library-57o=$?"
 ```
 
-Expected: every result is `0`. The local `example/ci-test` and `emdash/building-library-57o` refs are already absent; verify the detached `example-ci` worktree HEAD separately. Retain all remote refs.
+Expected: every result is `0`. The local `example/ci-test` and `emdash/building-library-57o` refs are already absent. `/Users/jolo/Development/pawl/.worktrees/example-ci` is an independent nested repository with its own `.git` directory, not an outer Git worktree and not listed by the outer `git worktree list`; verify its HEAD separately. Retain all remote refs.
 
 - [ ] **Step 3: Prove remaining divergent branches are excluded**
 
@@ -59,18 +59,20 @@ Inspect unique commits and diff sizes for `chore/packages`, `entire/3062434-e3b0
 
 Expected: none qualifies for merge. Record the reason in the final report; retain these local/remote refs unless the user separately requests deletion.
 
-- [ ] **Step 4: Verify completed worktree state**
+- [ ] **Step 4: Verify independent nested repository state**
 
-Run in the detached `example-ci` worktree:
+Run in the independent `example-ci` repository:
 
 ```bash
 cd /Users/jolo/Development/pawl/.worktrees/example-ci
 git status --short
+test -d .git
 example_ci_head=$(git rev-parse HEAD)
 git -C /Users/jolo/Development/pawl merge-base --is-ancestor "$example_ci_head" main
+git -C /Users/jolo/Development/pawl worktree list --porcelain | grep -F -- '/Users/jolo/Development/pawl/.worktrees/example-ci' && exit 1 || true
 ```
 
-Expected: `git status --short` has no output and the detached worktree HEAD is an ancestor of outer `main`. `/Users/jolo/Development/worktrees/building-library-57o` is already removed; do not clean-check it.
+Expected: `git status --short` has no output, `.git` is a directory, the independent repository HEAD is an ancestor of outer `main`, and the outer worktree list does not contain this path. Explicitly retain this independent repository unless separately authorized to remove it. `/Users/jolo/Development/worktrees/building-library-57o` is already absent; do not clean-check it.
 
 ## Task 2: Establish the consolidated Pawl baseline
 
@@ -323,15 +325,9 @@ git worktree remove --force /Users/jolo/Development/worktrees/durable-lambda-rev
 
 Expected: original nested `pr-test-evil` branch and its two uncommitted files remain intact.
 
-- [ ] **Step 2: Remove the clean already-incorporated `example-ci` outer worktree**
+- [ ] **Step 2: Retain independent and absent worktree paths**
 
-From outer `main`, remove:
-
-```text
-/Users/jolo/Development/pawl/.worktrees/example-ci
-```
-
-Delete its local branch ref only after worktree removal and another ancestor check, if the ref exists. The `emdash/building-library-57o` local ref and `/Users/jolo/Development/worktrees/building-library-57o` worktree are already absent; record that worktree as already removed and retain `origin/emdash/building-library-57o`. Retain divergent superseded/broken branches and all remote refs.
+No already-incorporated outer worktrees remain to remove. `/Users/jolo/Development/worktrees/building-library-57o` is absent. `/Users/jolo/Development/pawl/.worktrees/example-ci` is an independent clean nested repository with its own `.git` directory, not an outer worktree; retain it and do not plan Git worktree removal, branch-ref deletion, or directory deletion unless separately authorized. Retain divergent superseded/broken branches and all remote refs.
 
 - [ ] **Step 3: Commit any verified fixes**
 

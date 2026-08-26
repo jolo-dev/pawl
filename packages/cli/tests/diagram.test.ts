@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { extractAllMermaidCode, extractMermaidCode, renderPlanDiagram } from "../src/diagram";
+import {
+	extractAllMermaidCode,
+	extractMermaidCode,
+	renderPlanDiagram,
+} from "../src/diagram";
 
 describe("extractMermaidCode", () => {
 	test("extracts single mermaid block", () => {
@@ -42,13 +46,17 @@ describe("renderPlanDiagram", () => {
 	});
 
 	test("returns message when plan has no mermaid diagram", async () => {
-		const result = await renderPlanDiagram("/tmp", async () => ({ stdout: "# Plan\n\nNo diagram" }));
+		const result = await renderPlanDiagram("/tmp", async () => ({
+			stdout: "# Plan\n\nNo diagram",
+		}));
 		expect(result).toContain("No Mermaid diagram found");
 	});
 
 	test("renders diagram when plan contains mermaid", async () => {
 		const plan = `# Plan\n\n\`\`\`mermaid\ngraph TD\n  A[Client] --> B[Server]\n\`\`\``;
-		const result = await renderPlanDiagram("/tmp", async () => ({ stdout: plan }));
+		const result = await renderPlanDiagram("/tmp", async () => ({
+			stdout: plan,
+		}));
 		expect(result).toContain("Client");
 		expect(result).toContain("Server");
 	});

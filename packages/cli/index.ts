@@ -8,6 +8,14 @@ import {
 	listProfiles,
 	ssoLogin,
 } from "./src/aws-credentials";
+import {
+	printCodeCommitInitResult,
+	runCodeCommitInit,
+} from "./src/codecommit-init";
+import {
+	printCodePipelineInitResult,
+	runCodePipelineInit,
+} from "./src/codepipeline-init";
 import { startAgent } from "./src/infra-agent";
 import {
 	installScaffoldDependencies,
@@ -15,14 +23,6 @@ import {
 	writeScaffoldProject,
 } from "./src/scaffold";
 import { parseInitArgs } from "./src/scaffold/cli";
-import {
-	runCodeCommitInit,
-	printCodeCommitInitResult,
-} from "./src/codecommit-init";
-import {
-	runCodePipelineInit,
-	printCodePipelineInitResult,
-} from "./src/codepipeline-init";
 
 const argv = process.argv.slice(2);
 

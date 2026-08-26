@@ -1,5 +1,9 @@
 import { parseArgs } from "node:util";
-import type { ScaffoldPackageManager, ScaffoldStage, ScaffoldTestMode } from "./types";
+import type {
+	ScaffoldPackageManager,
+	ScaffoldStage,
+	ScaffoldTestMode,
+} from "./types";
 
 export interface InitCliFlags {
 	projectName?: string;

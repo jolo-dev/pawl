@@ -6,7 +6,13 @@
 		"useIgnoreFile": true
 	},
 	"files": {
-		"includes": ["**", "!!**/dist", "!**/docs/typedoc-plugin-mermaid.mjs"]
+		"includes": [
+			"**",
+			"!!**/dist",
+			"!**/docs/typedoc-plugin-mermaid.mjs",
+			"!packages/cli/templates",
+			"!example/durable-lambda-reviewer"
+		]
 	},
 	"formatter": {
 		"enabled": true,

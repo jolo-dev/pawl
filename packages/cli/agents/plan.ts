@@ -20,9 +20,7 @@ export default async function ({ init, payload, env }: FlueContext) {
 	const pawl = new PawlHarness({
 		cwd: process.cwd(),
 		exec: async (cmd, args) => {
-			const result = await session.shell(
-				`${cmd} ${args.join(" ")}`,
-			);
+			const result = await session.shell(`${cmd} ${args.join(" ")}`);
 			return { stdout: result.output };
 		},
 	});

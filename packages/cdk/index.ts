@@ -52,3 +52,4 @@ export * from "./src/sqs";
 export * from "./src/stack";
 export type { StackFunction, StacksProps } from "./src/stack-function";
 export { stacks } from "./src/stack-function";
+export * from "./src/static-site";

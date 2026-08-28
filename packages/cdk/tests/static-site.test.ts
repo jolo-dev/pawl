@@ -4,7 +4,7 @@ import { Annotations, Match, Template } from "aws-cdk-lib/assertions";
 import { AwsSolutionsChecks } from "cdk-nag";
 import { UserPool } from "../src/cognito";
 import { Stack } from "../src/stack";
-import { StaticSite } from "../src/static-site";
+import { StaticSite, StaticSitePropsSchema } from "../src/static-site";
 import { createTestApp } from "./utils";
 
 describe("StaticSite", () => {
@@ -102,6 +102,26 @@ describe("StaticSite", () => {
 				}),
 			]),
 		);
+	});
+
+	test("accepts a CloudFront-compatible default root object path", () => {
+		expect(
+			StaticSitePropsSchema.parse({
+				indexDocument: "assets/~index!$&'()*+,;=:@-_.html",
+			}).indexDocument,
+		).toBe("assets/~index!$&'()*+,;=:@-_.html");
+	});
+
+	test("rejects an index document longer than CloudFront allows", () => {
+		expect(() =>
+			StaticSitePropsSchema.parse({ indexDocument: "a".repeat(256) }),
+		).toThrow();
+	});
+
+	test("rejects an index document containing a character CloudFront does not allow", () => {
+		expect(() =>
+			StaticSitePropsSchema.parse({ indexDocument: "index file.html" }),
+		).toThrow();
 	});
 
 	test("passes AwsSolutions checks with documented log bucket and default-certificate suppressions", () => {

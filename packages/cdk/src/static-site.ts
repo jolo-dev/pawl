@@ -46,6 +46,11 @@ export const StaticSitePropsSchema = z.object({
 	indexDocument: z
 		.string()
 		.min(1)
+		.max(255, "indexDocument must be at most 255 characters")
+		.regex(
+			/^[A-Za-z0-9._~!$&'()*+,;=:@/-]+$/,
+			"indexDocument contains characters CloudFront does not allow",
+		)
 		.regex(/^[^/].*$/, "indexDocument must not start with a slash")
 		.default("index.html"),
 	cognito: cognitoReferenceSchema.optional(),

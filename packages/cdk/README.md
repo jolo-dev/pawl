@@ -24,6 +24,7 @@ This should be the only CDK dependency in your project — no need to import `aw
 | `ApiDestination` | EventBridge API destination |
 | `Stack` | Base stack with tags and context |
 | `LocalStack` | Localstack integration for local development |
+| `StaticSite` | Private S3-backed SPA served through CloudFront OAC |
 
 ## Setup
 
@@ -66,6 +67,28 @@ defineStacks((app) => {
   });
 });
 ```
+
+### Static SPA hosting
+
+```typescript
+import { StaticSite } from "@pawl/cdk";
+
+const site = new StaticSite(stack, "Frontend", {
+  indexDocument: "index.html",
+  // Optional: expose an existing pool/client to frontend, runtime, or API code.
+  cognito: { userPool, userPoolClient },
+});
+```
+
+`StaticSite` keeps its versioned, S3-managed-encrypted asset bucket private and
+allows CloudFront access only through Origin Access Control (OAC). It redirects
+viewers to HTTPS and maps 403/404 responses to the SPA index document.
+
+> **Cognito is not CloudFront authentication.** Passing `cognito` only exposes
+> existing user-pool and app-client identifiers (and the pool provider URL) for
+> frontend, runtime, or API integration. The CloudFront distribution remains
+> publicly reachable until a separate viewer-authentication design is added
+> (for example, Lambda@Edge or an authorization service).
 
 ## Local Development
 

@@ -84,7 +84,9 @@ export async function runPawlInit(options: {
 	const tags = options.overrides?.tags ?? (await deps.promptExtraTags());
 	const localstackSecretPath =
 		options.overrides?.localstackSecretPath ??
-		(testMode === "localstack" ? await deps.promptLocalstackSecretPath() : undefined);
+		(testMode === "localstack"
+			? await deps.promptLocalstackSecretPath()
+			: undefined);
 	const installNow = await deps.promptInstallNow();
 
 	const config = validateScaffoldConfig({

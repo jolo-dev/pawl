@@ -172,9 +172,6 @@ function renderExtraTags(tags: Record<string, string>): string {
 	const entries = Object.entries(tags);
 	if (entries.length === 0) return "";
 	return (
-		"," +
-		entries
-			.map(([key, value]) => `\n\t\t"${key}": "${value}"`)
-			.join(",")
+		"," + entries.map(([key, value]) => `\n\t\t"${key}": "${value}"`).join(",")
 	);
 }

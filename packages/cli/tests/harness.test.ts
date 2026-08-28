@@ -28,9 +28,7 @@ describe("PawlHarness", () => {
 		const prompt = await harness.commands.plan("Use RDS");
 		expect(prompt).toContain("Use RDS");
 		expect(prompt).toContain("## Project Structure");
-		expect(prompt).toContain(
-			"The codebase scan is already provided below",
-		);
+		expect(prompt).toContain("The codebase scan is already provided below");
 		expect(prompt).toContain("Architecture diagram");
 		expect(prompt).toContain("Mermaid");
 	});

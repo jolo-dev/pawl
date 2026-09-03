@@ -80,6 +80,7 @@
         "@aws-sdk/client-cloudwatch-logs": "catalog:",
         "@aws-sdk/client-codebuild": "catalog:",
         "@aws-sdk/client-codecommit": "catalog:",
+        "@aws-sdk/client-codepipeline": "^3.1096.0",
         "@aws-sdk/client-dynamodb": "catalog:",
         "@aws-sdk/lib-dynamodb": "catalog:",
         "@aws/durable-execution-sdk-js": "catalog:",
@@ -91,7 +92,6 @@
       },
       "devDependencies": {
         "@aws-sdk/client-cloudformation": "^3.1096.0",
-        "@aws-sdk/client-codepipeline": "^3.1096.0",
         "@aws-sdk/client-eventbridge": "^3.1096.0",
         "@aws-sdk/client-iam": "^3.1096.0",
         "@aws/durable-execution-sdk-js-testing": "catalog:",

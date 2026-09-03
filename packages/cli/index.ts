@@ -1,34 +1,24 @@
-import { intro, log, outro, select, spinner, text } from "@clack/prompts";
-import { getModels } from "@earendil-works/pi-ai";
-import { parseKnownFiles } from "@smithy/shared-ini-file-loader";
-import {
-	checkBedrockAccess,
-	checkCredentials,
-	isSSOTokenValid,
-	listProfiles,
-	ssoLogin,
-} from "./src/aws-credentials";
-import {
-	printCodeCommitInitResult,
-	runCodeCommitInit,
-} from "./src/codecommit-init";
-import {
-	printCodePipelineInitResult,
-	runCodePipelineInit,
-} from "./src/codepipeline-init";
-import { startAgent } from "./src/infra-agent";
-import {
-	installScaffoldDependencies,
-	runPawlInit,
-	writeScaffoldProject,
-} from "./src/scaffold";
-import { parseInitArgs } from "./src/scaffold/cli";
+import { createAwsCodeCommitService } from "@pawl/codecommit";
+import { runCodeCommitRepositoriesCommand } from "./src/codecommit-repositories/entrypoint";
 
 const argv = process.argv.slice(2);
+
+if (argv[0] === "codecommit" && argv[1] === "repositories") {
+	const exitCode = await runCodeCommitRepositoriesCommand({
+		argv: argv.slice(2),
+		service: createAwsCodeCommitService(),
+		stderr: (message) => console.error(message),
+		stdout: (message) => console.log(message),
+	});
+	process.exit(exitCode);
+}
 
 // Dispatch codecommit subcommand before generic init
 if (argv[0] === "init" && argv[1] === "codecommit") {
 	try {
+		const { printCodeCommitInitResult, runCodeCommitInit } = await import(
+			"./src/codecommit-init"
+		);
 		const result = await runCodeCommitInit({
 			argv: argv.slice(2),
 			cwd: process.cwd(),
@@ -45,6 +35,9 @@ if (argv[0] === "init" && argv[1] === "codecommit") {
 // Dispatch codepipeline subcommand before generic init
 if (argv[0] === "init" && argv[1] === "codepipeline") {
 	try {
+		const { printCodePipelineInitResult, runCodePipelineInit } = await import(
+			"./src/codepipeline-init"
+		);
 		const result = await runCodePipelineInit({
 			argv: argv.slice(2),
 			cwd: process.cwd(),
@@ -59,6 +52,9 @@ if (argv[0] === "init" && argv[1] === "codepipeline") {
 }
 
 if (argv[0] === "init") {
+	const { installScaffoldDependencies, runPawlInit, writeScaffoldProject } =
+		await import("./src/scaffold");
+	const { parseInitArgs } = await import("./src/scaffold/cli");
 	const overrides = parseInitArgs(argv);
 	const config = await runPawlInit({
 		cwd: process.cwd(),
@@ -75,6 +71,20 @@ if (argv[0] === "init") {
 	);
 	process.exit(0);
 }
+
+const { intro, log, outro, select, spinner, text } = await import(
+	"@clack/prompts"
+);
+const { getModels } = await import("@earendil-works/pi-ai");
+const { parseKnownFiles } = await import("@smithy/shared-ini-file-loader");
+const {
+	checkBedrockAccess,
+	checkCredentials,
+	isSSOTokenValid,
+	listProfiles,
+	ssoLogin,
+} = await import("./src/aws-credentials");
+const { startAgent } = await import("./src/infra-agent");
 
 intro(
 	"🐾 pawl — your AI agent for deploying, reviewing & optimizing cloud infrastructure",

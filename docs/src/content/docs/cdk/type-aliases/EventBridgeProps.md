@@ -5,11 +5,11 @@ prev: false
 title: "EventBridgeProps"
 ---
 
-> **EventBridgeProps**: `object` & `Omit`\<`EventBusProps`, `"eventBusName"` \| `"deadLetterQueue"`\> & `BasicConstructProps`
+> **EventBridgeProps** = `object` & `Omit`\<`EventBusProps`, `"eventBusName"` \| `"deadLetterQueue"`\> & `BasicConstructProps`
 
-Defined in: packages/cdk/src/eventbridge.ts:26
+Defined in: [packages/cdk/src/eventbridge.ts:36](https://github.com/jolo-dev/pawl/blob/f40688429e7e2c3160e40f482375bd699be30970/packages/cdk/src/eventbridge.ts#L36)
 
-## Type declaration
+## Type Declaration
 
 ### eventBusName
 
@@ -17,7 +17,7 @@ Defined in: packages/cdk/src/eventbridge.ts:26
 
 ### secrets?
 
-> `optional` **secrets**: [`EventTarget`](/cdk/interfaces/eventtarget/) *extends* [`ApiDestination`](/cdk/classes/apidestination/) ? [`SecretValue`](/cdk/classes/secretvalue/) : `undefined`
+> `optional` **secrets?**: [`EventTarget`](/cdk/interfaces/eventtarget/) *extends* [`ApiDestination`](/cdk/classes/apidestination/) ? [`SecretValue`](/cdk/classes/secretvalue/) : `undefined`
 
 ### targets
 

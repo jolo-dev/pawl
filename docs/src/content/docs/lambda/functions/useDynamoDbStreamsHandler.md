@@ -5,12 +5,9 @@ prev: false
 title: "useDynamoDbStreamsHandler"
 ---
 
-> **useDynamoDbStreamsHandler**(`serviceName`, `handleRequest`): `HandlerWithHooks`\<`DynamoDBStreamHandler`, `DynamoDBStreamEvent`, `DynamoDBBatchResponse`\>
+> **useDynamoDbStreamsHandler**(`serviceName`, `handleRequest`): `HandlerWithHooks`\<`DynamoDBStreamHandler`, `DynamoDBStreamEvent`, `DynamoDBStreamResult`\>
 
-Defined in: dynamodb-streams-handler.ts:17
-
-The function `useDynamoDbStreamsHandler` creates a handler for processing DynamoDB stream events
-with a specified service name and request handling function.
+Defined in: [dynamodb-streams-handler.ts:19](https://github.com/jolo-dev/pawl/blob/f40688429e7e2c3160e40f482375bd699be30970/packages/lambda/src/dynamodb-streams-handler.ts#L19)
 
 ## Parameters
 
@@ -18,20 +15,10 @@ with a specified service name and request handling function.
 
 `string`
 
-The `serviceName` parameter is a string that represents the name of
-the service or function that will be handling the DynamoDB stream events.
-
 ### handleRequest
 
-(`event`, `logger`) => `Promise`\<`void`\> \| `Promise`\<`DynamoDBBatchResponse`\>
-
-The `handleRequest` parameter is a function that takes two arguments:
+(`event`, `logger`) => `Promise`\<`DynamoDBStreamResult`\>
 
 ## Returns
 
-`HandlerWithHooks`\<`DynamoDBStreamHandler`, `DynamoDBStreamEvent`, `DynamoDBBatchResponse`\>
-
-The `useDynamoDbStreamsHandler` function is returning a handler function with hooks for
-processing DynamoDB stream events. It takes in a `serviceName` as a string and a `handleRequest`
-function that handles the DynamoDB stream event and logger. The `handleRequest` function returns a
-promise that resolves to `void` or `DynamoDBBatchResponse`.
+`HandlerWithHooks`\<`DynamoDBStreamHandler`, `DynamoDBStreamEvent`, `DynamoDBStreamResult`\>

@@ -1,0 +1,40 @@
+---
+editUrl: false
+next: false
+prev: false
+title: "ReviewCoordinationDeploymentPhase"
+---
+
+> **ReviewCoordinationDeploymentPhase** = `"prepareGsi1"` \| `"prepareGsi2"` \| `"active"`
+
+Defined in: [packages/cdk/src/review-coordination-deployment.ts:40](https://github.com/jolo-dev/pawl/blob/f40688429e7e2c3160e40f482375bd699be30970/packages/cdk/src/review-coordination-deployment.ts#L40)
+
+Migration-safe deployment phases for adding CodePipeline review
+coordination to an existing DynamoDB state table.
+
+## Phased migration (existing tables with data)
+
+Deploy phases in strict order. **Wait until the previous index reports
+`ACTIVE`** before deploying the next phase. DynamoDB index backfill can
+take minutes to hours depending on table size.
+
+  1. `prepareGsi1`  — creates GSI1 on the state table
+     → Wait until GSI1 is ACTIVE before deploying prepareGsi2.
+  2. `prepareGsi2`  — creates GSI2 on the state table
+     → Wait until GSI2 is ACTIVE before deploying active.
+  3. `active`       — activates the bridge, reconciler, and pipeline
+                       variables that drive in-pipeline AI review
+
+## Fresh stacks (no existing table)
+
+When deploying against a new stack with no existing data, the phased
+migration is unnecessary. **Deploy `active` directly** — all indexes
+are created in a single CloudFormation operation with no backfill risk.
+
+## Background
+
+The nested prep flow (`prepareGsi1` → `prepareGsi2`) provisions indexes
+without creating any runtime resources. This lets CloudFormation
+complete potentially long index-backfill operations before the active
+phase deploys the bridge Lambda and pipeline actions that depend on
+those indexes.

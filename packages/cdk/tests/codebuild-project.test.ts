@@ -63,10 +63,6 @@ function suppressLambdaFixtureFindings(lambdaFunction: LambdaFunction): void {
 					"The isolated reviewer fixture uses the Lambda L2 logging policy.",
 			},
 			{
-				id: "AwsSolutions-L1",
-				reason: "Pawl pins its supported Node.js 22 runtime.",
-			},
-			{
 				id: "AwsSolutions-Lambda1",
 				reason: "The isolated reviewer fixture does not require VPC access.",
 			},

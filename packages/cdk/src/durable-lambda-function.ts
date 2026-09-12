@@ -24,7 +24,25 @@ export type DurableLambdaFunctionProps = Omit<LambdaProps, "durableConfig"> &
 	z.input<typeof DurableLambdaConfigSchema>;
 
 /**
- * A Pawl Lambda function configured for AWS Lambda durable executions.
+ * A Pawl Node.js 24 ARM64 Lambda function configured for AWS Lambda durable executions.
+ * Inherits ESM bundling and the pinned runtime from LambdaFunction.
+ *
+ * Always configures the inherited Lambda with validated durable timeout and
+ * retention settings, publishes its current version, and creates a durable alias.
+ * Undirected edges show version and alias configuration. AWS-managed durable
+ * state is not separately provisioned storage. Opt-in grant helpers confer distinct
+ * API permissions on supplied roles; the callback helper creates an attached IAM
+ * policy. Shared stack monitoring is inherited, not an owned facility.
+ *
+ * ```mermaid
+ * architecture-beta
+ *   group functionGroup(logos:aws-lambda)[Durable Lambda function]
+ *   service lambda(logos:aws-lambda)[Durable Node 24 Lambda] in functionGroup
+ *   service version(logos:aws-lambda)[Published function version] in functionGroup
+ *   service alias(logos:aws-lambda)[Durable alias] in functionGroup
+ *   lambda:R -- L:version
+ *   version:R -- L:alias
+ * ```
  */
 export class DurableLambdaFunction extends LambdaFunction {
 	readonly alias: Alias;

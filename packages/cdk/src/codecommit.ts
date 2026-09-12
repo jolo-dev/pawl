@@ -187,65 +187,6 @@ export interface CodeCommitProps {
 	readonly autoReview?: AutoReviewConfig;
 }
 
-/**
- * High-level CodeCommit repository construct with optional review automation.
- *
- * Supports two modes:
- *
- * **Create mode** (`create` prop supplied): Creates a new
- * `AWS::CodeCommit::Repository` resource. When `create.sourcePath` is set,
- * the source directory is analyzed, packaged into a deterministic ZIP asset,
- * and used to seed the repository's initial branch. Created repositories use
- * `RemovalPolicy.RETAIN_ON_UPDATE_OR_DELETE` so failed creation rolls back
- * while established repositories survive stack deletion.
- *
- * **Import mode** (`create` omitted): Imports an existing repository by name
- * without emitting a repository resource.
- *
- * Review automation:
- * - `router` — creates `CodeCommitReviewEvents` for the same repository.
- * - `autoReview` — deploys the full durable auto-reviewer (reviewer Lambda,
- *   router, state table, CodeBuild, Bedrock IAM) and wires event routing.
- * - Neither — repository-only mode with no EventBridge, Lambda, CodeBuild,
- *   DynamoDB, or Bedrock resources.
- * - `router` and `autoReview` are mutually exclusive.
- *
- * **Pre-1.0 API change:** `events` changed from required to optional in v0.1.0.
- * Consumers migrating from v0.0.x must narrow before use:
- * ```ts
- * if (codeCommit.events === undefined) {
- *   throw new Error("Expected review event resources");
- * }
- * ```
- *
- * @example Create and seed a repository:
- * ```ts
- * new CodeCommit(this, "Repo", {
- *   repositoryName: "my-repo",
- *   create: {
- *     sourcePath: path.resolve(__dirname, ".."),
- *     branchName: "main",
- *     forceIncludePath: "infra",
- *   },
- * });
- * ```
- *
- * @example Create with auto-review:
- * ```ts
- * new CodeCommit(this, "Repo", {
- *   repositoryName: "my-repo",
- *   autoReview: { modelId: "eu.anthropic.claude-sonnet-4-6" },
- * });
- * ```
- *
- * @example Import an existing repository with custom router:
- * ```ts
- * new CodeCommit(this, "Repo", {
- *   repositoryName: "existing-repo",
- *   router: myRouterLambda,
- * });
- * ```
- */
 class ExistingSourceAssetCode extends Code {
 	constructor(
 		private readonly archivePath: string,
@@ -283,6 +224,88 @@ class ExistingSourceAssetCode extends Code {
 	}
 }
 
+/**
+ * High-level CodeCommit repository construct with optional review automation.
+ *
+ * Supports two modes:
+ *
+ * **Create mode** (`create` prop supplied): Creates a new
+ * `AWS::CodeCommit::Repository` resource. When `create.sourcePath` is set,
+ * the source directory is analyzed, packaged into a deterministic ZIP asset,
+ * and used to seed the repository's initial branch. Created repositories use
+ * `RemovalPolicy.RETAIN_ON_UPDATE_OR_DELETE` so failed creation rolls back
+ * while established repositories survive stack deletion.
+ *
+ * **Import mode** (`create` omitted): Imports an existing repository by name
+ * without emitting a repository resource.
+ *
+ * Review automation:
+ * - `router` — creates `CodeCommitReviewEvents` for the same repository.
+ * - `autoReview` — deploys the full durable auto-reviewer (reviewer Lambda,
+ *   router, state table, CodeBuild, Bedrock IAM) and wires event routing.
+ * - Neither — repository-only mode with no EventBridge, Lambda, CodeBuild,
+ *   DynamoDB, or Bedrock resources.
+ * - `router` and `autoReview` are mutually exclusive.
+ *
+ * **Pre-1.0 API change:** `events` changed from required to optional in v0.1.0.
+ * Consumers migrating from v0.0.x must narrow before use:
+ * ```ts
+ * if (codeCommit.events === undefined) {
+ *   throw new Error("Expected review event resources");
+ * }
+ * ```
+ *
+ * The diagram summarizes composition provisioned in the supplied scope, not only
+ * literal CDK children. All depicted components are conditional: import-only mode
+ * with neither review option retains an imported repository reference and creates
+ * no resources. Source seeding creates an initial ZIP asset only with
+ * create.sourcePath, not a bootstrap bucket or ongoing synchronization.
+ * Router mode creates rules, target bindings, and a DLQ for the supplied router;
+ * autoReview instead creates the reviewer composition including its own event
+ * resources. These optional modes are mutually exclusive. Undirected edges show
+ * repository configuration when the repository is created; review modes also
+ * work with imported repositories, which are omitted.
+ *
+ * ```mermaid
+ * architecture-beta
+ *   group composition(logos:aws-codecommit)[All components conditional]
+ *   service repo(logos:aws-codecommit)[Repository in create mode] in composition
+ *   service seed(disk)[Seed with sourcePath] in composition
+ *   service events(logos:aws-eventbridge)[Router mode rules and DLQ] in composition
+ *   service reviewer(cloud)[AutoReview resources] in composition
+ *   seed:R --> L:repo
+ *   repo:R -- L:events
+ *   repo:T -- L:reviewer
+ * ```
+ *
+ * @example Create and seed a repository:
+ * ```ts
+ * new CodeCommit(this, "Repo", {
+ *   repositoryName: "my-repo",
+ *   create: {
+ *     sourcePath: path.resolve(__dirname, ".."),
+ *     branchName: "main",
+ *     forceIncludePath: "infra",
+ *   },
+ * });
+ * ```
+ *
+ * @example Create with auto-review:
+ * ```ts
+ * new CodeCommit(this, "Repo", {
+ *   repositoryName: "my-repo",
+ *   autoReview: { modelId: "eu.anthropic.claude-sonnet-4-6" },
+ * });
+ * ```
+ *
+ * @example Import an existing repository with custom router:
+ * ```ts
+ * new CodeCommit(this, "Repo", {
+ *   repositoryName: "existing-repo",
+ *   router: myRouterLambda,
+ * });
+ * ```
+ */
 export class CodeCommit {
 	/** The created or imported CodeCommit repository. */
 	readonly repository: IRepository;

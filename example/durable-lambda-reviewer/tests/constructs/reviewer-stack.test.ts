@@ -107,7 +107,11 @@ describe("DurableLambdaReviewerStack", () => {
   test("synthesizes exactly one state table, one router Lambda, two EventBridge rules, and the DLQ wiring", () => {
     const { template } = createStack();
     expect(resourcesOf(template, "AWS::DynamoDB::GlobalTable")).toHaveLength(1);
-    expect(resourcesOf(template, "AWS::Lambda::Function")).toHaveLength(2);
+    // Reviewer and router, plus CDK's S3 auto-delete custom-resource provider.
+    expect(resourcesOf(template, "AWS::Lambda::Function")).toHaveLength(3);
+    expect(findFunction(template, "jolo-dev-ReviewerReviewer-lambda")).toBeDefined();
+    expect(findFunction(template, "jolo-dev-ReviewerRouter-lambda")).toBeDefined();
+    expect(resourcesOf(template, "Custom::S3AutoDeleteObjects")).toHaveLength(1);
     expect(resourcesOf(template, "AWS::Lambda::Alias")).toHaveLength(1);
     expect(resourcesOf(template, "AWS::Lambda::Version")).toHaveLength(1);
     expect(resourcesOf(template, "AWS::Events::Rule")).toHaveLength(2);
@@ -232,19 +236,13 @@ describe("DurableLambdaReviewerStack", () => {
     expect(bedrockStmts).toHaveLength(1);
     const actions = new Set(bedrockStmts.flatMap(actionsOf));
     expect(actions.has("bedrock:InvokeModel")).toBe(true);
-    // The resource covers both the foundation-model and inference-profile ARN
-    // forms (the configured model may be either).
+    // A direct model ID needs exactly its regional foundation-model ARN,
+    // not an inference profile or wildcard access to other Anthropic models.
     const resources = bedrockStmts[0]?.Resource;
     const resourceList = Array.isArray(resources) ? resources : [resources];
-    const resourceStrings = resourceList.map(stringify);
-    expect(resourceStrings).toContain(
-      "arn:aws:bedrock:${AWS::Region}:${AWS::AccountId}:inference-profile/anthropic.claude-opus-4-8",
-    );
-    expect(resourceStrings).toContain("arn:aws:bedrock:*::foundation-model/anthropic.*");
-    // No blanket wildcard bedrock access (the foundation-model resource is
-    // region-wildcarded for cross-region inference profiles, but scoped to the
-    // configured model id — not "*").
-    for (const r of resourceStrings) expect(r).not.toBe("*");
+    expect(resourceList.map(stringify)).toEqual([
+      "arn:aws:bedrock:${AWS::Region}::foundation-model/anthropic.claude-opus-4-8",
+    ]);
   });
 
   test("reviewer role has codecommit comment actions scoped to the repository", () => {
@@ -413,9 +411,8 @@ describe("DurableLambdaReviewerStack", () => {
     );
     expect(inlinePolicyExists).toBe(false);
 
-    // Lambda-construct fixture findings (AWS-managed basic execution policy,
-    // Node 22 runtime) are test-environment noise Pawl suppresses at the test
-    // layer; mirror that convention for both the router and reviewer Lambdas.
+    // Keep only the fixture's AWS-managed logging-policy exception.
+    // Node.js 24 needs no latest-runtime suppression.
     const router = stack.node.findChild("ReviewerRouter") as unknown as LambdaFunction;
     const reviewer = stack.node.findChild("ReviewerReviewer") as unknown as LambdaFunction;
     for (const fn of [router, reviewer]) {
@@ -426,10 +423,6 @@ describe("DurableLambdaReviewerStack", () => {
             id: "AwsSolutions-IAM4",
             reason:
               "This Lambda uses the AWS-managed basic execution policy for CloudWatch logging.",
-          },
-          {
-            id: "AwsSolutions-L1",
-            reason: "Pawl pins its supported Node.js 22 runtime.",
           },
         ],
         true,
@@ -490,8 +483,10 @@ describe("DurableLambdaReviewerStack", () => {
     expect(projects).toHaveLength(2);
     // Four EventBridge rules (pull-request + comment per repo).
     expect(resourcesOf(template, "AWS::Events::Rule")).toHaveLength(4);
-    // Still exactly one shared reviewer, router, and table.
-    expect(resourcesOf(template, "AWS::Lambda::Function")).toHaveLength(2);
+    // Reviewer, router, and one shared CDK auto-delete provider across both repos.
+    expect(resourcesOf(template, "AWS::Lambda::Function")).toHaveLength(3);
+    expect(findFunction(template, "jolo-dev-ReviewerRouter-lambda")).toBeDefined();
+    expect(resourcesOf(template, "Custom::S3AutoDeleteObjects")).toHaveLength(2);
     expect(resourcesOf(template, "AWS::DynamoDB::GlobalTable")).toHaveLength(1);
 
     // Reviewer env carries a per-repo project var for each repo + the list.

@@ -5,7 +5,7 @@ prev: false
 title: "AttributeType"
 ---
 
-Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/shared.d.ts:88
+Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/shared.d.ts:109
 
 Data types for attributes within a table
 
@@ -19,7 +19,7 @@ https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/HowItWorks.Nami
 
 > **BINARY**: `"B"`
 
-Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/shared.d.ts:92
+Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/shared.d.ts:113
 
 Up to 400KiB of binary data (which must be encoded as base64 before sending to DynamoDB)
 
@@ -29,7 +29,7 @@ Up to 400KiB of binary data (which must be encoded as base64 before sending to D
 
 > **NUMBER**: `"N"`
 
-Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/shared.d.ts:96
+Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/shared.d.ts:117
 
 Numeric values made of up to 38 digits (positive, negative or zero)
 
@@ -39,6 +39,6 @@ Numeric values made of up to 38 digits (positive, negative or zero)
 
 > **STRING**: `"S"`
 
-Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/shared.d.ts:100
+Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/shared.d.ts:121
 
 Up to 400KiB of UTF-8 encoded text

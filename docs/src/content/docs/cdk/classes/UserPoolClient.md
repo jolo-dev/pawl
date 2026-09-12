@@ -5,7 +5,7 @@ prev: false
 title: "UserPoolClient"
 ---
 
-Defined in: node\_modules/aws-cdk-lib/aws-cognito/lib/user-pool-client.d.ts:316
+Defined in: node\_modules/aws-cdk-lib/aws-cognito/lib/user-pool-client.d.ts:367
 
 Define a UserPool App Client
 
@@ -19,17 +19,17 @@ Define a UserPool App Client
 
 ## Constructors
 
-### new UserPoolClient()
+### Constructor
 
-> **new UserPoolClient**(`scope`, `id`, `props`): [`UserPoolClient`](/cdk/classes/userpoolclient/)
+> **new UserPoolClient**(`scope`, `id`, `props`): `UserPoolClient`
 
-Defined in: node\_modules/aws-cdk-lib/aws-cognito/lib/user-pool-client.d.ts:330
+Defined in: node\_modules/aws-cdk-lib/aws-cognito/lib/user-pool-client.d.ts:386
 
 #### Parameters
 
 ##### scope
 
-[`Construct`](/cdk/classes/construct/)
+[`Construct`](/cdk/interfaces/construct/)
 
 ##### id
 
@@ -41,7 +41,7 @@ Defined in: node\_modules/aws-cdk-lib/aws-cognito/lib/user-pool-client.d.ts:330
 
 #### Returns
 
-[`UserPoolClient`](/cdk/classes/userpoolclient/)
+`UserPoolClient`
 
 #### Overrides
 
@@ -49,35 +49,11 @@ Defined in: node\_modules/aws-cdk-lib/aws-cognito/lib/user-pool-client.d.ts:330
 
 ## Properties
 
-### env
-
-> `readonly` **env**: `ResourceEnvironment`
-
-Defined in: node\_modules/aws-cdk-lib/core/lib/resource.d.ts:111
-
-The environment this resource belongs to.
-For resources that are created and managed by the CDK
-(generally, those created by creating new class instances like Role, Bucket, etc.),
-this is always the same as the environment of the stack they belong to;
-however, for imported resources
-(those obtained from static methods like fromRoleArn, fromBucketName, etc.),
-that might be different than the stack they were imported into.
-
-#### Implementation of
-
-`IUserPoolClient.env`
-
-#### Inherited from
-
-`Resource.env`
-
-***
-
 ### node
 
 > `readonly` **node**: `Node`
 
-Defined in: node\_modules/constructs/lib/construct.d.ts:266
+Defined in: node\_modules/constructs/lib/construct.d.ts:289
 
 The tree node.
 
@@ -95,19 +71,83 @@ The tree node.
 
 > `readonly` **oAuthFlows**: `OAuthFlows`
 
-Defined in: node\_modules/aws-cdk-lib/aws-cognito/lib/user-pool-client.d.ts:328
+Defined in: node\_modules/aws-cdk-lib/aws-cognito/lib/user-pool-client.d.ts:383
 
 The OAuth flows enabled for this client.
 
 ***
 
+### userPoolClientId
+
+> `readonly` **userPoolClientId**: `string`
+
+Defined in: node\_modules/aws-cdk-lib/aws-cognito/lib/user-pool-client.d.ts:376
+
+Name of the application client
+
+#### Attribute
+
+#### Implementation of
+
+`IUserPoolClient.userPoolClientId`
+
+***
+
+### PROPERTY\_INJECTION\_ID
+
+> `readonly` `static` **PROPERTY\_INJECTION\_ID**: `string`
+
+Defined in: node\_modules/aws-cdk-lib/aws-cognito/lib/user-pool-client.d.ts:371
+
+Uniquely identifies this class.
+
+## Accessors
+
+### env
+
+#### Get Signature
+
+> **get** **env**(): `ResourceEnvironment`
+
+Defined in: node\_modules/aws-cdk-lib/core/lib/resource.d.ts:94
+
+The environment this resource belongs to.
+
+For resources that are created and managed in a Stack (those created by
+creating new class instances like `new Role()`, `new Bucket()`, etc.), this
+is always the same as the environment of the stack they belong to.
+
+For referenced resources (those obtained from referencing methods like
+`Role.fromRoleArn()`, `Bucket.fromBucketName()`, etc.), they might be
+different than the stack they were imported into.
+
+##### Returns
+
+`ResourceEnvironment`
+
+#### Implementation of
+
+`IUserPoolClient.env`
+
+#### Inherited from
+
+`Resource.env`
+
+***
+
 ### stack
 
-> `readonly` **stack**: `Stack`
+#### Get Signature
 
-Defined in: node\_modules/aws-cdk-lib/core/lib/resource.d.ts:110
+> **get** **stack**(): `Stack`
+
+Defined in: node\_modules/aws-cdk-lib/core/lib/resource.d.ts:93
 
 The stack in which this resource is defined.
+
+##### Returns
+
+`Stack`
 
 #### Implementation of
 
@@ -119,29 +159,13 @@ The stack in which this resource is defined.
 
 ***
 
-### userPoolClientId
-
-> `readonly` **userPoolClientId**: `string`
-
-Defined in: node\_modules/aws-cdk-lib/aws-cognito/lib/user-pool-client.d.ts:321
-
-Name of the application client
-
-#### Attribute
-
-#### Implementation of
-
-`IUserPoolClient.userPoolClientId`
-
-## Accessors
-
 ### userPoolClientName
 
 #### Get Signature
 
 > **get** **userPoolClientName**(): `string`
 
-Defined in: node\_modules/aws-cdk-lib/aws-cognito/lib/user-pool-client.d.ts:335
+Defined in: node\_modules/aws-cdk-lib/aws-cognito/lib/user-pool-client.d.ts:391
 
 The client name that was specified via the `userPoolClientName` property during initialization,
 throws an error otherwise.
@@ -152,13 +176,33 @@ throws an error otherwise.
 
 ***
 
+### userPoolClientRef
+
+#### Get Signature
+
+> **get** **userPoolClientRef**(): `UserPoolClientReference`
+
+Defined in: node\_modules/aws-cdk-lib/aws-cognito/lib/user-pool-client.d.ts:385
+
+A reference to a UserPoolClient resource.
+
+##### Returns
+
+`UserPoolClientReference`
+
+#### Implementation of
+
+`IUserPoolClient.userPoolClientRef`
+
+***
+
 ### userPoolClientSecret
 
 #### Get Signature
 
 > **get** **userPoolClientSecret**(): [`SecretValue`](/cdk/classes/secretvalue/)
 
-Defined in: node\_modules/aws-cdk-lib/aws-cognito/lib/user-pool-client.d.ts:336
+Defined in: node\_modules/aws-cdk-lib/aws-cognito/lib/user-pool-client.d.ts:392
 
 The generated client secret. Only available if the "generateSecret" props is set to true
 
@@ -174,11 +218,43 @@ The generated client secret. Only available if the "generateSecret" props is set
 
 ## Methods
 
+### applyCrossStackReferenceStrength()
+
+> **applyCrossStackReferenceStrength**(`strength`): `void`
+
+Defined in: node\_modules/aws-cdk-lib/core/lib/resource.d.ts:139
+
+Override the cross-stack reference strength for this resource.
+
+When set, any cross-stack reference to this resource will use the specified
+mechanism instead of the global default determined by the
+`@aws-cdk/core:defaultCrossStackReferences` context key. This is useful for
+selectively weakening specific references to avoid the "deadly embrace" problem
+without changing the app-wide default.
+
+#### Parameters
+
+##### strength
+
+`ReferenceStrength`
+
+The reference strength to use for this resource.
+
+#### Returns
+
+`void`
+
+#### Inherited from
+
+`Resource.applyCrossStackReferenceStrength`
+
+***
+
 ### applyRemovalPolicy()
 
 > **applyRemovalPolicy**(`policy`): `void`
 
-Defined in: node\_modules/aws-cdk-lib/core/lib/resource.d.ts:147
+Defined in: node\_modules/aws-cdk-lib/core/lib/resource.d.ts:127
 
 Apply the given removal policy to this resource
 
@@ -214,7 +290,7 @@ account for data recovery and cleanup later (`RemovalPolicy.RETAIN`).
 
 > **toString**(): `string`
 
-Defined in: node\_modules/constructs/lib/construct.d.ts:279
+Defined in: node\_modules/constructs/lib/construct.d.ts:314
 
 Returns a string representation of this construct.
 
@@ -228,11 +304,48 @@ Returns a string representation of this construct.
 
 ***
 
+### with()
+
+> **with**(...`mixins`): `IConstruct`
+
+Defined in: node\_modules/aws-cdk-lib/core/lib/resource.d.ts:95
+
+Applies one or more mixins to this construct.
+
+Mixins are applied in order. The list of constructs is captured at the
+start of the call, so constructs added by a mixin will not be visited.
+Use multiple `with()` calls if subsequent mixins should apply to added
+constructs.
+
+#### Parameters
+
+##### mixins
+
+...`IMixin`[]
+
+The mixins to apply
+
+#### Returns
+
+`IConstruct`
+
+This construct for chaining
+
+#### Implementation of
+
+`IUserPoolClient.with`
+
+#### Inherited from
+
+`Resource.with`
+
+***
+
 ### fromUserPoolClientId()
 
 > `static` **fromUserPoolClientId**(`scope`, `id`, `userPoolClientId`): `IUserPoolClient`
 
-Defined in: node\_modules/aws-cdk-lib/aws-cognito/lib/user-pool-client.d.ts:320
+Defined in: node\_modules/aws-cdk-lib/aws-cognito/lib/user-pool-client.d.ts:375
 
 Import a user pool client given its id.
 
@@ -240,7 +353,7 @@ Import a user pool client given its id.
 
 ##### scope
 
-[`Construct`](/cdk/classes/construct/)
+[`Construct`](/cdk/interfaces/construct/)
 
 ##### id
 
@@ -260,7 +373,7 @@ Import a user pool client given its id.
 
 > `static` **isConstruct**(`x`): `x is Construct`
 
-Defined in: node\_modules/constructs/lib/construct.d.ts:262
+Defined in: node\_modules/constructs/lib/construct.d.ts:285
 
 Checks if `x` is a construct.
 
@@ -302,7 +415,7 @@ true if `x` is an object created from a class which extends `Construct`.
 
 > `static` **isOwnedResource**(`construct`): `boolean`
 
-Defined in: node\_modules/aws-cdk-lib/core/lib/resource.d.ts:109
+Defined in: node\_modules/aws-cdk-lib/core/lib/resource.d.ts:80
 
 Returns true if the construct was created by CDK, and false otherwise
 
@@ -326,7 +439,7 @@ Returns true if the construct was created by CDK, and false otherwise
 
 > `static` **isResource**(`construct`): `construct is Resource`
 
-Defined in: node\_modules/aws-cdk-lib/core/lib/resource.d.ts:105
+Defined in: node\_modules/aws-cdk-lib/core/lib/resource.d.ts:76
 
 Check whether the given construct is a Resource
 

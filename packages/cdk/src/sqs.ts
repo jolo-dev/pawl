@@ -20,10 +20,21 @@ export type SqsProps = {
 	BasicConstructProps;
 
 /**
+ * Creates a main queue, a retry-exhausted DLQ, and a batch-size-10 event-source
+ * mapping on the supplied consumer Lambda. The configured retry count controls
+ * redrive; FIFO is optional and the DLQ retains messages for one day. The binding
+ * includes consume-message permissions, not a new consumer function. Producers
+ * and the supplied consumer are omitted. The constructor does not register
+ * monitoring automatically.
+ *
  * ```mermaid
  * architecture-beta
- *  service sqs(logos:aws-sqs)[AWS SQS]
- *  service dlq(logos:aws-sqs)[AWS DLQ]
+ *   group queues(logos:aws-sqs)[Queue and consumer binding]
+ *   service queue(logos:aws-sqs)[Main queue] in queues
+ *   service dlq(logos:aws-sqs)[Retry exhausted DLQ] in queues
+ *   service mapping(logos:aws-lambda)[Event source mapping batch 10] in queues
+ *   queue:R --> L:mapping
+ *   queue:L --> R:dlq
  * ```
  */
 export class Sqs extends BasicConstruct {

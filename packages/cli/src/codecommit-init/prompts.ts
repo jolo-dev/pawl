@@ -226,17 +226,15 @@ export async function promptRegion(defaultRegion?: string): Promise<string> {
 }
 
 async function listAwsProfiles(): Promise<string[]> {
-	const { parseKnownFiles } = await import("@smithy/shared-ini-file-loader");
-	const profiles = await parseKnownFiles({});
-	return Object.keys(profiles);
+	const { listProfiles } = await import("../aws-credentials");
+	return listProfiles();
 }
 
 async function getProfileRegionDefault(
 	profile: string,
 ): Promise<string | undefined> {
-	const { parseKnownFiles } = await import("@smithy/shared-ini-file-loader");
-	const profiles = await parseKnownFiles({});
-	return profiles[profile]?.region;
+	const { getProfileRegion } = await import("../aws-credentials");
+	return getProfileRegion(profile);
 }
 
 /**

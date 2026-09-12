@@ -72,6 +72,27 @@ export type StaticSiteProps = z.input<typeof StaticSitePropsSchema> &
  * or API integration. It does not make CloudFront viewer requests authenticated;
  * CloudFront remains publicly reachable unless a separate viewer-authentication
  * solution is added.
+ *
+ * Creates private versioned site storage, a retained access-log bucket, CloudFront
+ * with an OAC origin and SPA fallback, and a security response headers policy.
+ * The undirected policy edge shows response configuration. Both CloudFront and
+ * the site bucket send access logs to the log bucket. No asset upload is provisioned.
+ * Optional Cognito references retain and expose identifiers only, not identity
+ * resources or viewer authentication.
+ *
+ * ```mermaid
+ * architecture-beta
+ *   group siteGroup(logos:aws-cloudfront)[Static site]
+ *   service headers(logos:aws-cloudfront)[Security headers policy] in siteGroup
+ *   service cdn(logos:aws-cloudfront)[CloudFront with OAC] in siteGroup
+ *   service site(logos:aws-s3)[Private versioned site bucket] in siteGroup
+ *   service logs(logos:aws-s3)[Retained access log bucket] in siteGroup
+ *   headers:R -- L:cdn
+ *   cdn:R --> L:site
+ *   cdn:T --> L:logs
+ *   site:T --> R:logs
+ *   align row headers cdn site
+ * ```
  */
 export class StaticSite extends BasicConstruct {
 	readonly bucket: Bucket;

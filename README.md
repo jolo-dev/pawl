@@ -81,6 +81,12 @@ Full local testing with [MiniStack](https://www.ministack.org/) (free, open-sour
 - Hot-reload Lambda functions via CDK hotswap
 - Integration tests with Testcontainers
 
+## Lambda runtime
+
+Pawl's `LambdaFunction` and `DurableLambdaFunction` deploy **Node.js 24.x on ARM64** and bundle TypeScript as ESM targeting Node 24. API handlers, event consumers, pipeline/reviewer functions, local stacks, and scaffolded projects inherit this default. CDK-generated Lambda helpers are also verified on Node.js 24.
+
+Re-synthesize and deploy existing stacks to apply the runtime change. Rebuild any native dependencies for Node.js 24 and ARM64. AgentCore is a separate service and continues to use its Node 22 runtime.
+
 ## Architecture
 
 ```mermaid
@@ -117,7 +123,7 @@ graph LR
 
 - [Bun](https://bun.sh/) (latest)
 - [Docker](https://www.docker.com/) (for local testing with MiniStack)
-- Node.js 22+
+- Node.js 22+ for development tooling (deployed Lambda functions use Node.js 24)
 
 ### Installation
 

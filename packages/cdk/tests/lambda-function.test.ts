@@ -26,7 +26,7 @@ describe("LambdaTestStack", () => {
 		const template = Template.fromStack(stack);
 		template.hasResourceProperties("AWS::Lambda::Function", {
 			Handler: "index.handler",
-			Runtime: "nodejs22.x",
+			Runtime: "nodejs24.x",
 			FunctionName: "foo-bar-TestLambdaFunction-lambda",
 			// Order is important
 			Tags: [

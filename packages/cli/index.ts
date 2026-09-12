@@ -1,6 +1,6 @@
 import { intro, log, outro, select, spinner, text } from "@clack/prompts";
 import { getModels } from "@earendil-works/pi-ai";
-import { parseKnownFiles } from "@smithy/shared-ini-file-loader";
+import { parseKnownFiles } from "@smithy/core/config";
 import {
 	checkBedrockAccess,
 	checkCredentials,

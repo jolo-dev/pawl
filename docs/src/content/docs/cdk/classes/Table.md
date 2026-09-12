@@ -5,7 +5,7 @@ prev: false
 title: "Table"
 ---
 
-Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2.d.ts:327
+Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2.d.ts:506
 
 A DynamoDB Table.
 
@@ -15,17 +15,17 @@ A DynamoDB Table.
 
 ## Constructors
 
-### new Table()
+### Constructor
 
-> **new Table**(`scope`, `id`, `props`): [`Table`](/cdk/classes/table/)
+> **new Table**(`scope`, `id`, `props`): `TableV2`
 
-Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2.d.ts:395
+Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2.d.ts:576
 
 #### Parameters
 
 ##### scope
 
-[`Construct`](/cdk/classes/construct/)
+[`Construct`](/cdk/interfaces/construct/)
 
 ##### id
 
@@ -37,7 +37,7 @@ Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2.d.ts:395
 
 #### Returns
 
-[`Table`](/cdk/classes/table/)
+`TableV2`
 
 #### Overrides
 
@@ -47,9 +47,9 @@ Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2.d.ts:395
 
 ### encryptionKey?
 
-> `readonly` `optional` **encryptionKey**: `IKey`
+> `readonly` `optional` **encryptionKey?**: `IKey`
 
-Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2.d.ts:368
+Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2.d.ts:535
 
 The KMS encryption key for the table.
 
@@ -59,23 +59,17 @@ The KMS encryption key for the table.
 
 ***
 
-### env
+### grants
 
-> `readonly` **env**: `ResourceEnvironment`
+> `readonly` **grants**: `TableGrants`
 
-Defined in: node\_modules/aws-cdk-lib/core/lib/resource.d.ts:111
+Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2.d.ts:547
 
-The environment this resource belongs to.
-For resources that are created and managed by the CDK
-(generally, those created by creating new class instances like Role, Bucket, etc.),
-this is always the same as the environment of the stack they belong to;
-however, for imported resources
-(those obtained from static methods like fromRoleArn, fromBucketName, etc.),
-that might be different than the stack they were imported into.
+Grants for this table
 
-#### Inherited from
+#### Overrides
 
-`TableBaseV2.env`
+`TableBaseV2.grants`
 
 ***
 
@@ -83,7 +77,7 @@ that might be different than the stack they were imported into.
 
 > `readonly` **node**: `Node`
 
-Defined in: node\_modules/constructs/lib/construct.d.ts:266
+Defined in: node\_modules/constructs/lib/construct.d.ts:289
 
 The tree node.
 
@@ -95,9 +89,9 @@ The tree node.
 
 ### resourcePolicy?
 
-> `optional` **resourcePolicy**: `PolicyDocument`
+> `optional` **resourcePolicy?**: `PolicyDocument`
 
-Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2.d.ts:372
+Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2.d.ts:539
 
 #### Attribute
 
@@ -107,13 +101,67 @@ Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2.d.ts:372
 
 ***
 
+### streamResourcePolicy?
+
+> `optional` **streamResourcePolicy?**: `PolicyDocument`
+
+Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2.d.ts:543
+
+Resource policy associated with this table's stream.
+
+***
+
+### PROPERTY\_INJECTION\_ID
+
+> `readonly` `static` **PROPERTY\_INJECTION\_ID**: `string`
+
+Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2.d.ts:510
+
+Uniquely identifies this class.
+
+## Accessors
+
+### env
+
+#### Get Signature
+
+> **get** **env**(): `ResourceEnvironment`
+
+Defined in: node\_modules/aws-cdk-lib/core/lib/resource.d.ts:94
+
+The environment this resource belongs to.
+
+For resources that are created and managed in a Stack (those created by
+creating new class instances like `new Role()`, `new Bucket()`, etc.), this
+is always the same as the environment of the stack they belong to.
+
+For referenced resources (those obtained from referencing methods like
+`Role.fromRoleArn()`, `Bucket.fromBucketName()`, etc.), they might be
+different than the stack they were imported into.
+
+##### Returns
+
+`ResourceEnvironment`
+
+#### Inherited from
+
+`TableBaseV2.env`
+
+***
+
 ### stack
 
-> `readonly` **stack**: `Stack`
+#### Get Signature
 
-Defined in: node\_modules/aws-cdk-lib/core/lib/resource.d.ts:110
+> **get** **stack**(): `Stack`
+
+Defined in: node\_modules/aws-cdk-lib/core/lib/resource.d.ts:93
 
 The stack in which this resource is defined.
+
+##### Returns
+
+`Stack`
 
 #### Inherited from
 
@@ -123,11 +171,19 @@ The stack in which this resource is defined.
 
 ### tableArn
 
-> `readonly` **tableArn**: `string`
+#### Get Signature
 
-Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2.d.ts:355
+> **get** **tableArn**(): `string`
 
-#### Attribute
+Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2.d.ts:572
+
+The ARN of the table.
+
+##### Attribute
+
+##### Returns
+
+`string`
 
 #### Overrides
 
@@ -135,13 +191,21 @@ Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2.d.ts:355
 
 ***
 
-### tableId?
+### tableId
 
-> `readonly` `optional` **tableId**: `string`
+#### Get Signature
 
-Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2.d.ts:367
+> **get** **tableId**(): `string` \| `undefined`
 
-#### Attribute
+Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2.d.ts:575
+
+The ID of the table.
+
+##### Attribute
+
+##### Returns
+
+`string` \| `undefined`
 
 #### Overrides
 
@@ -151,11 +215,19 @@ Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2.d.ts:367
 
 ### tableName
 
-> `readonly` **tableName**: `string`
+#### Get Signature
 
-Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2.d.ts:359
+> **get** **tableName**(): `string`
 
-#### Attribute
+Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2.d.ts:573
+
+The name of the table.
+
+##### Attribute
+
+##### Returns
+
+`string`
 
 #### Overrides
 
@@ -163,13 +235,41 @@ Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2.d.ts:359
 
 ***
 
-### tableStreamArn?
+### tableRef
 
-> `readonly` `optional` **tableStreamArn**: `string`
+#### Get Signature
 
-Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2.d.ts:363
+> **get** **tableRef**(): `TableReference`
 
-#### Attribute
+Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2-base.d.ts:70
+
+A reference to this table.
+
+##### Returns
+
+`TableReference`
+
+#### Inherited from
+
+`TableBaseV2.tableRef`
+
+***
+
+### tableStreamArn
+
+#### Get Signature
+
+> **get** **tableStreamArn**(): `string` \| `undefined`
+
+Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2.d.ts:574
+
+The stream ARN of the table.
+
+##### Attribute
+
+##### Returns
+
+`string` \| `undefined`
 
 #### Overrides
 
@@ -181,7 +281,7 @@ Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2.d.ts:363
 
 > **addGlobalSecondaryIndex**(`props`): `void`
 
-Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2.d.ts:411
+Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2.d.ts:610
 
 Add a global secondary index to the table.
 
@@ -205,7 +305,7 @@ the properties of the global secondary index
 
 > **addLocalSecondaryIndex**(`props`): `void`
 
-Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2.d.ts:419
+Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2.d.ts:618
 
 Add a local secondary index to the table.
 
@@ -229,7 +329,7 @@ the properties of the local secondary index
 
 > **addReplica**(`props`): `void`
 
-Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2.d.ts:403
+Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2.d.ts:602
 
 Add a replica table.
 
@@ -253,12 +353,12 @@ the properties of the replica table to add
 
 > **addToResourcePolicy**(`statement`): `AddToResourcePolicyResult`
 
-Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2-base.d.ts:243
+Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2.d.ts:585
 
-Adds a statement to the resource policy associated with this file system.
+Adds a statement to the resource policy associated with this table.
 A resource policy will be automatically created upon the first call to `addToResourcePolicy`.
 
-Note that this does not work with imported file systems.
+Note that this does not work with imported tables.
 
 #### Parameters
 
@@ -272,9 +372,66 @@ The policy statement to add
 
 `AddToResourcePolicyResult`
 
-#### Inherited from
+#### Overrides
 
 `TableBaseV2.addToResourcePolicy`
+
+***
+
+### addToStreamResourcePolicy()
+
+> **addToStreamResourcePolicy**(`statement`): `AddToResourcePolicyResult`
+
+Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2.d.ts:594
+
+Adds a statement to the resource policy associated with this table's stream.
+A stream resource policy will be automatically created upon the first call to `addToStreamResourcePolicy`.
+
+Note that this does not work with imported tables.
+
+#### Parameters
+
+##### statement
+
+`PolicyStatement`
+
+The policy statement to add
+
+#### Returns
+
+`AddToResourcePolicyResult`
+
+***
+
+### applyCrossStackReferenceStrength()
+
+> **applyCrossStackReferenceStrength**(`strength`): `void`
+
+Defined in: node\_modules/aws-cdk-lib/core/lib/resource.d.ts:139
+
+Override the cross-stack reference strength for this resource.
+
+When set, any cross-stack reference to this resource will use the specified
+mechanism instead of the global default determined by the
+`@aws-cdk/core:defaultCrossStackReferences` context key. This is useful for
+selectively weakening specific references to avoid the "deadly embrace" problem
+without changing the app-wide default.
+
+#### Parameters
+
+##### strength
+
+`ReferenceStrength`
+
+The reference strength to use for this resource.
+
+#### Returns
+
+`void`
+
+#### Inherited from
+
+`TableBaseV2.applyCrossStackReferenceStrength`
 
 ***
 
@@ -282,7 +439,7 @@ The policy statement to add
 
 > **applyRemovalPolicy**(`policy`): `void`
 
-Defined in: node\_modules/aws-cdk-lib/core/lib/resource.d.ts:147
+Defined in: node\_modules/aws-cdk-lib/core/lib/resource.d.ts:127
 
 Apply the given removal policy to this resource
 
@@ -314,12 +471,14 @@ account for data recovery and cleanup later (`RemovalPolicy.RETAIN`).
 
 > **grant**(`grantee`, ...`actions`): `Grant`
 
-Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2-base.d.ts:64
+Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2-base.d.ts:82
 
 Adds an IAM policy statement associated with this table to an IAM principal's policy.
 
 Note: If `encryptionKey` is present, appropriate grants to the key needs to be added
 separately using the `table.encryptionKey.grant*` methods.
+
+[disable-awslint:no-grants]
 
 #### Parameters
 
@@ -349,12 +508,14 @@ the set of actions to allow (i.e., 'dynamodb:PutItem', 'dynamodb:GetItem', etc.)
 
 > **grantFullAccess**(`grantee`): `Grant`
 
-Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2-base.d.ts:134
+Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2-base.d.ts:166
 
 Permits an IAM principal to all DynamoDB operations ('dynamodb:*') on this table.
 
 Note: Appropriate grants will also be added to the customer-managed KMS keys associated with this
 table if one was configured.
+
+[disable-awslint:no-grants]
 
 #### Parameters
 
@@ -374,11 +535,43 @@ the principal to grant access to
 
 ***
 
+### grantOnKey()
+
+> **grantOnKey**(`grantee`, ...`actions`): `GrantOnKeyResult`
+
+Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2-base.d.ts:173
+
+Grants permissions on the table's encryption key.
+
+#### Parameters
+
+##### grantee
+
+`IGrantable`
+
+the principal to grant access to
+
+##### actions
+
+...`string`[]
+
+the KMS actions to grant
+
+#### Returns
+
+`GrantOnKeyResult`
+
+#### Inherited from
+
+`TableBaseV2.grantOnKey`
+
+***
+
 ### grantReadData()
 
 > **grantReadData**(`grantee`): `Grant`
 
-Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2-base.d.ts:102
+Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2-base.d.ts:128
 
 Permits an IAM principal all data read operations on this table.
 
@@ -386,6 +579,8 @@ Actions: BatchGetItem, GetRecords, GetShardIterator, Query, GetItem, Scan, Descr
 
 Note: Appropriate grants will also be added to the customer-managed KMS keys associated with this
 table if one was configured.
+
+[disable-awslint:no-grants]
 
 #### Parameters
 
@@ -409,7 +604,7 @@ the principal to grant access to
 
 > **grantReadWriteData**(`grantee`): `Grant`
 
-Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2-base.d.ts:125
+Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2-base.d.ts:155
 
 Permits an IAM principal to all data read/write operations on this table.
 
@@ -418,6 +613,8 @@ DeleteItem, DescribeTable.
 
 Note: Appropriate grants will also be added to the customer-managed KMS keys associated with this
 table if one was configured.
+
+[disable-awslint:no-grants]
 
 #### Parameters
 
@@ -441,12 +638,14 @@ the principal to grant access to
 
 > **grantStream**(`grantee`, ...`actions`): `Grant`
 
-Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2-base.d.ts:74
+Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2-base.d.ts:94
 
 Adds an IAM policy statement associated with this table to an IAM principal's policy.
 
 Note: If `encryptionKey` is present, appropriate grants to the key needs to be added
 separately using the `table.encryptionKey.grant*` methods.
+
+[disable-awslint:no-grants]
 
 #### Parameters
 
@@ -476,7 +675,7 @@ the set of actions to allow (i.e., 'dynamodb:DescribeStream', 'dynamodb:GetRecor
 
 > **grantStreamRead**(`grantee`): `Grant`
 
-Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2-base.d.ts:85
+Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2-base.d.ts:107
 
 Adds an IAM policy statement associated with this table to an IAM principal's policy.
 
@@ -484,6 +683,8 @@ Actions: DescribeStream, GetRecords, GetShardIterator, ListStreams.
 
 Note: Appropriate grants will also be added to the customer-managed KMS keys associated with this
 table if one was configured.
+
+[disable-awslint:no-grants]
 
 #### Parameters
 
@@ -507,9 +708,11 @@ the principal to grant access to
 
 > **grantTableListStreams**(`grantee`): `Grant`
 
-Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2-base.d.ts:91
+Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2-base.d.ts:115
 
 Permits an IAM principal to list streams attached to this table.
+
+[disable-awslint:no-grants]
 
 #### Parameters
 
@@ -533,7 +736,7 @@ the principal to grant access to
 
 > **grantWriteData**(`grantee`): `Grant`
 
-Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2-base.d.ts:113
+Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2-base.d.ts:141
 
 Permits an IAM principal all data write operations on this table.
 
@@ -541,6 +744,8 @@ Actions: BatchWriteItem, PutItem, UpdateItem, DeleteItem, DescribeTable.
 
 Note: Appropriate grants will also be added to the customer-managed KMS keys associated with this
 table if one was configured.
+
+[disable-awslint:no-grants]
 
 #### Parameters
 
@@ -562,9 +767,9 @@ the principal to grant access to
 
 ### metric()
 
-> **metric**(`metricName`, `props`?): `Metric`
+> **metric**(`metricName`, `props?`): `Metric`
 
-Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2-base.d.ts:141
+Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2-base.d.ts:180
 
 Return the given named metric for this table.
 
@@ -593,9 +798,9 @@ You can customize this by using the `statistic` and `period` properties.
 
 ### metricConditionalCheckFailedRequests()
 
-> **metricConditionalCheckFailedRequests**(`props`?): `Metric`
+> **metricConditionalCheckFailedRequests**(`props?`): `Metric`
 
-Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2-base.d.ts:172
+Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2-base.d.ts:211
 
 Metric for the conditional check failed requests for this table.
 
@@ -620,9 +825,9 @@ You can customize this by using the `statistic` and `period` properties.
 
 ### metricConsumedReadCapacityUnits()
 
-> **metricConsumedReadCapacityUnits**(`props`?): `Metric`
+> **metricConsumedReadCapacityUnits**(`props?`): `Metric`
 
-Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2-base.d.ts:148
+Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2-base.d.ts:187
 
 Metric for the consumed read capacity units for this table.
 
@@ -647,9 +852,9 @@ You can customize this by using the `statistic` and `period` properties.
 
 ### metricConsumedWriteCapacityUnits()
 
-> **metricConsumedWriteCapacityUnits**(`props`?): `Metric`
+> **metricConsumedWriteCapacityUnits**(`props?`): `Metric`
 
-Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2-base.d.ts:155
+Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2-base.d.ts:194
 
 Metric for the consumed write capacity units for this table.
 
@@ -674,9 +879,9 @@ You can customize this by using the `statistic` and `period` properties.
 
 ### metricSuccessfulRequestLatency()
 
-> **metricSuccessfulRequestLatency**(`props`?): `Metric`
+> **metricSuccessfulRequestLatency**(`props?`): `Metric`
 
-Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2-base.d.ts:179
+Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2-base.d.ts:218
 
 Metric for the successful request latency for this table.
 
@@ -701,9 +906,9 @@ You can customize this by using the `statistic` and `period` properties.
 
 ### ~~metricSystemErrors()~~
 
-> **metricSystemErrors**(`props`?): `Metric`
+> **metricSystemErrors**(`props?`): `Metric`
 
-Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2-base.d.ts:215
+Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2-base.d.ts:254
 
 Metric for the system errors this table
 
@@ -729,9 +934,9 @@ use `metricSystemErrorsForOperations`.
 
 ### metricSystemErrorsForOperations()
 
-> **metricSystemErrorsForOperations**(`props`?): `IMetric`
+> **metricSystemErrorsForOperations**(`props?`): `IMetric`
 
-Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2-base.d.ts:200
+Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2-base.d.ts:239
 
 Metric for the system errors for this table. This will sum errors across all possible operations.
 
@@ -756,9 +961,9 @@ You can customize this by using the `statistic` and `period` properties.
 
 ### ~~metricThrottledRequests()~~
 
-> **metricThrottledRequests**(`props`?): `Metric`
+> **metricThrottledRequests**(`props?`): `Metric`
 
-Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2-base.d.ts:209
+Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2-base.d.ts:248
 
 How many requests are throttled on this table.
 
@@ -787,9 +992,9 @@ Do not use this function. It returns an invalid metric. Use `metricThrottledRequ
 
 ### metricThrottledRequestsForOperation()
 
-> **metricThrottledRequestsForOperation**(`operation`, `props`?): `IMetric`
+> **metricThrottledRequestsForOperation**(`operation`, `props?`): `IMetric`
 
-Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2-base.d.ts:186
+Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2-base.d.ts:225
 
 How many requests are throttled on this table for the given operation
 
@@ -818,9 +1023,9 @@ You can customize this by using the `statistic` and `period` properties.
 
 ### metricThrottledRequestsForOperations()
 
-> **metricThrottledRequestsForOperations**(`props`?): `IMetric`
+> **metricThrottledRequestsForOperations**(`props?`): `IMetric`
 
-Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2-base.d.ts:193
+Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2-base.d.ts:232
 
 How many requests are throttled on this table. This will sum errors across all possible operations.
 
@@ -845,9 +1050,9 @@ You can customize this by using the `statistic` and `period` properties.
 
 ### metricUserErrors()
 
-> **metricUserErrors**(`props`?): `Metric`
+> **metricUserErrors**(`props?`): `Metric`
 
-Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2-base.d.ts:165
+Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2-base.d.ts:204
 
 Metric for the user errors for this table.
 
@@ -877,7 +1082,7 @@ You can customize this by using the `statistic` and `period` properties.
 
 > **replica**(`region`): `ITableV2`
 
-Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2.d.ts:427
+Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2.d.ts:626
 
 Retrieve a replica table.
 
@@ -901,7 +1106,7 @@ the region of the replica table
 
 > **toString**(): `string`
 
-Defined in: node\_modules/constructs/lib/construct.d.ts:279
+Defined in: node\_modules/constructs/lib/construct.d.ts:314
 
 Returns a string representation of this construct.
 
@@ -915,11 +1120,44 @@ Returns a string representation of this construct.
 
 ***
 
+### with()
+
+> **with**(...`mixins`): `IConstruct`
+
+Defined in: node\_modules/aws-cdk-lib/core/lib/resource.d.ts:95
+
+Applies one or more mixins to this construct.
+
+Mixins are applied in order. The list of constructs is captured at the
+start of the call, so constructs added by a mixin will not be visited.
+Use multiple `with()` calls if subsequent mixins should apply to added
+constructs.
+
+#### Parameters
+
+##### mixins
+
+...`IMixin`[]
+
+The mixins to apply
+
+#### Returns
+
+`IConstruct`
+
+This construct for chaining
+
+#### Inherited from
+
+`TableBaseV2.with`
+
+***
+
 ### fromTableArn()
 
 > `static` **fromTableArn**(`scope`, `id`, `tableArn`): `ITableV2`
 
-Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2.d.ts:343
+Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2.d.ts:526
 
 Creates a Table construct that represents an external table via table ARN.
 
@@ -927,7 +1165,7 @@ Creates a Table construct that represents an external table via table ARN.
 
 ##### scope
 
-[`Construct`](/cdk/classes/construct/)
+[`Construct`](/cdk/interfaces/construct/)
 
 the parent creating construct (usually `this`)
 
@@ -953,7 +1191,7 @@ the table's ARN
 
 > `static` **fromTableAttributes**(`scope`, `id`, `attrs`): `ITableV2`
 
-Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2.d.ts:351
+Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2.d.ts:534
 
 Creates a Table construct that represents an external table.
 
@@ -961,7 +1199,7 @@ Creates a Table construct that represents an external table.
 
 ##### scope
 
-[`Construct`](/cdk/classes/construct/)
+[`Construct`](/cdk/interfaces/construct/)
 
 the parent creating construct (usually `this`)
 
@@ -987,7 +1225,7 @@ attributes of the table
 
 > `static` **fromTableName**(`scope`, `id`, `tableName`): `ITableV2`
 
-Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2.d.ts:335
+Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2.d.ts:518
 
 Creates a Table construct that represents an external table via table name.
 
@@ -995,7 +1233,7 @@ Creates a Table construct that represents an external table via table name.
 
 ##### scope
 
-[`Construct`](/cdk/classes/construct/)
+[`Construct`](/cdk/interfaces/construct/)
 
 the parent creating construct (usually `this`)
 
@@ -1021,7 +1259,7 @@ the table's name
 
 > `static` **isConstruct**(`x`): `x is Construct`
 
-Defined in: node\_modules/constructs/lib/construct.d.ts:262
+Defined in: node\_modules/constructs/lib/construct.d.ts:285
 
 Checks if `x` is a construct.
 
@@ -1063,7 +1301,7 @@ true if `x` is an object created from a class which extends `Construct`.
 
 > `static` **isOwnedResource**(`construct`): `boolean`
 
-Defined in: node\_modules/aws-cdk-lib/core/lib/resource.d.ts:109
+Defined in: node\_modules/aws-cdk-lib/core/lib/resource.d.ts:80
 
 Returns true if the construct was created by CDK, and false otherwise
 
@@ -1087,7 +1325,7 @@ Returns true if the construct was created by CDK, and false otherwise
 
 > `static` **isResource**(`construct`): `construct is Resource`
 
-Defined in: node\_modules/aws-cdk-lib/core/lib/resource.d.ts:105
+Defined in: node\_modules/aws-cdk-lib/core/lib/resource.d.ts:76
 
 Check whether the given construct is a Resource
 

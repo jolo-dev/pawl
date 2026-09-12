@@ -16,9 +16,9 @@ an AWS Cognito user pool.
 
 ## Constructors
 
-### new HttpUserPoolAuthorizer()
+### Constructor
 
-> **new HttpUserPoolAuthorizer**(`id`, `pool`, `props`?): [`HttpUserPoolAuthorizer`](/cdk/classes/httpuserpoolauthorizer/)
+> **new HttpUserPoolAuthorizer**(`id`, `pool`, `props?`): `HttpUserPoolAuthorizer`
 
 Defined in: node\_modules/aws-cdk-lib/aws-apigatewayv2-authorizers/lib/http/user-pool.d.ts:48
 
@@ -46,7 +46,7 @@ Properties to configure the authorizer
 
 #### Returns
 
-[`HttpUserPoolAuthorizer`](/cdk/classes/httpuserpoolauthorizer/)
+`HttpUserPoolAuthorizer`
 
 ## Properties
 

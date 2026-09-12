@@ -41,23 +41,30 @@ export type EventBridgeProps = {
 	BasicConstructProps;
 
 /**
- * The Eventbridge Construct consists of an Eventbus that can have **multiple** rule with different targets (see below).
- * Every failed message will be put into a DLQ.
- * 
- * > Note: It can have multiple rules of different Types. For example, 2 Lambda rules, 1 SQS and many API destination for one Eventbus.
- * 
+ * An EventBridge bus with a delivery-failure DLQ and optional rule or Pipe bindings.
+ *
+ * Rules and target bindings are created for supported target branches or createRule
+ * calls; empty targets create no rules. The API destination branch requires
+ * props.secrets. Supplied Lambda, queue, destination, and bus targets are omitted.
+ * The undirected bus-to-DLQ edge shows configuration: the queue is attached to the
+ * bus and Lambda delivery bindings, not every target adapter. createAlarm creates
+ * an alarm factory, not monitoring resources.
+ *
+ * A source and targetEventBus configuration creates an independent Pipe, not a
+ * rule on this bus. Its supplied endpoints are omitted and no connection to this
+ * bus is implied.
+ *
  * ```mermaid
-  architecture-beta
-    group rules(hugeicons:paragraph-bullets-point-01)[Rules]
-    service eventbridge(logos:aws-eventbridge)[AWS Eventbridge]
-    service lambda(logos:aws-lambda)[AWS Lambda] in rules
-    service sqs(logos:aws-sqs)[AWS SQS] in rules
-    service api(hugeicons:api)[Api Destination] in rules
-    service eventbridgerule(logos:aws-eventbridge)[AWS EventBus] in rules
-    service pipes(logos:aws-eventbridge)[AWS Pipes] in rules
-    service dlq(logos:aws-sqs)[DLQ]
-    api{group}:R --> L:eventbridge
-    eventbridge:B --> T:dlq
+ * architecture-beta
+ *   group mandatory(logos:aws-eventbridge)[Event bus]
+ *   group routing(logos:aws-eventbridge)[When rules are configured]
+ *   group pipes(logos:aws-eventbridge)[When a Pipe is configured]
+ *   service dlq(logos:aws-sqs)[Bus and Lambda delivery DLQ] in mandatory
+ *   service bus(logos:aws-eventbridge)[EventBridge bus] in mandatory
+ *   service rules(logos:aws-eventbridge)[Rules and target bindings] in routing
+ *   service pipe(logos:aws-eventbridge)[Independent Pipe] in pipes
+ *   dlq:R -- L:bus
+ *   bus:R -- L:rules
  * ```
  * @example
  * ```ts

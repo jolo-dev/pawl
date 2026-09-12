@@ -20,6 +20,12 @@ This repository offers:
 
 ![Goal](../../../assets/goal.excalidraw.svg)
 
+## Lambda runtime
+
+Pawl deploys Lambda functions on **Node.js 24.x / ARM64**, with TypeScript bundled as ESM targeting Node 24. `DurableLambdaFunction`, API/event handlers, pipeline/reviewer functions, local stacks, and CLI-generated projects inherit this configuration. CDK-generated helper Lambdas are also tested on Node.js 24.
+
+Re-synthesize and deploy existing stacks to apply the upgrade. Native dependencies must support Node.js 24 and ARM64. AgentCore is a separate service and keeps its Node 22 runtime.
+
 ## Why do we need such a library?
 
 The following problems will be addressed.
@@ -48,4 +54,4 @@ From a compliance perspective, AWS resources may need to fulfill requirements su
 
 - Docker
 - Bun (latest)
-- Node.js 22+
+- Node.js 24+

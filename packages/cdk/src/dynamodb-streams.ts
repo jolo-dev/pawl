@@ -46,15 +46,22 @@ export type DynamoDbTableWithStreamsProps = Omit<
 } & BasicConstructProps;
 
 /**
- * A Construct which uses DynamoDB Global Tables.
- * You can import an existing Table otherwise it will create a new table with Streams enabled
- * which can be triggered by AWS Lambda. <br />
- * More information [here](https://docs.aws.amazon.com/cdk/api/v2/docs/aws-cdk-lib.aws_dynamodb-readme.html)
+ * Creates a new DynamoDB TableV2 with a required stream view and configures a
+ * DynamoDB event-source mapping on the supplied Lambda. The existingTable property
+ * is unused; this construct does not import a table. Starting position and event
+ * source options configure the binding, including its stream-read permissions;
+ * the supplied consumer is not created. The table is retained only when
+ * removalPolicy is retain, otherwise it is destroyed.
+ *
+ * More information [here](https://docs.aws.amazon.com/cdk/api/v2/docs/aws-cdk-lib.aws_dynamodb-readme.html).
+ * The mapping node summarizes the configured binding, not a separate consumer.
+ *
  * ```mermaid
-  architecture-beta
-    service dynamodb(logos:aws-dynamodb)[DynamoDB Table]
-    service lambda(logos:aws-lambda)[Lambda]
-    dynamodb:R --> L:lambda
+ * architecture-beta
+ *   group streams(logos:aws-dynamodb)[DynamoDB stream consumer]
+ *   service table(logos:aws-dynamodb)[Table with stream] in streams
+ *   service mapping(logos:aws-lambda)[DynamoDB event source mapping] in streams
+ *   table:R --> L:mapping
  * ```
  */
 export class DynamoDbTableWithStreams extends BasicConstruct {

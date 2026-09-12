@@ -1,0 +1,15 @@
+{
+	"detector": {
+		"ignoreRules": [],
+		"ignoreFiles": [],
+		"ignoreValues": [
+			{
+				"rule": "codex-grid-background",
+				"value": "*",
+				"files": ["src/styles/custom.css"],
+				"createdAt": "2026-09-07T08:44:01.940Z",
+				"reason": "User confirmed The Infrastructure Drafting Table; the fixed drafting grid is a binding visual feature."
+			}
+		]
+	}
+}

@@ -5,27 +5,27 @@ prev: false
 title: "Authorization"
 ---
 
-Defined in: node\_modules/aws-cdk-lib/aws-events/lib/connection.d.ts:47
+Defined in: node\_modules/aws-cdk-lib/aws-events/lib/connection.d.ts:49
 
 Authorization type for an API Destination Connection
 
 ## Constructors
 
-### new Authorization()
+### Constructor
 
-> **new Authorization**(): [`Authorization`](/cdk/classes/authorization/)
+> **new Authorization**(): `Authorization`
 
 #### Returns
 
-[`Authorization`](/cdk/classes/authorization/)
+`Authorization`
 
 ## Methods
 
 ### apiKey()
 
-> `static` **apiKey**(`apiKeyName`, `apiKeyValue`): [`Authorization`](/cdk/classes/authorization/)
+> `static` **apiKey**(`apiKeyName`, `apiKeyValue`): `Authorization`
 
-Defined in: node\_modules/aws-cdk-lib/aws-events/lib/connection.d.ts:54
+Defined in: node\_modules/aws-cdk-lib/aws-events/lib/connection.d.ts:56
 
 Use API key authorization
 
@@ -44,15 +44,15 @@ What these are depends on the target of your connection.
 
 #### Returns
 
-[`Authorization`](/cdk/classes/authorization/)
+`Authorization`
 
 ***
 
 ### basic()
 
-> `static` **basic**(`username`, `password`): [`Authorization`](/cdk/classes/authorization/)
+> `static` **basic**(`username`, `password`): `Authorization`
 
-Defined in: node\_modules/aws-cdk-lib/aws-events/lib/connection.d.ts:58
+Defined in: node\_modules/aws-cdk-lib/aws-events/lib/connection.d.ts:60
 
 Use username and password authorization
 
@@ -68,15 +68,15 @@ Use username and password authorization
 
 #### Returns
 
-[`Authorization`](/cdk/classes/authorization/)
+`Authorization`
 
 ***
 
 ### oauth()
 
-> `static` **oauth**(`props`): [`Authorization`](/cdk/classes/authorization/)
+> `static` **oauth**(`props`): `Authorization`
 
-Defined in: node\_modules/aws-cdk-lib/aws-events/lib/connection.d.ts:62
+Defined in: node\_modules/aws-cdk-lib/aws-events/lib/connection.d.ts:64
 
 Use OAuth authorization
 
@@ -88,4 +88,4 @@ Use OAuth authorization
 
 #### Returns
 
-[`Authorization`](/cdk/classes/authorization/)
+`Authorization`

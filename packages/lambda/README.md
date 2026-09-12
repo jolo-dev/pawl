@@ -10,6 +10,12 @@ Typed AWS Lambda handler wrappers with built-in Powertools (Logger, Tracer, Metr
 
 `@pawl/lambda` provides correctly typed Lambda handler functions that automatically wire up [AWS Lambda Powertools](https://docs.powertools.aws.dev/lambda/typescript/latest/) for observability. No boilerplate — just write your business logic.
 
+## Runtime
+
+When deployed with `@pawl/cdk`, standard and durable Lambda handlers run on **Node.js 24.x / ARM64**, bundled as ESM. Runtime selection belongs to the CDK constructs; `@pawl/lambda` itself only wraps handlers and has no CDK dependency.
+
+Re-deploy existing functions after upgrading the constructs, and rebuild native dependencies for Node.js 24/ARM64 if your handlers use them.
+
 ## Installation
 
 ```bash

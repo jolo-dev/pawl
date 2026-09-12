@@ -31,6 +31,24 @@ export type AgentCoreProps = {
 } & Omit<RuntimeProps, "agentRuntimeArtifact" | "protocolConfiguration"> &
 	BasicConstructProps;
 
+/**
+ * Creates a Node.js 22 code-asset HTTP runtime and a runtime endpoint, always
+ * including the DEFAULT endpoint when endpoint options are absent. The code asset
+ * is packaging, not another runtime service. Execution-role options pass through
+ * to the runtime; explicit grants add execution permissions. No Bedrock model or
+ * VPC is provisioned. Monitoring uses the existing stack facility, not an owned
+ * monitoring service. Undirected edges show endpoint configuration.
+ *
+ * ```mermaid
+ * architecture-beta
+ *   group agent(cloud)[AgentCore runtime]
+ *   service asset(disk)[Code asset] in agent
+ *   service runtime(logos:nodejs-icon)[HTTP runtime Node 22] in agent
+ *   service endpoint(cloud)[Runtime endpoint] in agent
+ *   asset:R --> L:runtime
+ *   runtime:R -- L:endpoint
+ * ```
+ */
 export class AgentCore extends BasicConstruct {
 	readonly runtime: Runtime;
 	readonly endpoint: RuntimeEndpoint;

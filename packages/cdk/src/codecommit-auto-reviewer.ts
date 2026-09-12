@@ -385,6 +385,48 @@ export function validateCodeCommitAutoReviewerProps(
  *
  * For single-repo opt-in, use the higher-level `CodeCommit` construct with
  * `autoReview: { ... }` instead.
+ *
+ * Router, durable reviewer with its version and alias, and state table are always
+ * provisioned and shared. Each repository gets review rules/target bindings, a
+ * delivery-failure DLQ, and a checks project composition including its log group,
+ * key, and placeholder bucket. Supplied repositories, pipeline actions, and
+ * Bedrock models are omitted; IAM grants permit their use, not their creation.
+ * Undirected edges summarize state access and delivery configuration.
+ *
+ * The bridge, reconciler, and one-minute schedule exist only when
+ * reviewCoordinationDeployment.phase is active. Preparation phases retain the
+ * baseline reviewer: GSI1 is added for any coordination phase, and GSI2 for all
+ * but prepareGsi1. In active mode the bridge, router, and reviewer can invoke the
+ * reconciler, which has pipeline job-result permissions. These supporting grants
+ * are summarized here rather than expanded into every possible interaction.
+ *
+ * ```mermaid
+ * architecture-beta
+ *   group repositoryResources(logos:aws-codecommit)[Per repository]
+ *   group coordination(logos:aws-codepipeline)[Only active coordination]
+ *   service events(logos:aws-eventbridge)[Review rules and targets] in repositoryResources
+ *   service dlq(logos:aws-sqs)[Delivery failure DLQ] in repositoryResources
+ *   service checks(logos:aws-codebuild)[Checks project resources] in repositoryResources
+ *   service router(logos:aws-lambda)[Router Lambda]
+ *   service reviewer(logos:aws-lambda)[Durable reviewer and alias]
+ *   service state(logos:aws-dynamodb)[Review state table]
+ *   service bridge(logos:aws-lambda)[Bridge Lambda] in coordination
+ *   service reconciler(logos:aws-lambda)[Reconciler Lambda] in coordination
+ *   service schedule(logos:aws-eventbridge)[One minute schedule] in coordination
+ *   events{group}:B --> T:router
+ *   events:L -- R:dlq
+ *   checks{group}:B -- T:reviewer
+ *   router:R --> L:reviewer
+ *   reviewer:R -- L:state
+ *   bridge:R --> L:reconciler
+ *   schedule:L --> R:reconciler
+ *   reconciler{group}:B -- T:state
+ *   align row dlq events checks
+ *   align column events router
+ *   align column checks reviewer
+ *   align row router reviewer state
+ *   align row bridge reconciler schedule
+ * ```
  */
 export class CodeCommitAutoReviewer {
 	readonly reviewer: DurableLambdaFunction;

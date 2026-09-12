@@ -5,7 +5,7 @@ prev: false
 title: "HttpLambdaAuthorizer"
 ---
 
-Defined in: node\_modules/aws-cdk-lib/aws-apigatewayv2-authorizers/lib/http/lambda.d.ts:50
+Defined in: node\_modules/aws-cdk-lib/aws-apigatewayv2-authorizers/lib/http/lambda.d.ts:59
 
 Authorize Http Api routes via a lambda function
 
@@ -15,11 +15,11 @@ Authorize Http Api routes via a lambda function
 
 ## Constructors
 
-### new HttpLambdaAuthorizer()
+### Constructor
 
-> **new HttpLambdaAuthorizer**(`id`, `handler`, `props`?): [`HttpLambdaAuthorizer`](/cdk/classes/httplambdaauthorizer/)
+> **new HttpLambdaAuthorizer**(`id`, `handler`, `props?`): `HttpLambdaAuthorizer`
 
-Defined in: node\_modules/aws-cdk-lib/aws-apigatewayv2-authorizers/lib/http/lambda.d.ts:66
+Defined in: node\_modules/aws-cdk-lib/aws-apigatewayv2-authorizers/lib/http/lambda.d.ts:75
 
 Initialize a lambda authorizer to be bound with HTTP route.
 
@@ -43,7 +43,7 @@ Properties to configure the authorizer
 
 #### Returns
 
-[`HttpLambdaAuthorizer`](/cdk/classes/httplambdaauthorizer/)
+`HttpLambdaAuthorizer`
 
 ## Properties
 
@@ -51,7 +51,7 @@ Properties to configure the authorizer
 
 > `readonly` **authorizationType**: `"CUSTOM"` = `"CUSTOM"`
 
-Defined in: node\_modules/aws-cdk-lib/aws-apigatewayv2-authorizers/lib/http/lambda.d.ts:59
+Defined in: node\_modules/aws-cdk-lib/aws-apigatewayv2-authorizers/lib/http/lambda.d.ts:68
 
 The authorizationType used for Lambda Authorizer
 
@@ -63,7 +63,7 @@ The authorizationType used for Lambda Authorizer
 
 > **get** **authorizerId**(): `string`
 
-Defined in: node\_modules/aws-cdk-lib/aws-apigatewayv2-authorizers/lib/http/lambda.d.ts:70
+Defined in: node\_modules/aws-cdk-lib/aws-apigatewayv2-authorizers/lib/http/lambda.d.ts:79
 
 Return the id of the authorizer if it's been constructed
 
@@ -77,7 +77,7 @@ Return the id of the authorizer if it's been constructed
 
 > **bind**(`options`): `HttpRouteAuthorizerConfig`
 
-Defined in: node\_modules/aws-cdk-lib/aws-apigatewayv2-authorizers/lib/http/lambda.d.ts:71
+Defined in: node\_modules/aws-cdk-lib/aws-apigatewayv2-authorizers/lib/http/lambda.d.ts:80
 
 Bind this authorizer to a specified Http route.
 

@@ -7,7 +7,7 @@ title: "useSnsHandler"
 
 > **useSnsHandler**(`serviceName`, `handleRequest`): `HandlerWithHooks`\<`SNSHandler`, `SNSEvent`\>
 
-Defined in: sns-handler.ts:17
+Defined in: [sns-handler.ts:17](https://github.com/jolo-dev/pawl/blob/f40688429e7e2c3160e40f482375bd699be30970/packages/lambda/src/sns-handler.ts#L17)
 
 The function `useSnsHandler` returns a handler function for processing SNS events with the specified
 service name and request handling function.

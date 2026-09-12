@@ -12,7 +12,7 @@ Let's build a real-world scenario.
 
 This is what we will build in this tutorial.
 
-![CDK Architecture](./src/assets/cdk-tutorial.excalidraw.svg)
+![CDK Architecture](../../../assets/cdk-tutorial.excalidraw.svg)
 
 > Our app emits events. But since this can be too many, we add a queue here
 > which works as a buffer so that whenever the Lambda is ready,
@@ -27,6 +27,8 @@ This is what we will build in this tutorial.
 ```sh
 bun add @pawl/cdk
 ```
+
+The Lambda functions in this tutorial run on **Node.js 24.x / ARM64**. `LambdaFunction` bundles TypeScript as ESM with a Node 24 target; you do not need to set a runtime in each handler or stack.
 
 ### File Structure and Organization
 

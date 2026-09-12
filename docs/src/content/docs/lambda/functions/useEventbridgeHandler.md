@@ -5,20 +5,26 @@ prev: false
 title: "useEventbridgeHandler"
 ---
 
-> **useEventbridgeHandler**\<`TDetailType`, `TDetail`, `TResult`\>(`serviceName`, `handleRequest`): (`event`) => `Promise`\<`TResult`\> & `object`
+> **useEventbridgeHandler**\<`TDetailType`, `TDetail`, `TResult`\>(`serviceName`, `handleRequest`, `options?`): (`event`) => `Promise`\<`TResult`\> & `object`
 
-Defined in: eventbridge-handler.ts:16
+Defined in: [eventbridge-handler.ts:23](https://github.com/jolo-dev/pawl/blob/f40688429e7e2c3160e40f482375bd699be30970/packages/lambda/src/eventbridge-handler.ts#L23)
 
 The function `useEventbridgeHandler` is a TypeScript function that creates a handler for processing
 EventBridge events with a specified detail type and detail data.
 
 ## Type Parameters
 
-• **TDetailType** *extends* `string`
+### TDetailType
 
-• **TDetail**
+`TDetailType` *extends* `string`
 
-• **TResult**
+### TDetail
+
+`TDetail`
+
+### TResult
+
+`TResult`
 
 ## Parameters
 
@@ -34,6 +40,10 @@ the service or component that will be handling the EventBridge events.
 (`event`, `logger`) => `Promise`\<`TResult`\>
 
 The `handleRequest` parameter is a function that takes two arguments:
+
+### options?
+
+`EventbridgeHandlerOptions`
 
 ## Returns
 

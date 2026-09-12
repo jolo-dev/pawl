@@ -25,7 +25,7 @@ Write the plan to `.pawl/plan.md` using this structure:
 # Infrastructure Plan
 
 ## Application Summary
-- **Runtime**: Node.js 22 / Python 3.12 / etc.
+- **Runtime**: Node.js 24 / Python 3.12 / etc.
 - **Framework**: Express / Next.js / Flask / etc.
 - **Type**: REST API / GraphQL / Web App / Worker / etc.
 

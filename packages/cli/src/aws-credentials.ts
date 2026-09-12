@@ -17,14 +17,33 @@ import {
 } from "@aws-sdk/client-sts";
 import { fromIni } from "@aws-sdk/credential-providers";
 import {
+	getHomeDir,
 	getSSOTokenFromFile,
+	loadSharedConfigFiles,
 	loadSsoSessionData,
-} from "@smithy/shared-ini-file-loader";
+	parseKnownFiles,
+} from "@smithy/core/config";
 import { $ } from "bun";
 
 export async function listProfiles(): Promise<string[]> {
-	const profiles = await parseKnownFiles({});
-	return Object.keys(profiles);
+	const configPath =
+		process.env.AWS_CONFIG_FILE || join(getHomeDir(), ".aws", "config");
+	// The credentials-file side of Smithy's loader preserves section prefixes.
+	// Parse the config through that side too, before `profile.` is stripped and
+	// valid names such as `services.prod` become ambiguous with service sections.
+	const [config, credentials] = await Promise.all([
+		loadSharedConfigFiles({ filepath: configPath }),
+		loadSharedConfigFiles({}),
+	]);
+	const configProfiles = Object.keys(config.credentialsFile)
+		.filter((name) => name === "default" || name.startsWith("profile."))
+		.map((name) => (name === "default" ? name : name.slice("profile.".length)));
+	return [
+		...new Set([
+			...configProfiles,
+			...Object.keys(credentials.credentialsFile),
+		]),
+	];
 }
 
 export async function checkCredentials(

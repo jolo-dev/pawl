@@ -229,7 +229,19 @@ export interface PrPipelineDispatcher {
 
 const MAX_AUTHORITATIVE_REVISION_ATTEMPTS = 4;
 
-/** Retryable failure raised when concurrent revision arbitration cannot settle. */
+/**
+ * Retryable failure raised when concurrent revision arbitration cannot settle.
+ *
+ * Contains a fixed Error name/message and retryable = true. This software error
+ * does not arbitrate revisions, persist state, or schedule retries; no AWS
+ * resources are provisioned.
+ *
+ * ```mermaid
+ * architecture-beta
+ *   group failure(server)[Contained error state]
+ *   service error(server)[Retryable arbitration error] in failure
+ * ```
+ */
 export class AuthoritativeRevisionArbitrationExhaustedError extends Error {
 	readonly retryable = true;
 
@@ -239,6 +251,36 @@ export class AuthoritativeRevisionArbitrationExhaustedError extends Error {
 	}
 }
 
+/**
+ * Coordinates exact-revision pipeline dispatch through injected store, transport,
+ * reconciler, and clock references. This is non-provisioning software: the nodes
+ * summarize its implementation, not owned AWS databases, pipelines, or Lambdas.
+ * Undirected edges show related responsibilities, not a mandatory execution path.
+ *
+ * Closed or superseded requests can return early; pinned intents have a replay
+ * path. Arbitration tries at most four times before raising a retryable error.
+ * Dispatch persists an execution mapping. Terminal request state is persisted
+ * independently of review-job coordination. With coordinateReviewJobs enabled
+ * (the default), it marks jobs, invokes the injected reconciler, and supersedes
+ * older pending jobs except on accepted-intent replay. The reconciler reference
+ * is required even when coordination is disabled.
+ *
+ * ```mermaid
+ * architecture-beta
+ *   group implementation(server)[Contained implementation]
+ *   group optionalCoordination(server)[When coordinateReviewJobs is enabled]
+ *   service arbitration(server)[Revision arbitration] in implementation
+ *   service dispatch(server)[Exact revision dispatch] in implementation
+ *   service mapping(disk)[Execution mapping] in implementation
+ *   service terminal(server)[Terminal request handling] in implementation
+ *   service coordination(server)[Review job coordination] in optionalCoordination
+ *   arbitration:R -- L:dispatch
+ *   dispatch:R -- L:mapping
+ *   terminal:L -- L:dispatch
+ *   terminal:R -- L:coordination
+ *   align row arbitration dispatch mapping
+ * ```
+ */
 export class PipelineReviewDispatcher implements PrPipelineDispatcher {
 	readonly #pipelineName: string;
 	readonly #sourceActionName: string;

@@ -45,6 +45,25 @@ export interface ApiV1Props extends BasicConstructProps {
 	routes?: Record<`${HttpMethod} /${string}`, LambdaFunction>;
 }
 
+/**
+ * Creates a REST API with a prod stage, default CORS configuration, and an access
+ * log group. Routes configure resources, methods, and Lambda integrations when
+ * routes or addRoute calls are supplied; target Lambdas and method authorizers
+ * are supplied, not created. The log group is always created, but access-log
+ * wiring and the CloudWatch role are configured only outside LOCAL. Monitoring
+ * uses the existing stack facility. Undirected edges show configuration, with
+ * API-to-log wiring disabled in LOCAL.
+ *
+ * ```mermaid
+ * architecture-beta
+ *   group routing(logos:aws-api-gateway)[When routes are set]
+ *   service logs(logos:aws-cloudwatch)[Access log group]
+ *   service api(logos:aws-api-gateway)[REST API and prod stage]
+ *   service routes(logos:aws-api-gateway)[Routes and integrations] in routing
+ *   logs:R -- L:api
+ *   api:R -- L:routes{group}
+ * ```
+ */
 export class ApiGatewayV1 extends BasicConstruct {
 	private restApi: RestApi;
 

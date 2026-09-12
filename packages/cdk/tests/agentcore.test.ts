@@ -1,4 +1,6 @@
-import { describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { Duration } from "aws-cdk-lib";
 import { Template } from "aws-cdk-lib/assertions";
@@ -8,10 +10,11 @@ import { Stack } from "../src/stack";
 import { createTestApp } from "./utils";
 
 class AgentCoreTestStack extends Stack {
-	constructor(scope: Construct, id: string) {
+	constructor(scope: Construct, id: string, assetPath: string) {
 		super(scope, id);
 
 		new AgentCore(this, "TimeAgent", {
+			assetPath,
 			environmentVariables: {
 				POWERTOOLS_SERVICE_NAME: "time-agent",
 			},
@@ -24,13 +27,47 @@ class AgentCoreTestStack extends Stack {
 }
 
 describe("AgentCore", () => {
-	const stack = new AgentCoreTestStack(createTestApp(), "AgentCoreTestStack");
-	const template = Template.fromStack(stack);
+	let fixtureRoot: string;
+	let assetPath: string;
+	let stack: AgentCoreTestStack;
+	let template: Template;
+
+	beforeAll(() => {
+		fixtureRoot = mkdtempSync(path.join(tmpdir(), "pawl-agentcore-unit-"));
+		assetPath = path.join(fixtureRoot, ".pawl", "agentcore");
+		mkdirSync(assetPath, { recursive: true });
+		writeFileSync(path.join(assetPath, "index.js"), "export {};\n");
+		stack = new AgentCoreTestStack(
+			createTestApp(),
+			"AgentCoreTestStack",
+			assetPath,
+		);
+		template = Template.fromStack(stack);
+	});
+
+	afterAll(() => {
+		if (fixtureRoot) rmSync(fixtureRoot, { recursive: true, force: true });
+	});
 
 	test("uses the default built agent asset directory", () => {
-		const agentCore = stack.node.findChild("TimeAgent") as AgentCore;
-
-		expect(agentCore.assetPath).toBe(".pawl/agentcore");
+		// A subprocess keeps the default relative asset path independent of the
+		// developer's build output without changing the test runner's cwd.
+		const result = Bun.spawnSync(
+			[
+				process.execPath,
+				"-e",
+				`import { AgentCore } from ${JSON.stringify(path.join(import.meta.dir, "../src/agentcore.ts"))};
+			import { Stack } from ${JSON.stringify(path.join(import.meta.dir, "../src/stack.ts"))};
+			import { createTestApp } from ${JSON.stringify(path.join(import.meta.dir, "utils.ts"))};
+			const app = createTestApp();
+			const agent = new AgentCore(new Stack(app, "DefaultAssetStack"), "Agent");
+			app.synth();
+			console.log(agent.assetPath);`,
+			],
+			{ cwd: fixtureRoot, stdout: "pipe", stderr: "pipe" },
+		);
+		expect(result.exitCode).toBe(0);
+		expect(result.stdout.toString().trim()).toBe(".pawl/agentcore");
 	});
 
 	test("creates a Node 22 HTTP AgentCore runtime from a code asset", () => {
@@ -94,7 +131,7 @@ describe("AgentCore", () => {
 				super(scope, id);
 
 				new AgentCore(this, "CustomAgent", {
-					assetPath: path.join(__dirname, "agentcore"),
+					assetPath,
 				});
 			}
 		}
@@ -105,6 +142,10 @@ describe("AgentCore", () => {
 		);
 		const agentCore = customStack.node.findChild("CustomAgent") as AgentCore;
 
-		expect(agentCore.assetPath).toBe(path.join(__dirname, "agentcore"));
+		expect(agentCore.assetPath).toBe(assetPath);
+		Template.fromStack(customStack).resourceCountIs(
+			"AWS::BedrockAgentCore::Runtime",
+			1,
+		);
 	});
 });

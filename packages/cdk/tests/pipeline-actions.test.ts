@@ -31,8 +31,6 @@ import { createArtifactPlan, planStageBatch } from "../src/pipeline/artifacts";
 import { PipelineDefinitionError } from "../src/pipeline/errors";
 import { Stack } from "../src/stack";
 
-process.env.LOCAL = "1";
-
 const publicTestNetwork = {
 	mode: "public-test" as const,
 	packageAccess: {

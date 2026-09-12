@@ -68,6 +68,14 @@ defineStacks((app) => {
 });
 ```
 
+### Lambda runtime
+
+`LambdaFunction` pins **Node.js 24.x**, ARM64, and ESM bundling with the `node24` target. `DurableLambdaFunction` inherits the same settings. Higher-level constructs—including API routes, event consumers, pipeline routers, reviewers, bridges, and reconcilers—use these defaults; callers do not select a different Lambda runtime.
+
+`LocalStack` and `Local` use Node.js 24 too. Their optional legacy `runtime` hint is deprecated and does not override the pinned runtime. CDK-generated helper Lambdas are covered by Node.js 24 synthesis tests.
+
+After upgrading, re-synthesize and deploy existing stacks. Rebuild native dependencies for Node.js 24/ARM64. This does not change the separate Node 22 runtime used by `AgentCore`.
+
 ### Static SPA hosting
 
 ```typescript

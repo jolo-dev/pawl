@@ -5,7 +5,7 @@ prev: false
 title: "ApiDestinationProps"
 ---
 
-Defined in: packages/cdk/src/api-destination.ts:14
+Defined in: [packages/cdk/src/api-destination.ts:14](https://github.com/jolo-dev/pawl/blob/f40688429e7e2c3160e40f482375bd699be30970/packages/cdk/src/api-destination.ts#L14)
 
 ## Properties
 
@@ -13,7 +13,7 @@ Defined in: packages/cdk/src/api-destination.ts:14
 
 > `readonly` **apiDestinationName**: `string`
 
-Defined in: node\_modules/aws-cdk-lib/aws-events/lib/api-destination.d.ts:12
+Defined in: node\_modules/aws-cdk-lib/aws-events/lib/api-destination.d.ts:16
 
 The name for the API destination.
 
@@ -29,15 +29,15 @@ The name for the API destination.
 
 > **authorization**: [`Authorization`](/cdk/classes/authorization/)
 
-Defined in: packages/cdk/src/api-destination.ts:17
+Defined in: [packages/cdk/src/api-destination.ts:20](https://github.com/jolo-dev/pawl/blob/f40688429e7e2c3160e40f482375bd699be30970/packages/cdk/src/api-destination.ts#L20)
 
 ***
 
 ### bodyParameters?
 
-> `readonly` `optional` **bodyParameters**: `Record`\<`string`, `HttpParameter`\>
+> `readonly` `optional` **bodyParameters?**: `Record`\<`string`, `HttpParameter`\>
 
-Defined in: node\_modules/aws-cdk-lib/aws-events/lib/connection.d.ts:30
+Defined in: node\_modules/aws-cdk-lib/aws-events/lib/connection.d.ts:32
 
 Additional string parameters to add to the invocation bodies
 
@@ -53,7 +53,7 @@ Additional string parameters to add to the invocation bodies
 
 > `readonly` **description**: `string`
 
-Defined in: node\_modules/aws-cdk-lib/aws-events/lib/api-destination.d.ts:18
+Defined in: node\_modules/aws-cdk-lib/aws-events/lib/api-destination.d.ts:22
 
 A description for the API destination.
 
@@ -69,7 +69,7 @@ A description for the API destination.
 
 > `readonly` **endpoint**: `string`
 
-Defined in: node\_modules/aws-cdk-lib/aws-events/lib/api-destination.d.ts:26
+Defined in: node\_modules/aws-cdk-lib/aws-events/lib/api-destination.d.ts:30
 
 The URL to the HTTP invocation endpoint for the API destination..
 
@@ -77,9 +77,9 @@ The URL to the HTTP invocation endpoint for the API destination..
 
 ### headerParameters?
 
-> `readonly` `optional` **headerParameters**: `Record`\<`string`, `HttpParameter`\>
+> `readonly` `optional` **headerParameters?**: `Record`\<`string`, `HttpParameter`\>
 
-Defined in: node\_modules/aws-cdk-lib/aws-events/lib/connection.d.ts:36
+Defined in: node\_modules/aws-cdk-lib/aws-events/lib/connection.d.ts:38
 
 Additional string parameters to add to the invocation headers
 
@@ -93,17 +93,17 @@ Additional string parameters to add to the invocation headers
 
 ### httpMethod?
 
-> `optional` **httpMethod**: `"GET"` \| `"POST"` \| `"PUT"`
+> `optional` **httpMethod?**: `"GET"` \| `"POST"` \| `"PUT"`
 
-Defined in: packages/cdk/src/api-destination.ts:18
+Defined in: [packages/cdk/src/api-destination.ts:21](https://github.com/jolo-dev/pawl/blob/f40688429e7e2c3160e40f482375bd699be30970/packages/cdk/src/api-destination.ts#L21)
 
 ***
 
 ### queryStringParameters?
 
-> `readonly` `optional` **queryStringParameters**: `Record`\<`string`, `HttpParameter`\>
+> `readonly` `optional` **queryStringParameters?**: `Record`\<`string`, `HttpParameter`\>
 
-Defined in: node\_modules/aws-cdk-lib/aws-events/lib/connection.d.ts:42
+Defined in: node\_modules/aws-cdk-lib/aws-events/lib/connection.d.ts:44
 
 Additional string parameters to add to the invocation query strings
 
@@ -117,6 +117,6 @@ Additional string parameters to add to the invocation query strings
 
 ### rateLimitPerSecond?
 
-> `optional` **rateLimitPerSecond**: `number`
+> `optional` **rateLimitPerSecond?**: `number`
 
-Defined in: packages/cdk/src/api-destination.ts:19
+Defined in: [packages/cdk/src/api-destination.ts:22](https://github.com/jolo-dev/pawl/blob/f40688429e7e2c3160e40f482375bd699be30970/packages/cdk/src/api-destination.ts#L22)

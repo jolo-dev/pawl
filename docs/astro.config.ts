@@ -1,6 +1,14 @@
+import { fileURLToPath } from "node:url";
 import starlight from "@astrojs/starlight";
 import { defineConfig } from "astro/config";
 import { createStarlightTypeDocPlugin } from "starlight-typedoc";
+
+// Local fork of typedoc-plugin-mermaid that also registers the mermaid icon
+// packs (logos, hugeicons) used by architecture-beta diagrams. Must be an
+// absolute path: TypeDoc resolves relative plugin paths against its own module.
+const mermaidPlugin = fileURLToPath(
+	new URL("./typedoc-plugin-mermaid.mjs", import.meta.url),
+);
 
 const [cdkStarlightTypeDoc, cdkTypeDocSidebarGroup] =
 	createStarlightTypeDocPlugin();
@@ -9,9 +17,9 @@ const [lambdaStarlightTypeDoc, lambdaTypeDocSidebarGroup] =
 
 const common = {
 	typeDoc: {
-		plugin: ["typedoc-plugin-mermaid", "typedoc-plugin-zod"],
+		plugin: [mermaidPlugin, "typedoc-plugin-zod"],
 	},
-	tsconfig: "../tsconfig.build.json",
+	tsconfig: "./tsconfig.typedoc.json",
 };
 
 // https://astro.build/config
@@ -22,39 +30,38 @@ export default defineConfig({
 	integrations: [
 		starlight({
 			title: "pawl",
+			components: {
+				ThemeProvider: "./src/overrides/ThemeProvider.astro",
+				ThemeSelect: "./src/overrides/ThemeSelect.astro",
+			},
 			logo: {
-				dark: "./src/assets/pawl-logo-dark.png",
-				light: "./src/assets/pawl-logo.png",
+				dark: "./src/assets/pawl-logo-no-text.png",
+				light: "./src/assets/pawl-logo-no-text.png",
 			},
 			customCss: ["./src/fonts/font-face.css", "./src/styles/custom.css"],
 			sidebar: [
 				{
-					label: "Libraries",
+					link: "lib/intro",
+					label: "Introduction",
+				},
+				{
+					label: "AWS CDK",
 					items: [
-						{
-							link: "lib/intro",
-							label: "Introduction",
-						},
-						{
-							label: "AWS CDK",
-							items: [
-								"lib/cdk",
-								"lib/cdk-localdevelopment",
-								"lib/cdk-tutorial",
-								"lib/cdk-readme",
-								cdkTypeDocSidebarGroup,
-							],
-						},
-						{
-							label: "AWS Lambda",
-							items: [
-								"lib/lambda",
-								"lib/lambda-localdevelopment",
-								"lib/lambda-tutorial",
-								"lib/lambda-readme",
-								lambdaTypeDocSidebarGroup,
-							],
-						},
+						"lib/cdk",
+						"lib/cdk-localdevelopment",
+						"lib/cdk-tutorial",
+						"lib/cdk-readme",
+						cdkTypeDocSidebarGroup,
+					],
+				},
+				{
+					label: "AWS Lambda",
+					items: [
+						"lib/lambda",
+						"lib/lambda-localdevelopment",
+						"lib/lambda-tutorial",
+						"lib/lambda-readme",
+						lambdaTypeDocSidebarGroup,
 					],
 				},
 			],

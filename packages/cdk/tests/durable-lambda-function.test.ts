@@ -21,11 +21,6 @@ function suppressFixtureFindings(lambdaFunction: LambdaFunction): void {
 					"The Lambda L2's generated execution role uses AWSLambdaBasicExecutionRole for fixture logging.",
 			},
 			{
-				id: "AwsSolutions-L1",
-				reason:
-					"Pawl deliberately pins the supported Node.js 22 runtime rather than CDK's moving latest runtime.",
-			},
-			{
 				id: "AwsSolutions-Lambda1",
 				reason: "This isolated construct fixture does not require VPC access.",
 			},
@@ -93,7 +88,7 @@ describe("DurableLambdaFunction", () => {
 	test("synthesizes Pawl defaults and durable configuration", () => {
 		template.hasResourceProperties("AWS::Lambda::Function", {
 			Architectures: ["arm64"],
-			Runtime: "nodejs22.x",
+			Runtime: "nodejs24.x",
 			DurableConfig: {
 				ExecutionTimeout: 2_592_000,
 				RetentionPeriodInDays: 90,

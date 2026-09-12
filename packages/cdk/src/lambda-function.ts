@@ -30,10 +30,19 @@ export type LambdaProps = {
 > &
 	BasicConstructProps;
 /**
+ * Bundles the supplied entry as ESM for a Node.js 24 ARM64 Lambda. The bundle
+ * is a build artifact, not another deployed service. Execution-role options pass
+ * through to NodejsFunction; explicit grants configure execution permissions.
+ * Monitoring and the p99 latency alarm are registered with the existing stack
+ * facility. The authorizer property is only a recorded flag: this class creates
+ * neither Cognito nor an authorizer resource. External triggers are omitted.
+ *
  * ```mermaid
  * architecture-beta
- *   service lambda(logos:aws-lambda)[AWS Lambda]
- *   service authorizer(logos:aws-cognito)[Authorizer]
+ *   group functionGroup(logos:aws-lambda)[Lambda function]
+ *   service bundle(logos:esbuild)[ESM code bundle] in functionGroup
+ *   service lambda(logos:aws-lambda)[Node 24 ARM64 Lambda] in functionGroup
+ *   bundle:R --> L:lambda
  * ```
  */
 export class LambdaFunction extends BasicConstruct {
@@ -41,7 +50,7 @@ export class LambdaFunction extends BasicConstruct {
 	public authorizer?: boolean;
 	/**
 	 * The above function is a TypeScript constructor that creates a Lambda function with specific
-	 * configurations, including using Node.js 22.x runtime and bundling to ESM format for efficiency.
+	 * configurations, including using Node.js 24.x runtime and bundling to ESM format for efficiency.
 	 * @param {Stack} scope - The `scope` parameter in the constructor refers to the AWS CloudFormation
 	 * stack where the Lambda function will be deployed. It provides a way to define the logical
 	 * boundaries for the resources within the stack.
@@ -75,12 +84,12 @@ export class LambdaFunction extends BasicConstruct {
 			...props,
 			functionName: `${this.prefix}${id}-lambda`,
 			architecture: Architecture.ARM_64, // for efficiency
-			runtime: Runtime.NODEJS_22_X, // The NODEJS_LATEST would point to Node 18
+			runtime: Runtime.NODEJS_24_X,
 			// Bundle to ESM
 			bundling: {
 				minify: true,
 				format: OutputFormat.ESM,
-				target: "node22",
+				target: "node24",
 				// Tracer is in CJS: https://docs.powertools.aws.dev/lambda/typescript/latest/core/tracer/#usage
 				esbuildArgs: {
 					"--tree-shaking": "true",

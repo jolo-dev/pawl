@@ -53,29 +53,44 @@ export interface ApiProps extends BasicConstructProps {
 }
 
 /**
- * This construct is an HTTP API Gateway v2. It has to use an authorizer and can trigger a list
- * of AWS Lambdas. The authorizer can be LambdaAuthorizer, IamAuthorizer, CognitoUserPoolAuthorizer, and HttpJwtAuthorizer
- * 
- * ```mermaid 
-  architecture-beta
-    group authorizer(logos:aws-cognito)[Authorizer]
-    service api(logos:aws-api-gateway)[HTTP API Gateway v2]
-    service lambda(logos:aws-lambda)[Lambda]
-    service cognito(logos:aws-cognito)[AWS Cognito] in authorizer
-    service iam(logos:aws-iam)[IAM] in authorizer
-    service jwt(logos:jwt)[JWT] in authorizer
-    service lambdaAuth(logos:aws-lambda)[Lambda] in authorizer
-    auth{group}:L --> R:api
-    api:B --> T:lambda
- * ```
+ * An HTTP API Gateway v2 with optional authorization and Lambda or EventBridge routes.
  *
+ * The diagram summarizes provisioned resources, not external callers or supplied
+ * dependencies. The HTTP API, default stage, and access log group are always created.
+ * Routes and integrations are created when routes are configured, including addRoute calls.
+ * API authorizers are created when JWT (including Cognito) or Lambda authorization
+ * is bound to a route. IAM and no-auth modes do not create an API authorizer resource.
+ *
+ * Binding may also create Lambda invoke permissions, an EventBridge integration role,
+ * or a Cognito app client when clients are not supplied. These supporting resources
+ * are summarized here rather than expanded into individual diagram nodes.
+ * Supplied Lambda functions, EventBridge buses, user pools, and authorizer functions
+ * are not created by this construct. Monitoring is registered with the existing
+ * stack monitoring facility; that shared facility is not depicted as an owned resource.
+ * Undirected edges show configuration relationships, not request flow.
+ *
+ * ```mermaid
+ * architecture-beta
+ *   group mandatory(logos:aws-api-gateway)[HTTP API]
+ *   group routing(logos:aws-api-gateway)[When routes are configured]
+ *   group authorization(logos:aws-iam)[Optional authorizer]
+ *   service logs(logos:aws-cloudwatch)[Access log group] in mandatory
+ *   service api(logos:aws-api-gateway)[HTTP API and stage] in mandatory
+ *   service routes(logos:aws-api-gateway)[Routes and integrations] in routing
+ *   service authorizer(logos:aws-api-gateway)[API authorizer] in authorization
+ *   api:L --> R:logs
+ *   api:R -- L:routes
+ *   authorizer{group}:B -- T:api
+ *   align row logs api routes
+ *   align column authorizer api
+ * ```
  */
 export class ApiGateway extends BasicConstruct {
 	readonly httpApi: HttpApi;
 
 	/**
-	 * The constructor function initializes an HTTP API with specified routes. Every API GW has an Authorizer(@see {@link foo}).
-	 * It is possible to give each route an individual Authorizer.
+	 * Creates an HTTP API with a default stage, access logs, and optional routes.
+	 * Authorization is optional; individual routes can override the default authorizer.
 	 *
 	 * @param {Stack} scope - The `scope` parameter in the constructor represents the stack where the
 	 * resources will be created. It is typically an instance of the `Stack` class in an AWS

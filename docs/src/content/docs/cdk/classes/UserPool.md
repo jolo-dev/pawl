@@ -5,7 +5,7 @@ prev: false
 title: "UserPool"
 ---
 
-Defined in: node\_modules/aws-cdk-lib/aws-cognito/lib/user-pool.d.ts:748
+Defined in: node\_modules/aws-cdk-lib/aws-cognito/lib/user-pool.d.ts:901
 
 Define a Cognito User Pool
 
@@ -15,17 +15,17 @@ Define a Cognito User Pool
 
 ## Constructors
 
-### new UserPool()
+### Constructor
 
-> **new UserPool**(`scope`, `id`, `props`?): [`UserPool`](/cdk/classes/userpool/)
+> **new UserPool**(`scope`, `id`, `props?`): `UserPool`
 
-Defined in: node\_modules/aws-cdk-lib/aws-cognito/lib/user-pool.d.ts:777
+Defined in: node\_modules/aws-cdk-lib/aws-cognito/lib/user-pool.d.ts:934
 
 #### Parameters
 
 ##### scope
 
-[`Construct`](/cdk/classes/construct/)
+[`Construct`](/cdk/interfaces/construct/)
 
 ##### id
 
@@ -37,7 +37,7 @@ Defined in: node\_modules/aws-cdk-lib/aws-cognito/lib/user-pool.d.ts:777
 
 #### Returns
 
-[`UserPool`](/cdk/classes/userpool/)
+`UserPool`
 
 #### Overrides
 
@@ -45,31 +45,11 @@ Defined in: node\_modules/aws-cdk-lib/aws-cognito/lib/user-pool.d.ts:777
 
 ## Properties
 
-### env
-
-> `readonly` **env**: `ResourceEnvironment`
-
-Defined in: node\_modules/aws-cdk-lib/core/lib/resource.d.ts:111
-
-The environment this resource belongs to.
-For resources that are created and managed by the CDK
-(generally, those created by creating new class instances like Role, Bucket, etc.),
-this is always the same as the environment of the stack they belong to;
-however, for imported resources
-(those obtained from static methods like fromRoleArn, fromBucketName, etc.),
-that might be different than the stack they were imported into.
-
-#### Inherited from
-
-`UserPoolBase.env`
-
-***
-
 ### identityProviders
 
 > `readonly` **identityProviders**: `IUserPoolIdentityProvider`[]
 
-Defined in: node\_modules/aws-cdk-lib/aws-cognito/lib/user-pool.d.ts:737
+Defined in: node\_modules/aws-cdk-lib/aws-cognito/lib/user-pool.d.ts:886
 
 Get all identity providers registered with this user pool.
 
@@ -83,7 +63,7 @@ Get all identity providers registered with this user pool.
 
 > `readonly` **node**: `Node`
 
-Defined in: node\_modules/constructs/lib/construct.d.ts:266
+Defined in: node\_modules/constructs/lib/construct.d.ts:289
 
 The tree node.
 
@@ -93,25 +73,11 @@ The tree node.
 
 ***
 
-### stack
-
-> `readonly` **stack**: `Stack`
-
-Defined in: node\_modules/aws-cdk-lib/core/lib/resource.d.ts:110
-
-The stack in which this resource is defined.
-
-#### Inherited from
-
-`UserPoolBase.stack`
-
-***
-
 ### userPoolArn
 
 > `readonly` **userPoolArn**: `string`
 
-Defined in: node\_modules/aws-cdk-lib/aws-cognito/lib/user-pool.d.ts:764
+Defined in: node\_modules/aws-cdk-lib/aws-cognito/lib/user-pool.d.ts:921
 
 The ARN of the user pool
 
@@ -125,7 +91,7 @@ The ARN of the user pool
 
 > `readonly` **userPoolId**: `string`
 
-Defined in: node\_modules/aws-cdk-lib/aws-cognito/lib/user-pool.d.ts:760
+Defined in: node\_modules/aws-cdk-lib/aws-cognito/lib/user-pool.d.ts:917
 
 The physical ID of this user pool resource
 
@@ -139,7 +105,7 @@ The physical ID of this user pool resource
 
 > `readonly` **userPoolProviderName**: `string`
 
-Defined in: node\_modules/aws-cdk-lib/aws-cognito/lib/user-pool.d.ts:769
+Defined in: node\_modules/aws-cdk-lib/aws-cognito/lib/user-pool.d.ts:926
 
 User pool provider name
 
@@ -155,19 +121,97 @@ User pool provider name
 
 > `readonly` **userPoolProviderUrl**: `string`
 
-Defined in: node\_modules/aws-cdk-lib/aws-cognito/lib/user-pool.d.ts:774
+Defined in: node\_modules/aws-cdk-lib/aws-cognito/lib/user-pool.d.ts:931
 
 User pool provider URL
 
 #### Attribute
 
+***
+
+### PROPERTY\_INJECTION\_ID
+
+> `readonly` `static` **PROPERTY\_INJECTION\_ID**: `string`
+
+Defined in: node\_modules/aws-cdk-lib/aws-cognito/lib/user-pool.d.ts:905
+
+Uniquely identifies this class.
+
+## Accessors
+
+### env
+
+#### Get Signature
+
+> **get** **env**(): `ResourceEnvironment`
+
+Defined in: node\_modules/aws-cdk-lib/core/lib/resource.d.ts:94
+
+The environment this resource belongs to.
+
+For resources that are created and managed in a Stack (those created by
+creating new class instances like `new Role()`, `new Bucket()`, etc.), this
+is always the same as the environment of the stack they belong to.
+
+For referenced resources (those obtained from referencing methods like
+`Role.fromRoleArn()`, `Bucket.fromBucketName()`, etc.), they might be
+different than the stack they were imported into.
+
+##### Returns
+
+`ResourceEnvironment`
+
+#### Inherited from
+
+`UserPoolBase.env`
+
+***
+
+### stack
+
+#### Get Signature
+
+> **get** **stack**(): `Stack`
+
+Defined in: node\_modules/aws-cdk-lib/core/lib/resource.d.ts:93
+
+The stack in which this resource is defined.
+
+##### Returns
+
+`Stack`
+
+#### Inherited from
+
+`UserPoolBase.stack`
+
+***
+
+### userPoolRef
+
+#### Get Signature
+
+> **get** **userPoolRef**(): `UserPoolReference`
+
+Defined in: node\_modules/aws-cdk-lib/aws-cognito/lib/user-pool.d.ts:887
+
+A reference to a UserPool resource.
+
+##### Returns
+
+`UserPoolReference`
+
+#### Inherited from
+
+`UserPoolBase.userPoolRef`
+
 ## Methods
 
 ### addClient()
 
-> **addClient**(`id`, `options`?): [`UserPoolClient`](/cdk/classes/userpoolclient/)
+> **addClient**(`id`, `options?`): [`UserPoolClient`](/cdk/classes/userpoolclient/)
 
-Defined in: node\_modules/aws-cdk-lib/aws-cognito/lib/user-pool.d.ts:738
+Defined in: node\_modules/aws-cdk-lib/aws-cognito/lib/user-pool.d.ts:888
 
 Add a new app client to this user pool.
 
@@ -199,7 +243,7 @@ https://docs.aws.amazon.com/cognito/latest/developerguide/user-pool-settings-cli
 
 > **addDomain**(`id`, `options`): `UserPoolDomain`
 
-Defined in: node\_modules/aws-cdk-lib/aws-cognito/lib/user-pool.d.ts:739
+Defined in: node\_modules/aws-cdk-lib/aws-cognito/lib/user-pool.d.ts:889
 
 Associate a domain to this user pool.
 
@@ -231,7 +275,7 @@ https://docs.aws.amazon.com/cognito/latest/developerguide/cognito-user-pools-ass
 
 > **addGroup**(`id`, `options`): `UserPoolGroup`
 
-Defined in: node\_modules/aws-cdk-lib/aws-cognito/lib/user-pool.d.ts:741
+Defined in: node\_modules/aws-cdk-lib/aws-cognito/lib/user-pool.d.ts:891
 
 Add a new group to this user pool.
 
@@ -263,7 +307,7 @@ https://docs.aws.amazon.com/cognito/latest/developerguide/cognito-user-pools-use
 
 > **addResourceServer**(`id`, `options`): `UserPoolResourceServer`
 
-Defined in: node\_modules/aws-cdk-lib/aws-cognito/lib/user-pool.d.ts:740
+Defined in: node\_modules/aws-cdk-lib/aws-cognito/lib/user-pool.d.ts:890
 
 Add a new resource server to this user pool.
 
@@ -293,9 +337,9 @@ https://docs.aws.amazon.com/cognito/latest/developerguide/cognito-user-pools-res
 
 ### addTrigger()
 
-> **addTrigger**(`operation`, `fn`, `lambdaVersion`?): `void`
+> **addTrigger**(`operation`, `fn`, `lambdaVersion?`): `void`
 
-Defined in: node\_modules/aws-cdk-lib/aws-cognito/lib/user-pool.d.ts:782
+Defined in: node\_modules/aws-cdk-lib/aws-cognito/lib/user-pool.d.ts:939
 
 Add a lambda trigger to a user pool operation
 
@@ -323,11 +367,43 @@ https://docs.aws.amazon.com/cognito/latest/developerguide/cognito-user-identity-
 
 ***
 
+### applyCrossStackReferenceStrength()
+
+> **applyCrossStackReferenceStrength**(`strength`): `void`
+
+Defined in: node\_modules/aws-cdk-lib/core/lib/resource.d.ts:139
+
+Override the cross-stack reference strength for this resource.
+
+When set, any cross-stack reference to this resource will use the specified
+mechanism instead of the global default determined by the
+`@aws-cdk/core:defaultCrossStackReferences` context key. This is useful for
+selectively weakening specific references to avoid the "deadly embrace" problem
+without changing the app-wide default.
+
+#### Parameters
+
+##### strength
+
+`ReferenceStrength`
+
+The reference strength to use for this resource.
+
+#### Returns
+
+`void`
+
+#### Inherited from
+
+`UserPoolBase.applyCrossStackReferenceStrength`
+
+***
+
 ### applyRemovalPolicy()
 
 > **applyRemovalPolicy**(`policy`): `void`
 
-Defined in: node\_modules/aws-cdk-lib/core/lib/resource.d.ts:147
+Defined in: node\_modules/aws-cdk-lib/core/lib/resource.d.ts:127
 
 Apply the given removal policy to this resource
 
@@ -359,10 +435,9 @@ account for data recovery and cleanup later (`RemovalPolicy.RETAIN`).
 
 > **grant**(`grantee`, ...`actions`): `Grant`
 
-Defined in: node\_modules/aws-cdk-lib/aws-cognito/lib/user-pool.d.ts:743
+Defined in: node\_modules/aws-cdk-lib/aws-cognito/lib/user-pool.d.ts:896
 
-Adds an IAM policy statement associated with this user pool to an
-IAM principal's policy.
+[disable-awslint:no-grants]
 
 #### Parameters
 
@@ -388,7 +463,7 @@ IAM principal's policy.
 
 > **registerIdentityProvider**(`provider`): `void`
 
-Defined in: node\_modules/aws-cdk-lib/aws-cognito/lib/user-pool.d.ts:742
+Defined in: node\_modules/aws-cdk-lib/aws-cognito/lib/user-pool.d.ts:892
 
 Register an identity provider with this user pool.
 
@@ -396,7 +471,7 @@ Register an identity provider with this user pool.
 
 ##### provider
 
-`IUserPoolIdentityProvider`
+`IUserPoolIdentityProviderRef`
 
 #### Returns
 
@@ -412,7 +487,7 @@ Register an identity provider with this user pool.
 
 > **toString**(): `string`
 
-Defined in: node\_modules/constructs/lib/construct.d.ts:279
+Defined in: node\_modules/constructs/lib/construct.d.ts:314
 
 Returns a string representation of this construct.
 
@@ -426,11 +501,44 @@ Returns a string representation of this construct.
 
 ***
 
+### with()
+
+> **with**(...`mixins`): `IConstruct`
+
+Defined in: node\_modules/aws-cdk-lib/core/lib/resource.d.ts:95
+
+Applies one or more mixins to this construct.
+
+Mixins are applied in order. The list of constructs is captured at the
+start of the call, so constructs added by a mixin will not be visited.
+Use multiple `with()` calls if subsequent mixins should apply to added
+constructs.
+
+#### Parameters
+
+##### mixins
+
+...`IMixin`[]
+
+The mixins to apply
+
+#### Returns
+
+`IConstruct`
+
+This construct for chaining
+
+#### Inherited from
+
+`UserPoolBase.with`
+
+***
+
 ### fromUserPoolArn()
 
 > `static` **fromUserPoolArn**(`scope`, `id`, `userPoolArn`): `IUserPool`
 
-Defined in: node\_modules/aws-cdk-lib/aws-cognito/lib/user-pool.d.ts:756
+Defined in: node\_modules/aws-cdk-lib/aws-cognito/lib/user-pool.d.ts:913
 
 Import an existing user pool based on its ARN.
 
@@ -438,7 +546,7 @@ Import an existing user pool based on its ARN.
 
 ##### scope
 
-[`Construct`](/cdk/classes/construct/)
+[`Construct`](/cdk/interfaces/construct/)
 
 ##### id
 
@@ -458,7 +566,7 @@ Import an existing user pool based on its ARN.
 
 > `static` **fromUserPoolId**(`scope`, `id`, `userPoolId`): `IUserPool`
 
-Defined in: node\_modules/aws-cdk-lib/aws-cognito/lib/user-pool.d.ts:752
+Defined in: node\_modules/aws-cdk-lib/aws-cognito/lib/user-pool.d.ts:909
 
 Import an existing user pool based on its id.
 
@@ -466,7 +574,7 @@ Import an existing user pool based on its id.
 
 ##### scope
 
-[`Construct`](/cdk/classes/construct/)
+[`Construct`](/cdk/interfaces/construct/)
 
 ##### id
 
@@ -486,7 +594,7 @@ Import an existing user pool based on its id.
 
 > `static` **isConstruct**(`x`): `x is Construct`
 
-Defined in: node\_modules/constructs/lib/construct.d.ts:262
+Defined in: node\_modules/constructs/lib/construct.d.ts:285
 
 Checks if `x` is a construct.
 
@@ -528,7 +636,7 @@ true if `x` is an object created from a class which extends `Construct`.
 
 > `static` **isOwnedResource**(`construct`): `boolean`
 
-Defined in: node\_modules/aws-cdk-lib/core/lib/resource.d.ts:109
+Defined in: node\_modules/aws-cdk-lib/core/lib/resource.d.ts:80
 
 Returns true if the construct was created by CDK, and false otherwise
 
@@ -552,7 +660,7 @@ Returns true if the construct was created by CDK, and false otherwise
 
 > `static` **isResource**(`construct`): `construct is Resource`
 
-Defined in: node\_modules/aws-cdk-lib/core/lib/resource.d.ts:105
+Defined in: node\_modules/aws-cdk-lib/core/lib/resource.d.ts:76
 
 Check whether the given construct is a Resource
 

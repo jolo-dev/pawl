@@ -92,13 +92,15 @@ describe("renderCodeCommitTemplateFiles", () => {
 
 	test("imports only from @pawl/cdk in the generated stack", () => {
 		const files = renderCodeCommitTemplateFiles(baseConfig());
-		const stack = files.find((f) => f.path === "stacks/codecommit-stack.ts")!;
+		const stack = files.find((f) => f.path === "stacks/codecommit-stack.ts");
+		if (!stack) throw new Error("Expected generated CodeCommit stack");
 		expect(stack.content).toContain('from "@pawl/cdk"');
 		expect(stack.content).not.toContain('from "aws-cdk-lib"');
 
 		const testFile = files.find(
 			(f) => f.path === "tests/codecommit-stack.test.ts",
-		)!;
+		);
+		if (!testFile) throw new Error("Expected generated CodeCommit stack test");
 		expect(testFile.content).toContain('from "@pawl/cdk"');
 		expect(testFile.content).not.toContain('from "aws-cdk-lib"');
 	});

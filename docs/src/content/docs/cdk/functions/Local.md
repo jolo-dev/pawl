@@ -7,10 +7,9 @@ title: "Local"
 
 > **Local**(`props`): `void`
 
-Defined in: packages/cdk/src/local-stack.ts:60
+Defined in: [packages/cdk/src/local-stack.ts:77](https://github.com/jolo-dev/pawl/blob/f40688429e7e2c3160e40f482375bd699be30970/packages/cdk/src/local-stack.ts#L77)
 
-The function `Local` creates a new `LocalStack` in an AWS CDK application with specified lambda
-directory and runtime.
+Creates a LocalStack for the specified Lambda directory. Functions use Node.js 24.
 
 ## Parameters
 
@@ -18,10 +17,8 @@ directory and runtime.
 
 `LocalStackProps`
 
-The `props` parameter in the `Local` function likely contains
-information or configurations needed for setting up a local stack. This could include properties
-such as `lambdaDir` which specifies the directory where Lambda functions are located, and `runtime`
-which specifies the runtime environment for the Lambda functions. These properties
+The Lambda directory and an optional, deprecated runtime hint.
+The hint is retained for compatibility and does not change the deployed runtime.
 
 ## Returns
 

@@ -233,11 +233,60 @@ function normalizeStages(
  * | false/omitted | omitted | Native default-branch trigger |
  * | true | omitted | Exact-revision PR pipeline router, without AI review |
  * | false/omitted | present | Native trigger plus standalone AI reviewer |
- * | true | present | PR router plus durable `AIReview` bridge in the first user stage |
+ * | true | present | PR router plus durable `AIReview` bridge in the first user stage when coordination is active |
  *
  * Team and deployment stage are supplied through CDK context (`team` and
  * `stage`) for `BasicConstruct` naming and tags, not through
  * {@link CodePipelineProps}.
+ *
+ * The diagram summarizes provisioned composition and configured actions, not
+ * supplied projects, functions, deployment buckets, or stacks. The V2 pipeline
+ * is created in the constructor; source() binds its CodeCommit source action and
+ * stage() binds user stages/actions. A source and at least one user stage are
+ * required for successful synthesis. Later user stages are not mandatory.
+ *
+ * Create source mode provisions a repository, with an initial ZIP asset only when
+ * sourcePath is set. Import and supplied modes create no repository resource.
+ * Pawl creates an artifact bucket only without artifactBucket or
+ * crossRegionReplicationBuckets; it creates the key only when artifactEncryptionKey
+ * is also absent. Supplied storage and CDK-managed cross-region support are omitted.
+ * Undirected edges show configuration, not action execution order.
+ *
+ * With onPullRequest and no autoReviewer, PR routing resources include a router,
+ * state table with GSI2, delivery DLQ, repository rules/targets, and an execution
+ * state rule. With autoReviewer, the auto-reviewer composition is created instead
+ * and its router reused; onPullRequest adds an execution-state rule targeting it.
+ * Only active PR-gated auto-review adds an AIReview Lambda action alongside the
+ * first user stage's actions, not a separate stage. Auto-review without PR mode
+ * creates neither that action nor the pipeline execution-state rule. PR mode
+ * disables the native source trigger. The PR-routing summary includes its execution
+ * rule; the separate execution node is only for the alternative reviewer mode.
+ *
+ * ```mermaid
+ * architecture-beta
+ *   group composition(logos:aws-codepipeline)[Configured composition]
+ *   service pipeline(logos:aws-codepipeline)[V2 pipeline] in composition
+ *   service source(logos:aws-codecommit)[CodeCommit source action] in composition
+ *   service actions(logos:aws-codepipeline)[Configured stages and actions] in composition
+ *   service repo(logos:aws-codecommit)[Optional created repository] in composition
+ *   service seed(disk)[Optional initial source ZIP asset] in composition
+ *   service storage(logos:aws-s3)[Optional artifact bucket] in composition
+ *   service key(logos:aws-kms)[Optional created key] in composition
+ *   service pr(logos:aws-lambda)[PR routing without reviewer] in composition
+ *   service reviewer(cloud)[Optional autoReviewer] in composition
+ *   service execution(logos:aws-eventbridge)[Execution rule only in PR mode] in composition
+ *   service aiReview(logos:aws-lambda)[AIReview only active PR mode] in composition
+ *   seed:R --> L:repo
+ *   repo:R -- L:source
+ *   pipeline:T -- R:source
+ *   pipeline:T -- L:actions
+ *   storage:R -- L:pipeline
+ *   storage:L -- R:key
+ *   pr:L -- R:pipeline
+ *   aiReview:L -- R:actions
+ *   aiReview:R -- L:reviewer
+ *   reviewer:R -- L:execution
+ * ```
  *
  * @example Single and sequential stages, with parallel build actions
  * ```ts

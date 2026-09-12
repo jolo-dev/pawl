@@ -30,3 +30,6 @@ AGENTS.override.md.worktrees/
 # Agent worktrees
 .worktrees/
 .pi-subagents
+
+# Generated Impeccable live-session marker
+**/.impeccable/live/app-root.json

@@ -16,9 +16,9 @@ an AWS Cognito user pool.
 
 ## Constructors
 
-### new HttpJwtAuthorizer()
+### Constructor
 
-> **new HttpJwtAuthorizer**(`id`, `jwtIssuer`, `props`): [`HttpJwtAuthorizer`](/cdk/classes/httpjwtauthorizer/)
+> **new HttpJwtAuthorizer**(`id`, `jwtIssuer`, `props`): `HttpJwtAuthorizer`
 
 Defined in: node\_modules/aws-cdk-lib/aws-apigatewayv2-authorizers/lib/http/jwt.d.ts:42
 
@@ -46,7 +46,7 @@ Properties to configure the authorizer
 
 #### Returns
 
-[`HttpJwtAuthorizer`](/cdk/classes/httpjwtauthorizer/)
+`HttpJwtAuthorizer`
 
 ## Properties
 

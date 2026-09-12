@@ -5,7 +5,7 @@ prev: false
 title: "EventTarget"
 ---
 
-Defined in: packages/cdk/src/eventbridge.ts:21
+Defined in: [packages/cdk/src/eventbridge.ts:26](https://github.com/jolo-dev/pawl/blob/f40688429e7e2c3160e40f482375bd699be30970/packages/cdk/src/eventbridge.ts#L26)
 
 ## Properties
 
@@ -13,12 +13,12 @@ Defined in: packages/cdk/src/eventbridge.ts:21
 
 > **eventPattern**: `EventPattern`
 
-Defined in: packages/cdk/src/eventbridge.ts:23
+Defined in: [packages/cdk/src/eventbridge.ts:28](https://github.com/jolo-dev/pawl/blob/f40688429e7e2c3160e40f482375bd699be30970/packages/cdk/src/eventbridge.ts#L28)
 
 ***
 
 ### type
 
-> **type**: [`LambdaFunction`](/cdk/classes/lambdafunction/) \| [`Sqs`](/cdk/classes/sqs/) \| [`ApiDestination`](/cdk/classes/apidestination/) \| [`EventBridge`](/cdk/classes/eventbridge/)
+> **type**: [`ApiDestination`](/cdk/classes/apidestination/) \| [`LambdaFunction`](/cdk/classes/lambdafunction/) \| [`Sqs`](/cdk/classes/sqs/) \| [`EventBridge`](/cdk/classes/eventbridge/) \| [`EventPipe`](/cdk/type-aliases/eventpipe/)
 
-Defined in: packages/cdk/src/eventbridge.ts:22
+Defined in: [packages/cdk/src/eventbridge.ts:27](https://github.com/jolo-dev/pawl/blob/f40688429e7e2c3160e40f482375bd699be30970/packages/cdk/src/eventbridge.ts#L27)

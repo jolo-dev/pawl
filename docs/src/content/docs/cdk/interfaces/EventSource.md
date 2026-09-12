@@ -5,13 +5,13 @@ prev: false
 title: "EventSource"
 ---
 
-Defined in: packages/cdk/src/dynamodb-streams.ts:21
+Defined in: [packages/cdk/src/dynamodb-streams.ts:25](https://github.com/jolo-dev/pawl/blob/f40688429e7e2c3160e40f482375bd699be30970/packages/cdk/src/dynamodb-streams.ts#L25)
 
 ## Properties
 
 ### batchSize?
 
-> `readonly` `optional` **batchSize**: `number`
+> `readonly` `optional` **batchSize?**: `number`
 
 Defined in: node\_modules/aws-cdk-lib/aws-lambda-event-sources/lib/stream.d.ts:22
 
@@ -35,9 +35,9 @@ Valid Range:
 
 ### bisectBatchOnError?
 
-> `readonly` `optional` **bisectBatchOnError**: `boolean`
+> `readonly` `optional` **bisectBatchOnError?**: `boolean`
 
-Defined in: node\_modules/aws-cdk-lib/aws-lambda-event-sources/lib/stream.d.ts:77
+Defined in: node\_modules/aws-cdk-lib/aws-lambda-event-sources/lib/stream.d.ts:92
 
 If the function returns an error, split the batch in two and retry.
 
@@ -51,7 +51,7 @@ false
 
 ### enabled?
 
-> `readonly` `optional` **enabled**: `boolean`
+> `readonly` `optional` **enabled?**: `boolean`
 
 Defined in: node\_modules/aws-cdk-lib/aws-lambda-event-sources/lib/stream.d.ts:41
 
@@ -67,9 +67,9 @@ true
 
 ### filterEncryption?
 
-> `readonly` `optional` **filterEncryption**: `IKey`
+> `readonly` `optional` **filterEncryption?**: `IKey`
 
-Defined in: node\_modules/aws-cdk-lib/aws-lambda-event-sources/lib/stream.d.ts:150
+Defined in: node\_modules/aws-cdk-lib/aws-lambda-event-sources/lib/stream.d.ts:162
 
 Add Customer managed KMS key to encrypt Filter Criteria.
 
@@ -89,9 +89,9 @@ By default, Lambda will encrypt Filter Criteria using AWS managed keys
 
 ### filters?
 
-> `readonly` `optional` **filters**: `object`[]
+> `readonly` `optional` **filters?**: `object`[]
 
-Defined in: node\_modules/aws-cdk-lib/aws-lambda-event-sources/lib/stream.d.ts:139
+Defined in: node\_modules/aws-cdk-lib/aws-lambda-event-sources/lib/stream.d.ts:151
 
 Add filter criteria option
 
@@ -109,7 +109,7 @@ Add filter criteria option
 
 ### maxBatchingWindow?
 
-> `readonly` `optional` **maxBatchingWindow**: `Duration`
+> `readonly` `optional` **maxBatchingWindow?**: [`Duration`](/cdk/classes/duration/)
 
 Defined in: node\_modules/aws-cdk-lib/aws-lambda-event-sources/lib/stream.d.ts:35
 
@@ -130,9 +130,9 @@ https://docs.aws.amazon.com/lambda/latest/dg/invocation-eventsourcemapping.html#
 
 ### maxRecordAge?
 
-> `readonly` `optional` **maxRecordAge**: `Duration`
+> `readonly` `optional` **maxRecordAge?**: [`Duration`](/cdk/classes/duration/)
 
-Defined in: node\_modules/aws-cdk-lib/aws-lambda-event-sources/lib/stream.d.ts:90
+Defined in: node\_modules/aws-cdk-lib/aws-lambda-event-sources/lib/stream.d.ts:105
 
 The maximum age of a record that Lambda sends to a function for processing.
 Valid Range:
@@ -153,9 +153,9 @@ Record are valid until it expires in the event source.
 
 ### metricsConfig?
 
-> `readonly` `optional` **metricsConfig**: `MetricsConfig`
+> `readonly` `optional` **metricsConfig?**: `MetricsConfig`
 
-Defined in: node\_modules/aws-cdk-lib/aws-lambda-event-sources/lib/stream.d.ts:157
+Defined in: node\_modules/aws-cdk-lib/aws-lambda-event-sources/lib/stream.d.ts:169
 
 Configuration for enhanced monitoring metrics collection
 When specified, enables collection of additional metrics for the stream event source
@@ -170,11 +170,11 @@ When specified, enables collection of additional metrics for the stream event so
 
 ### onFailure?
 
-> `readonly` `optional` **onFailure**: `IEventSourceDlq`
+> `readonly` `optional` **onFailure?**: `IEventSourceDlq`
 
-Defined in: node\_modules/aws-cdk-lib/aws-lambda-event-sources/lib/stream.d.ts:133
+Defined in: node\_modules/aws-cdk-lib/aws-lambda-event-sources/lib/stream.d.ts:145
 
-An Amazon SQS queue or Amazon SNS topic destination for discarded records.
+An Amazon S3, Amazon SQS queue or Amazon SNS topic destination for discarded records.
 
 #### Default
 
@@ -186,9 +186,9 @@ An Amazon SQS queue or Amazon SNS topic destination for discarded records.
 
 ### parallelizationFactor?
 
-> `readonly` `optional` **parallelizationFactor**: `number`
+> `readonly` `optional` **parallelizationFactor?**: `number`
 
-Defined in: node\_modules/aws-cdk-lib/aws-lambda-event-sources/lib/stream.d.ts:112
+Defined in: node\_modules/aws-cdk-lib/aws-lambda-event-sources/lib/stream.d.ts:124
 
 The number of batches to process from each shard concurrently.
 Valid Range:
@@ -205,13 +205,17 @@ Valid Range:
 
 ### provisionedPollerConfig?
 
-> `readonly` `optional` **provisionedPollerConfig**: `ProvisionedPollerConfig`
+> `readonly` `optional` **provisionedPollerConfig?**: `ProvisionedPollerConfig`
 
-Defined in: node\_modules/aws-cdk-lib/aws-lambda-event-sources/lib/stream.d.ts:48
+Defined in: node\_modules/aws-cdk-lib/aws-lambda-event-sources/lib/stream.d.ts:51
 
 Configuration for provisioned pollers that read from the event source.
 When specified, allows control over the minimum and maximum number of pollers
 that can be provisioned to process events from the source.
+
+#### See
+
+https://docs.aws.amazon.com/lambda/latest/dg/kafka-scaling-modes.html
 
 #### Default
 
@@ -223,9 +227,9 @@ that can be provisioned to process events from the source.
 
 ### reportBatchItemFailures?
 
-> `readonly` `optional` **reportBatchItemFailures**: `boolean`
+> `readonly` `optional` **reportBatchItemFailures?**: `boolean`
 
-Defined in: node\_modules/aws-cdk-lib/aws-lambda-event-sources/lib/stream.d.ts:120
+Defined in: node\_modules/aws-cdk-lib/aws-lambda-event-sources/lib/stream.d.ts:132
 
 Allow functions to return partially successful responses for a batch of records.
 
@@ -243,23 +247,20 @@ false
 
 ### retryAttempts?
 
-> `readonly` `optional` **retryAttempts**: `number`
+> `readonly` `optional` **retryAttempts?**: `number`
 
-Defined in: node\_modules/aws-cdk-lib/aws-lambda-event-sources/lib/stream.d.ts:103
+Defined in: node\_modules/aws-cdk-lib/aws-lambda-event-sources/lib/stream.d.ts:115
 
-Maximum number of retry attempts
-Valid Range:
-* Minimum value of 0
-* Maximum value of 10000
+Maximum number of retry attempts.
 
-The default value is -1, which sets the maximum number of retries to infinite.
-When MaximumRetryAttempts is infinite, Lambda retries failed records until
-the record expires in the event source.
+Set to -1 for infinite retries (until the record expires in the event source).
+
+Valid Range: -1 (infinite) or 0 to 10000
 
 #### Default
 
 ```ts
--1
+-1 (infinite retries)
 ```
 
 ***
@@ -268,15 +269,15 @@ the record expires in the event source.
 
 > **startingPosition**: `"LATEST"` \| `"TRIM_HORIZON"` \| `"AT_TIMESTAMP"`
 
-Defined in: packages/cdk/src/dynamodb-streams.ts:22
+Defined in: [packages/cdk/src/dynamodb-streams.ts:26](https://github.com/jolo-dev/pawl/blob/f40688429e7e2c3160e40f482375bd699be30970/packages/cdk/src/dynamodb-streams.ts#L26)
 
 ***
 
 ### tumblingWindow?
 
-> `readonly` `optional` **tumblingWindow**: `Duration`
+> `readonly` `optional` **tumblingWindow?**: [`Duration`](/cdk/classes/duration/)
 
-Defined in: node\_modules/aws-cdk-lib/aws-lambda-event-sources/lib/stream.d.ts:127
+Defined in: node\_modules/aws-cdk-lib/aws-lambda-event-sources/lib/stream.d.ts:139
 
 The size of the tumbling windows to group records sent to DynamoDB or Kinesis
 Valid Range: 0 - 15 minutes

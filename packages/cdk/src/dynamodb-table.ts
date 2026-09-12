@@ -121,7 +121,24 @@ function toGlobalSecondaryIndex(
 	};
 }
 
-/** An on-demand DynamoDB table for durable application state. */
+/**
+ * An on-demand DynamoDB table for durable application state.
+ *
+ * Always creates a non-streaming table with Dynamo-owned encryption. PITR,
+ * retention, and deletion protection default on; TTL and global secondary indexes
+ * are optional. Indexes are table configuration, not separate database deployments.
+ * The undirected edge shows that configuration. Data access requires explicit
+ * grants to supplied functions. Monitoring uses the existing stack facility.
+ *
+ * ```mermaid
+ * architecture-beta
+ *   group tableGroup(logos:aws-dynamodb)[DynamoDB table]
+ *   group optionalIndexes(database)[When indexes are configured]
+ *   service table(logos:aws-dynamodb)[On demand table] in tableGroup
+ *   service indexes(database)[Global secondary indexes] in optionalIndexes
+ *   table:R -- L:indexes
+ * ```
+ */
 export class DynamoDbTable extends BasicConstruct {
 	readonly table: TableV2;
 	readonly tableArn: string;

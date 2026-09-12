@@ -288,10 +288,6 @@ describe("CodePipelineReviewerStack", () => {
 						reason:
 							"This Lambda uses the AWS-managed basic execution policy for CloudWatch logging.",
 					},
-					{
-						id: "AwsSolutions-L1",
-						reason: "Pawl pins its supported Node.js 22 runtime.",
-					},
 				],
 				true,
 			);

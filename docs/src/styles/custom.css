@@ -1,12 +1,831 @@
+/* ==========================================================================
+   pawl docs — Sketch Edition
+   A rough, hand-drawn world inspired by excalidraw:
+   charcoal paper, faint pencil grid, dashed ink lines, wavy underlines,
+   uneven hand-drawn border radii, and the E.ON red as the only loud color.
+   ========================================================================== */
+
 :root {
-	--sl-font: "EON";
+	/* Sketch world tokens */
+	--sketch-accent: #ea1b0a;
+	/* E.ON red */
+	--sketch-accent-strong: #ff6a55;
+	/* accessible red for small text on charcoal */
+	--sketch-accent-soft: rgba(234, 27, 10, 0.08);
+	--sketch-grid-line: rgba(255, 255, 255, 0.03);
+	--sketch-code-bg: #100f0e;
+
+	/* Hand-drawn border radii (the classic rough.js box trick) */
+	--rough-radius: 255px 15px 225px 15px / 15px 225px 15px 255px;
+	--rough-radius-flip: 15px 225px 15px 255px / 225px 15px 255px 15px;
+	--rough-radius-blob: 125px 10px 20px 185px / 25px 205px 205px 25px;
+	--rough-radius-code: 15px 45px 15px 35px / 35px 15px 45px 15px;
+	--rough-radius-inline: 6px 12px 8px 14px / 12px 6px 14px 8px;
+
+	/* Starlight palette remap — charcoal sketch */
+	--sl-color-white: #f3f0e9;
+	--sl-color-gray-1: #e9e5dc;
+	--sl-color-gray-2: #d3cec4;
+	--sl-color-gray-3: #a5a096;
+	--sl-color-gray-4: #6d685f;
+	--sl-color-gray-5: #2e2c29;
+	--sl-color-gray-6: #232220;
+	--sl-color-black: #131211;
+
+	--sl-hue-red: 4;
+	--sl-color-accent-low: #7d1509;
+	--sl-color-accent: var(--sketch-accent);
+	--sl-color-accent-high: var(--sketch-accent-strong);
+
+	--sl-color-text: var(--sl-color-gray-2);
+	--sl-color-text-accent: var(--sketch-accent-strong);
+	--sl-color-text-invert: #fff6f4;
+	--sl-color-bg: #1a1a1a;
+	--sl-color-bg-nav: transparent;
+	--sl-color-bg-sidebar: transparent;
+	--sl-color-bg-inline-code: rgba(255, 255, 255, 0.06);
+	--sl-color-bg-accent: var(--sketch-accent);
+	--sl-color-hairline-light: rgba(255, 255, 255, 0.18);
+	--sl-color-hairline: rgba(255, 255, 255, 0.14);
+	--sl-color-hairline-shade: rgba(255, 255, 255, 0.08);
+
+	--sl-color-backdrop-overlay: hsla(0, 0%, 6%, 0.7);
+
+	/* Type: the whole site is written by hand */
+	--sl-font: "Kalam", "Comic Sans MS", cursive;
+	--sl-font-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", monospace;
+
+	--sl-text-body: 1.0625rem;
+	--sl-sidebar-width: 25rem;
+	--sl-line-height: 1.7;
 }
 
-h1 {
-	font-family: "EON_HEAD", serif;
+/* Paper variant (theme toggle): warm paper, pencil grid, red ink */
+:root[data-theme="light"] {
+	--sketch-accent-strong: #c01405;
+	--sketch-accent-soft: rgba(234, 27, 10, 0.06);
+	--sketch-grid-line: rgba(0, 0, 0, 0.04);
+	--sketch-code-bg: #faf7ef;
+
+	--sl-color-white: #211d19;
+	--sl-color-gray-1: #2b2620;
+	--sl-color-gray-2: #45403a;
+	--sl-color-gray-3: #6b655c;
+	--sl-color-gray-4: #9b958a;
+	--sl-color-gray-5: #e5e0d5;
+	--sl-color-gray-6: #efeade;
+	--sl-color-black: #f7f3e9;
+
+	--sl-color-accent-low: #ffe1dd;
+	--sl-color-accent: #d81a08;
+	--sl-color-accent-high: #a51206;
+
+	--sl-color-text: var(--sl-color-gray-2);
+	--sl-color-text-accent: var(--sketch-accent-strong);
+	--sl-color-text-invert: #fff6f4;
+	--sl-color-bg: #fbf8f1;
+	--sl-color-bg-inline-code: rgba(0, 0, 0, 0.05);
+	--sl-color-hairline-light: rgba(43, 38, 32, 0.4);
+	--sl-color-hairline: rgba(43, 38, 32, 0.28);
+	--sl-color-hairline-shade: rgba(43, 38, 32, 0.18);
+
+	--sl-color-backdrop-overlay: hsla(35, 15%, 12%, 0.5);
 }
 
+/* --------------------------------------------------------------------------
+   Paper & pencil grid
+   -------------------------------------------------------------------------- */
+
+body {
+	background-image:
+		linear-gradient(var(--sketch-grid-line) 1px, transparent 1px),
+		linear-gradient(90deg, var(--sketch-grid-line) 1px, transparent 1px);
+	background-size: 40px 40px;
+	background-attachment: fixed;
+}
+
+::selection {
+	background: var(--sketch-accent-soft);
+}
+
+:focus-visible {
+	outline: 2px dashed var(--sketch-accent);
+}
+
+/* --------------------------------------------------------------------------
+   Header — dashed frame, doodled logo
+   -------------------------------------------------------------------------- */
+
+.site-title {
+	font-size: 1.3rem;
+}
+
+.site-title img {
+	transition:
+		transform 0.3s cubic-bezier(0.16, 1, 0.3, 1),
+		filter 0.3s ease;
+}
+
+.site-title:hover img {
+	transform: rotate(-6deg) scale(1.08);
+}
+
+/* Search trigger */
+button[data-open-modal] {
+	border: 2px dashed var(--sl-color-hairline);
+	border-radius: var(--rough-radius-blob);
+	background: transparent;
+	transition:
+		border-color 0.2s ease,
+		color 0.2s ease,
+		transform 0.2s ease;
+}
+
+button[data-open-modal]:hover {
+	border-color: var(--sketch-accent);
+	color: var(--sl-color-text-accent);
+	transform: rotate(-1deg);
+}
+
+button[data-open-modal] kbd {
+	font-family: var(--sl-font-mono);
+}
+
+.header {
+	border-bottom: none;
+}
+
+/* Theme / language selects + mobile menu button */
+.header select,
+.sl-menu-button {
+	border: 2px dashed var(--sl-color-hairline);
+	border-radius: var(--rough-radius-blob);
+	background: transparent;
+}
+
+.header select:hover,
+.sl-menu-button:hover {
+	border-color: var(--sketch-accent);
+	color: var(--sl-color-text-accent);
+}
+
+/* Fixed chrome needs opaque paper so the grid doesn't bleed through */
+mobile-starlight-toc nav {
+	background-color: var(--sl-color-bg);
+}
+
+select option {
+	background-color: var(--sl-color-bg);
+	color: var(--sl-color-gray-1);
+}
+
+/* --------------------------------------------------------------------------
+   Left sidebar — the E.ON nav: dashed rail, red section tabs, wavy hovers
+   -------------------------------------------------------------------------- */
+
+.sidebar-pane {
+	border-right: 2px dashed var(--sl-color-hairline);
+}
+
+/* Thin red pencil scrollbar, like the reference */
+.sidebar-pane,
+.sidebar-pane * {
+	scrollbar-width: thin;
+	scrollbar-color: var(--sketch-accent) transparent;
+}
+
+.sidebar-pane::-webkit-scrollbar {
+	width: 4px;
+}
+
+.sidebar-pane::-webkit-scrollbar-track {
+	background: transparent;
+}
+
+.sidebar-pane::-webkit-scrollbar-thumb {
+	background: var(--sketch-accent);
+	border-radius: 10px;
+}
+
+/* Section headers read like margin notes: "// The Core" */
+.sidebar-content details > summary .group-label {
+	font-size: 0.75rem;
+	font-weight: 700;
+	text-transform: uppercase;
+	letter-spacing: 0.14em;
+}
+
+.sidebar-content details > summary .group-label::before {
+	content: "// ";
+	color: var(--sl-color-text-accent);
+}
+
+/* Nested groups (e.g. "API") — same voice, smaller */
+.sidebar-content details details > summary .group-label {
+	font-size: 0.6875rem;
+}
+
+/* Items: hand-written list with generous row spacing */
+.sidebar-content a {
+	padding: 0.375rem 1rem;
+	border-radius: 8px 14px 10px 12px / 12px 10px 14px 8px;
+	font-size: 1.0625rem;
+	transition:
+		color 0.15s ease,
+		background-color 0.15s ease;
+}
+
+.sidebar-content a:hover {
+	color: var(--sl-color-text-accent);
+	text-decoration: underline;
+	text-decoration-style: wavy;
+	text-decoration-thickness: 1.5px;
+	text-underline-offset: 5px;
+}
+
+.sidebar-content a[aria-current="page"] {
+	color: var(--sl-color-text-accent);
+	font-weight: 700;
+	background: var(--sketch-accent-soft);
+	border-bottom: 2px dashed var(--sl-color-text-accent);
+	border-radius: 10px 14px 10px 6px / 12px 10px 6px 12px;
+}
+
+.sidebar-content a[aria-current="page"]:hover {
+	text-decoration-style: wavy;
+}
+
+/* Generous section separation (the example's space-y-12) */
+.sidebar-content ul ul,
+.sidebar-content details {
+	margin-block-start: 0.375rem;
+}
+
+/* --------------------------------------------------------------------------
+   Right sidebar (On this page) — dashed rail
+   -------------------------------------------------------------------------- */
+.right-sidebar {
+	border-inline-start: none;
+}
+
+.right-sidebar-panel {
+	border-left: 2px dashed var(--sl-color-hairline);
+	height: 100%;
+}
+
+.right-sidebar-panel a:hover {
+	color: var(--sl-color-text-accent);
+	text-decoration: underline;
+	text-decoration-style: wavy;
+	text-decoration-thickness: 1px;
+	text-underline-offset: 4px;
+}
+
+/* --------------------------------------------------------------------------
+   Content typography — hand-drawn headings, legible ink for reading
+
+   Kalam carries headings, chrome, and labels; long-form markdown body text
+   (tables, API reference, code-adjacent prose) reads in EON BrixSans so
+   183 pages of reference stay scannable.
+   -------------------------------------------------------------------------- */
+
+h1,
 h2,
-h3 {
-	font-family: "EON Bold", serif;
+h3,
+h4,
+h5,
+h6 {
+	font-weight: 700;
+}
+
+.sl-markdown-content {
+	font-size: 1.0625rem;
+	font-family: "EON", "Kalam", sans-serif;
+}
+
+.sl-markdown-content :is(h1, h2, h3, h4, h5, h6) {
+	font-family: var(--sl-font);
+}
+
+.sl-markdown-content h2 {
+	border-bottom: 2px dashed var(--sl-color-hairline);
+}
+
+/* Links read like scribbled ink */
+.sl-markdown-content a:where(:not(.anchor-link, .not-content *)) {
+	color: var(--sl-color-text-accent);
+	text-decoration: underline;
+	text-decoration-style: wavy;
+	text-decoration-thickness: 1px;
+	text-underline-offset: 5px;
+}
+
+.sl-markdown-content a:where(:not(.anchor-link, .not-content *)):hover {
+	text-decoration-style: solid;
+	text-decoration-thickness: 2px;
+}
+
+/* Blockquotes: margin doodles */
+.sl-markdown-content blockquote {
+	border-left: 3px dashed var(--sketch-accent);
+	border-radius: 0 var(--rough-radius-flip) var(--rough-radius-flip) 0;
+	background: var(--sketch-accent-soft);
+	padding: 0.5rem 1.25rem;
+	font-style: italic;
+}
+
+.sl-markdown-content blockquote a {
+	color: var(--sl-color-text-accent);
+}
+
+/* Horizontal rules look torn by hand */
+.sl-markdown-content hr {
+	border: none;
+	border-top: 2px dashed var(--sl-color-hairline);
+}
+
+/* --------------------------------------------------------------------------
+   Code — scribbled boxes
+   -------------------------------------------------------------------------- */
+
+.sl-markdown-content :is(code):not(pre code) {
+	font-family: var(--sl-font-mono);
+	background: var(--sl-color-bg-inline-code);
+	border: 1px dashed var(--sl-color-hairline);
+	border-radius: var(--rough-radius-inline);
+	padding: 0.08em 0.35em;
+	overflow-wrap: anywhere;
+}
+
+/* Bare markdown code blocks get the same sketch frame as Expressive Code ones */
+.sl-markdown-content pre:not(.expressive-code pre) {
+	border: 2px dashed var(--sl-color-hairline);
+	border-radius: var(--rough-radius-code);
+	background: var(--sketch-code-bg);
+	padding: 1rem 1.25rem;
+	overflow-x: auto;
+}
+
+/* Expressive Code blocks */
+.expressive-code .frame {
+	border: 2px solid var(--sl-color-hairline);
+	border-radius: var(--rough-radius-code);
+	overflow: clip;
+	box-shadow: none;
+	transition: border-color 0.2s ease;
+}
+
+.expressive-code .frame:hover {
+	border-color: rgba(234, 27, 10, 0.55);
+}
+
+.expressive-code pre,
+.expressive-code pre code {
+	background-color: var(--sketch-code-bg);
+	font-family: var(--sl-font-mono);
+}
+
+.expressive-code figcaption {
+	font-family: var(--sl-font);
+	letter-spacing: 0.04em;
+}
+
+.expressive-code .copy button {
+	border: 2px dashed var(--sl-color-hairline);
+	border-radius: 8px 14px 10px 16px / 14px 10px 16px 8px;
+}
+
+/* --------------------------------------------------------------------------
+   Images — pasted sheets of paper
+
+   The excalidraw SVGs carry a white background; framing them like taped-on
+   notes turns that into a deliberate sketch-world device on dark paper.
+   -------------------------------------------------------------------------- */
+
+.sl-markdown-content :is(img, picture, video):not(:where(.not-content *)) {
+	border: 2px dashed var(--sl-color-hairline);
+	border-radius: var(--rough-radius);
+	padding: 0.25rem;
+	transform: rotate(-0.3deg);
+}
+
+/* --------------------------------------------------------------------------
+   Asides (admonitions) — dashed boxes, wiggling warnings
+   -------------------------------------------------------------------------- */
+
+.starlight-aside {
+	border: 2px dashed var(--sl-color-hairline);
+	border-radius: var(--rough-radius);
+	background-color: var(--sl-color-bg);
+}
+
+.starlight-aside--note {
+	border-color: color-mix(in srgb, var(--sl-color-blue) 55%, transparent);
+	background-color: color-mix(
+		in srgb,
+		var(--sl-color-blue) 7%,
+		var(--sl-color-bg)
+	);
+}
+
+.starlight-aside--tip {
+	border-color: color-mix(in srgb, var(--sl-color-green) 55%, transparent);
+	background-color: color-mix(
+		in srgb,
+		var(--sl-color-green) 7%,
+		var(--sl-color-bg)
+	);
+}
+
+.starlight-aside--caution,
+.starlight-aside--danger {
+	--sl-color-asides-text-accent: var(--sketch-accent);
+	--sl-color-asides-border: var(--sketch-accent);
+	border-color: color-mix(in srgb, var(--sketch-accent) 65%, transparent);
+	background-color: var(--sketch-accent-soft);
+}
+
+.starlight-aside--caution .starlight-aside--title svg,
+.starlight-aside--danger .starlight-aside--title svg {
+	animation: wiggle 3s ease-in-out infinite;
+	transform-origin: bottom center;
+}
+
+/* --------------------------------------------------------------------------
+   Tables — ruled notebook paper
+   -------------------------------------------------------------------------- */
+
+.sl-markdown-content table {
+	border: 2px solid var(--sl-color-hairline);
+	border-radius: var(--rough-radius-blob);
+	overflow: hidden;
+}
+
+.sl-markdown-content th {
+	border-bottom: 2px dashed var(--sl-color-hairline);
+}
+
+/* --------------------------------------------------------------------------
+   Cards — sketchy frames
+   -------------------------------------------------------------------------- */
+
+.card,
+.card a {
+	border: 2px solid var(--sl-color-hairline);
+	border-radius: var(--rough-radius);
+	background: transparent;
+	transition:
+		transform 0.25s ease,
+		border-color 0.25s ease;
+}
+
+.card:hover {
+	border-color: var(--sketch-accent);
+	transform: rotate(-0.5deg);
+}
+
+/* --------------------------------------------------------------------------
+   Hero — tilted sketch, wavy action
+   -------------------------------------------------------------------------- */
+
+.hero img {
+	transform: rotate(-2deg);
+	filter: drop-shadow(6px 8px 0 rgba(0, 0, 0, 0.25));
+}
+
+.actions .action {
+	border: 2px dashed var(--sl-color-hairline);
+	border-radius: var(--rough-radius-blob);
+	transition:
+		transform 0.25s cubic-bezier(0.16, 1, 0.3, 1),
+		border-color 0.25s ease,
+		background-color 0.25s ease;
+}
+
+.actions .action:hover {
+	border-color: var(--sketch-accent);
+	transform: rotate(1deg);
+}
+
+.actions .action.primary {
+	border-style: solid;
+	border-color: transparent;
+	background: var(--sketch-accent);
+	color: var(--sl-color-text-invert);
+	transform: rotate(-1deg);
+}
+
+.actions .action.primary:hover {
+	transform: rotate(1deg) scale(1.03);
+	background: #ff2e1c;
+}
+
+/* --------------------------------------------------------------------------
+   Wide-screen content canvas — readable prose, expansive technical material
+   -------------------------------------------------------------------------- */
+
+@media (min-width: 90rem) {
+	:root[data-has-sidebar] {
+		--sl-content-width: 60rem;
+	}
+
+	:root[data-has-sidebar][data-has-toc] .main-frame > .lg\:sl-flex {
+		display: grid;
+		grid-template-columns: 70.588235% 29.411765%;
+	}
+
+	:root[data-has-sidebar][data-has-toc] .right-sidebar-container {
+		grid-column: 2;
+		grid-row: 1;
+		width: auto;
+	}
+
+	[data-has-sidebar][data-has-toc] .main-pane {
+		grid-column: 1;
+		grid-row: 1;
+		width: auto;
+		max-width: none;
+	}
+
+	.content-panel .sl-container > h1,
+	.hero h1,
+	.sl-markdown-content
+		> :where(
+			p:not(:has(> img:only-child)):not(:has(> a:only-child > img:only-child)),
+			ul,
+			ol,
+			dl,
+			blockquote,
+			.sl-heading-wrapper,
+			.starlight-aside
+		) {
+		width: min(100%, 45rem);
+	}
+}
+
+/* --------------------------------------------------------------------------
+   Pagination, footer, search dialog — sketch chrome
+   -------------------------------------------------------------------------- */
+
+.pagination-links a {
+	border: 2px dashed var(--sl-color-hairline);
+	border-radius: var(--rough-radius-flip);
+	transition:
+		border-color 0.2s ease,
+		color 0.2s ease;
+}
+
+.pagination-links a:hover {
+	border-color: var(--sketch-accent);
+	color: var(--sl-color-text-accent);
+}
+
+.footer {
+	border-top: 2px dashed var(--sl-color-hairline);
+}
+
+.dialog-frame {
+	border: 2px dashed var(--sl-color-hairline);
+	border-radius: var(--rough-radius);
+}
+
+/* --------------------------------------------------------------------------
+   Motion
+   -------------------------------------------------------------------------- */
+
+@keyframes wiggle {
+	0%,
+	100% {
+		transform: rotate(-6deg);
+	}
+
+	50% {
+		transform: rotate(6deg);
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.site-title img,
+	.actions .action,
+	.card,
+	button[data-open-modal] {
+		transition: none;
+	}
+
+	.starlight-aside--caution .starlight-aside--title svg,
+	.starlight-aside--danger .starlight-aside--title svg {
+		animation: none;
+	}
+}
+
+/* Local diagram controls: the viewport, never the article, owns zoom overflow. */
+.mermaid-viewer {
+	position: relative;
+	min-width: 0;
+	color: var(--sl-color-text);
+	font-family: var(--sl-font);
+}
+
+.mermaid-viewer .mermaid-toolbar {
+	position: absolute;
+	inset-block-start: 0.5rem;
+	inset-inline-end: 0.5rem;
+	z-index: 1;
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 0;
+	box-sizing: border-box;
+	max-width: calc(100% - 1rem);
+	margin: 0;
+	padding: 0.25rem;
+	border: 1px solid var(--sl-color-hairline-light);
+	border-radius: 1rem;
+	background: var(--sl-color-bg);
+}
+
+/* Keep controls discoverable on touch and reachable through keyboard focus. */
+@media (hover: hover) and (pointer: fine) {
+	.mermaid-viewer .mermaid-toolbar {
+		opacity: 0;
+		pointer-events: none;
+	}
+
+	.mermaid-viewer:is(:hover, :focus-within, .is-dragging) .mermaid-toolbar {
+		opacity: 1;
+		pointer-events: auto;
+	}
+}
+
+.mermaid-viewer .mermaid-toolbar button {
+	min-width: 44px;
+	min-height: 44px;
+	display: grid;
+	place-items: center;
+	padding: 0.5rem;
+	border: 1px solid transparent;
+	border-radius: 0.75rem;
+	background: transparent;
+	color: inherit;
+	font: inherit;
+	font-size: 1rem;
+	line-height: 1;
+	cursor: pointer;
+}
+
+.mermaid-viewer .mermaid-toolbar button:hover:not(:disabled) {
+	border-color: var(--sl-color-text-accent);
+	color: var(--sl-color-text-accent);
+}
+
+.mermaid-viewer .mermaid-toolbar button:disabled {
+	opacity: 0.45;
+	cursor: default;
+}
+
+.mermaid-viewer .mermaid-toolbar button svg {
+	display: block;
+	width: 20px;
+	height: 20px;
+	fill: none;
+	stroke: currentColor;
+	stroke-width: 1.75;
+	stroke-linecap: round;
+}
+
+.mermaid-toolbar output {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	padding: 0;
+	overflow: hidden;
+	clip-path: inset(50%);
+	white-space: nowrap;
+}
+
+.mermaid-viewer .mermaid-viewport {
+	position: relative;
+	width: 100%;
+	margin: 0;
+	overflow: clip;
+	cursor: grab;
+}
+
+.mermaid-viewer.is-dragging .mermaid-viewport {
+	cursor: grabbing;
+	user-select: none;
+}
+
+.mermaid-stage {
+	position: absolute;
+	top: 0;
+	left: 0;
+	margin: 0;
+	transform-origin: 0 0;
+}
+
+.mermaid-stage > .mermaid > svg {
+	display: block;
+	max-width: none;
+	margin: 0;
+}
+
+.mermaid-viewer :is(button, .mermaid-viewport):focus-visible {
+	outline: 2px dashed var(--sl-color-text-accent);
+	outline-offset: 2px;
+}
+
+.mermaid-dialog {
+	box-sizing: border-box;
+	width: calc(100vw - 2rem);
+	max-width: 100rem;
+	height: calc(100dvh - 2rem);
+	max-height: none;
+	margin: auto;
+	padding: 1rem;
+	overflow: hidden;
+	border: 1px dashed var(--sl-color-hairline-light);
+	border-radius: var(--rough-radius-code);
+	background: var(--sl-color-bg);
+	color: var(--sl-color-text);
+}
+
+.mermaid-dialog::backdrop {
+	background: var(--sl-color-backdrop-overlay);
+}
+
+/* The authored node stays in place; only its interaction wrapper is decorated. */
+.mermaid-target {
+	cursor: pointer;
+	pointer-events: bounding-box;
+}
+
+.mermaid-target text {
+	text-decoration: underline dashed;
+	text-underline-offset: 4px;
+}
+
+.mermaid-target:is(:hover, :focus-visible) text {
+	text-decoration: underline solid;
+	fill: var(--sl-color-text-accent);
+}
+
+.mermaid-target:focus-visible {
+	outline: 2px dashed var(--sl-color-text-accent);
+	outline-offset: 4px;
+}
+
+/* A top-layer popover avoids camera clipping, including inside the native dialog. */
+.mermaid-viewer .mermaid-target-chooser {
+	position: fixed;
+	inset: auto;
+	box-sizing: border-box;
+	width: max-content;
+	max-width: calc(100vw - 1rem);
+	max-height: calc(100dvh - 1rem);
+	overflow: auto;
+	margin: 0;
+	padding: 0.5rem;
+	border: 1px dashed var(--sl-color-hairline-light);
+	border-radius: var(--rough-radius-code);
+	background: var(--sl-color-bg);
+	color: var(--sl-color-text);
+	font: 1rem / 1.5 var(--sl-font);
+	box-shadow: 0 4px 12px rgb(0 0 0 / 15%);
+}
+
+.mermaid-target-chooser strong {
+	display: block;
+	padding: 0.25rem 0.5rem;
+}
+
+/* Supplied values are named configuration, not supported target types. */
+.mermaid-target-chooser .mermaid-target-supplied {
+	margin-block-start: 0.25rem;
+	border-block-start: 1px dashed var(--sl-color-hairline-light);
+}
+
+.mermaid-target-chooser .mermaid-target-note {
+	display: block;
+	padding: 0.25rem 0.5rem;
+	color: var(--sl-color-text);
+	opacity: 0.85;
+}
+
+.mermaid-target-chooser a {
+	display: flex;
+	align-items: center;
+	min-height: 44px;
+	padding: 0.25rem 0.5rem;
+	color: var(--sl-color-text-accent);
+	text-underline-offset: 3px;
+}
+
+.mermaid-target-chooser a:hover {
+	text-decoration-style: wavy;
+}
+
+.mermaid-target-chooser a:focus-visible {
+	outline: 2px dashed var(--sl-color-text-accent);
+	outline-offset: -2px;
 }

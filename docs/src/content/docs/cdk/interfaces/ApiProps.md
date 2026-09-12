@@ -5,7 +5,7 @@ prev: false
 title: "ApiProps"
 ---
 
-Defined in: packages/cdk/src/apigateway.ts:21
+Defined in: [packages/cdk/src/apigateway.ts:36](https://github.com/jolo-dev/pawl/blob/f40688429e7e2c3160e40f482375bd699be30970/packages/cdk/src/apigateway.ts#L36)
 
 ## Extends
 
@@ -13,19 +13,19 @@ Defined in: packages/cdk/src/apigateway.ts:21
 
 ## Properties
 
-### authorizer
+### authorizer?
 
-> **authorizer**: [`HttpIamAuthorizer`](/cdk/classes/httpiamauthorizer/) \| [`HttpUserPoolAuthorizer`](/cdk/classes/httpuserpoolauthorizer/) \| [`HttpLambdaAuthorizer`](/cdk/classes/httplambdaauthorizer/) \| [`HttpJwtAuthorizer`](/cdk/classes/httpjwtauthorizer/)
+> `optional` **authorizer?**: `AuthorizerType`
 
-Defined in: packages/cdk/src/apigateway.ts:22
+Defined in: [packages/cdk/src/apigateway.ts:37](https://github.com/jolo-dev/pawl/blob/f40688429e7e2c3160e40f482375bd699be30970/packages/cdk/src/apigateway.ts#L37)
 
 ***
 
 ### permissions?
 
-> `optional` **permissions**: `ConstructPermission`[]
+> `optional` **permissions?**: `ConstructPermission`[]
 
-Defined in: packages/cdk/src/basic-construct.ts:28
+Defined in: [packages/cdk/src/basic-construct.ts:28](https://github.com/jolo-dev/pawl/blob/f40688429e7e2c3160e40f482375bd699be30970/packages/cdk/src/basic-construct.ts#L28)
 
 Optional permissions to grant during creation
 
@@ -37,9 +37,9 @@ Optional permissions to grant during creation
 
 ### routes?
 
-> `optional` **routes**: `Record`\<`` `ANY /${string}` `` \| `` `DELETE /${string}` `` \| `` `GET /${string}` `` \| `` `HEAD /${string}` `` \| `` `OPTIONS /${string}` `` \| `` `PATCH /${string}` `` \| `` `POST /${string}` `` \| `` `PUT /${string}` ``, [`LambdaFunction`](/cdk/classes/lambdafunction/)\>
+> `optional` **routes?**: `Record`\<`` `ANY /${string}` `` \| `` `DELETE /${string}` `` \| `` `GET /${string}` `` \| `` `HEAD /${string}` `` \| `` `OPTIONS /${string}` `` \| `` `PATCH /${string}` `` \| `` `POST /${string}` `` \| `` `PUT /${string}` ``, [`LambdaFunction`](/cdk/classes/lambdafunction/) \| [`EventBridge`](/cdk/classes/eventbridge/)\>
 
-Defined in: packages/cdk/src/apigateway.ts:37
+Defined in: [packages/cdk/src/apigateway.ts:52](https://github.com/jolo-dev/pawl/blob/f40688429e7e2c3160e40f482375bd699be30970/packages/cdk/src/apigateway.ts#L52)
 
 Define the routes for the API. Can be a function, proxy to another API, or point to an load balancer
 
@@ -49,6 +49,7 @@ Define the routes for the API. Can be a function, proxy to another API, or point
 new Api(stack, "api", {
   routes: {
     "GET  /notes"      : new LambdaFunction(this, "ApiNotes", entry),
+    "POST /notes/{id}" : new LambdaFunction(this, "ApiNotesId", entry)
     "POST /notes/{id}" : new LambdaFunction(this, "ApiNotesId", entry)
   }
 })

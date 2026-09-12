@@ -23,7 +23,20 @@ export type ApiDestinationProps = Required<
 } & Omit<ConnectionProps, "authorization" | "description" | "connectionName">;
 
 /**
- *  https://docs.aws.amazon.com/cdk/api/v2/docs/aws-cdk-lib.aws_events.ApiDestination.html
+ * https://docs.aws.amazon.com/cdk/api/v2/docs/aws-cdk-lib.aws_events.ApiDestination.html
+ *
+ * Provisions an EventBridge connection and API destination in the supplied scope.
+ * The HTTPS endpoint and method are destination settings, not provisioned services.
+ * The undirected edge shows authentication configuration; triggering rules and
+ * external destinations are omitted.
+ *
+ * ```mermaid
+ * architecture-beta
+ *   group destinationGroup(logos:aws-eventbridge)[API destination]
+ *   service connection(logos:aws-iam)[Connection authentication] in destinationGroup
+ *   service destination(logos:aws-eventbridge)[API destination] in destinationGroup
+ *   connection:R -- L:destination
+ * ```
  */
 export class ApiDestination extends ApiDestinationEvent {
 	/**

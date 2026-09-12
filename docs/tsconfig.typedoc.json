@@ -1,0 +1,8 @@
+{
+	"extends": "../tsconfig.build.json",
+	// Scope the TypeDoc program to the packages that are documented.
+	// The root tsconfig.build.json has no "include", which would pull the whole
+	// repo (incl. packages/cli templates that cannot typecheck) into the program.
+	"include": ["../packages/cdk/**/*", "../packages/lambda/**/*"],
+	"exclude": ["../**/tests/**", "../**/dist/**", "../**/cdk.out/**"]
+}

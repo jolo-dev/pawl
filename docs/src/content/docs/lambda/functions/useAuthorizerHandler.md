@@ -7,14 +7,16 @@ title: "useAuthorizerHandler"
 
 > **useAuthorizerHandler**\<`T`\>(`serviceName`, `handleRequest`): `HandlerWithHooks`\<`T` *extends* `"simple"` ? `APIGatewayRequestSimpleAuthorizerHandlerV2` : `APIGatewayRequestIAMAuthorizerHandlerV2`, `APIGatewayRequestAuthorizerEventV2`, `T` *extends* `"simple"` ? `APIGatewaySimpleAuthorizerResult` : `APIGatewayIAMAuthorizerResult`\>
 
-Defined in: authorizer-handler.ts:34
+Defined in: [authorizer-handler.ts:34](https://github.com/jolo-dev/pawl/blob/f40688429e7e2c3160e40f482375bd699be30970/packages/lambda/src/authorizer-handler.ts#L34)
 
 The function `useAuthorizerHandler` is a TypeScript function that returns a handler with hooks for
 authorizing API Gateway requests based on the specified authorizer type.
 
 ## Type Parameters
 
-• **T** *extends* `Authorizer`
+### T
+
+`T` *extends* `Authorizer`
 
 ## Parameters
 

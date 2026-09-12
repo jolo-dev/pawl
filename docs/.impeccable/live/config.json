@@ -1,0 +1,6 @@
+{
+	"files": ["src/overrides/ThemeProvider.astro"],
+	"insertBefore": "<template id=\"theme-icons\">",
+	"commentSyntax": "html",
+	"cspChecked": true
+}

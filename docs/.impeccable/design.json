@@ -1,0 +1,205 @@
+{
+	"schemaVersion": 2,
+	"generatedAt": "2026-09-07T08:34:00Z",
+	"title": "Design System: pawl Documentation",
+	"extensions": {
+		"colorMeta": {
+			"redline-ink": {
+				"role": "primary",
+				"displayName": "Redline Ink",
+				"canonical": "#ea1b0a",
+				"tonalRamp": [
+					"#3a0703",
+					"#5a0a05",
+					"#7d1509",
+					"#a51206",
+					"#c01405",
+					"#ea1b0a",
+					"#ff6a55",
+					"#ffe1dd"
+				]
+			},
+			"redline-hot": {
+				"role": "primary",
+				"displayName": "Hot Redline",
+				"canonical": "#ff2e1c",
+				"tonalRamp": [
+					"#3a0703",
+					"#5a0a05",
+					"#7d1509",
+					"#a51206",
+					"#c01405",
+					"#ea1b0a",
+					"#ff2e1c",
+					"#ffe1dd"
+				]
+			},
+			"charcoal-paper": {
+				"role": "neutral",
+				"displayName": "Charcoal Paper",
+				"canonical": "#1a1a1a",
+				"tonalRamp": [
+					"#100f0e",
+					"#131211",
+					"#1a1a1a",
+					"#232220",
+					"#2e2c29",
+					"#6d685f",
+					"#d3cec4",
+					"#f3f0e9"
+				]
+			},
+			"paper-sheet": {
+				"role": "neutral",
+				"displayName": "Warm Paper Sheet",
+				"canonical": "#fbf8f1",
+				"tonalRamp": [
+					"#211d19",
+					"#45403a",
+					"#6b655c",
+					"#9b958a",
+					"#d3cec4",
+					"#e5e0d5",
+					"#f7f3e9",
+					"#fbf8f1"
+				]
+			}
+		},
+		"typographyMeta": {
+			"display": {
+				"displayName": "Handwritten Display",
+				"purpose": "Page and section headings."
+			},
+			"body": {
+				"displayName": "Technical Reading",
+				"purpose": "Long-form documentation and API explanations."
+			},
+			"label": {
+				"displayName": "Workshop Label",
+				"purpose": "Navigation groups and compact interface chrome."
+			},
+			"mono": {
+				"displayName": "Instrument Mono",
+				"purpose": "Code, identifiers, shortcuts, and measurements."
+			},
+			"site-title": {
+				"displayName": "Site Title",
+				"purpose": "Compact pawl identity in the global header."
+			},
+			"nested-label": {
+				"displayName": "Nested Workshop Label",
+				"purpose": "Secondary API groups inside sidebar navigation."
+			}
+		},
+		"shadows": [
+			{
+				"name": "pasted-paper",
+				"value": "6px 8px 18px rgba(0, 0, 0, 0.22)",
+				"purpose": "Restrained depth for diagrams and paper-like assets placed on charcoal."
+			}
+		],
+		"motion": [
+			{
+				"name": "sketch-response",
+				"value": "0.25s cubic-bezier(0.16, 1, 0.3, 1)",
+				"purpose": "Small rotation, scale, and border responses on interactive workshop controls."
+			}
+		],
+		"breakpoints": [{ "name": "wide-documentation", "value": "90rem" }]
+	},
+	"components": [
+		{
+			"name": "Primary Action",
+			"kind": "button",
+			"refersTo": "action-primary",
+			"description": "A decisive Redline Ink workshop label for the primary next step.",
+			"html": "<button class=\"ds-action-primary\">GET STARTED</button>",
+			"css": ".ds-action-primary { background: var(--sketch-accent, #ea1b0a); color: var(--sl-color-text-invert, #fff6f4); border: 2px solid transparent; border-radius: var(--rough-radius-blob, 125px 10px 20px 185px / 25px 205px 205px 25px); padding: 0.65rem 1.15rem; font: 700 1rem Kalam, cursive; transform: rotate(-1deg); transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), background 0.25s ease; } .ds-action-primary:hover { background: #ff2e1c; transform: rotate(1deg) scale(1.03); } .ds-action-primary:focus-visible { outline: 2px dashed var(--sketch-accent, #ea1b0a); outline-offset: 3px; }"
+		},
+		{
+			"name": "Search Trigger",
+			"kind": "input",
+			"refersTo": "search-trigger",
+			"description": "A transparent dashed search control drawn directly on the drafting surface.",
+			"html": "<button class=\"ds-search\"><span>Search docs</span><kbd>⌘K</kbd></button>",
+			"css": ".ds-search { display: flex; align-items: center; justify-content: space-between; gap: 2rem; min-width: 18rem; color: var(--sl-color-text, #d3cec4); background: transparent; border: 2px dashed var(--sl-color-hairline, rgba(255,255,255,.14)); border-radius: var(--rough-radius-blob, 125px 10px 20px 185px / 25px 205px 205px 25px); padding: 0.55rem 0.8rem; font: 400 1rem Kalam, cursive; } .ds-search kbd { font: 500 .75rem 'JetBrains Mono', monospace; } .ds-search:hover { border-color: var(--sketch-accent, #ea1b0a); color: var(--sl-color-text-accent, #ff6a55); } .ds-search:focus-visible { outline: 2px dashed var(--sketch-accent, #ea1b0a); outline-offset: 3px; }"
+		},
+		{
+			"name": "Active Navigation Label",
+			"kind": "nav",
+			"description": "A rough workshop label marking the reader's current location.",
+			"html": "<a class=\"ds-nav-active\" href=\"#\" aria-current=\"page\">Introduction</a>",
+			"css": ".ds-nav-active { display: block; color: var(--sl-color-text-accent, #ff6a55); background: var(--sketch-accent-soft, rgba(234,27,10,.08)); border-bottom: 2px dashed currentColor; border-radius: 10px 14px 10px 6px / 12px 10px 6px 12px; padding: .375rem 1rem; font: 700 1.0625rem Kalam, cursive; text-decoration: none; } .ds-nav-active:hover { text-decoration: underline wavy 1.5px; text-underline-offset: 5px; } .ds-nav-active:focus-visible { outline: 2px dashed var(--sketch-accent, #ea1b0a); outline-offset: 3px; }"
+		},
+		{
+			"name": "Sketch Card",
+			"kind": "card",
+			"refersTo": "sketch-card",
+			"description": "A transparent technical container with a handled, imperfect frame.",
+			"html": "<article class=\"ds-card\"><h3>Deploy with confidence</h3><p>Validated infrastructure primitives with operational defaults included.</p></article>",
+			"css": ".ds-card { color: var(--sl-color-text, #d3cec4); background: transparent; border: 2px solid var(--sl-color-hairline, rgba(255,255,255,.14)); border-radius: var(--rough-radius, 255px 15px 225px 15px / 15px 225px 15px 255px); padding: 1.25rem; transition: transform .25s ease, border-color .25s ease; } .ds-card h3 { margin: 0 0 .5rem; color: var(--sl-color-white, #f3f0e9); font: 700 1.35rem Kalam, cursive; } .ds-card p { margin: 0; font: 400 1rem/1.6 EON, sans-serif; } .ds-card:hover { border-color: var(--sketch-accent, #ea1b0a); transform: rotate(-.5deg); }"
+		},
+		{
+			"name": "Redline Aside",
+			"kind": "custom",
+			"description": "A pinned note for cautions and infrastructure constraints.",
+			"html": "<aside class=\"ds-aside\"><strong>Caution</strong><p>Review permissions before deployment.</p></aside>",
+			"css": ".ds-aside { color: var(--sl-color-text, #d3cec4); background: var(--sketch-accent-soft, rgba(234,27,10,.08)); border: 2px dashed color-mix(in srgb, var(--sketch-accent, #ea1b0a) 65%, transparent); border-radius: var(--rough-radius, 255px 15px 225px 15px / 15px 225px 15px 255px); padding: 1rem 1.25rem; } .ds-aside strong { color: var(--sl-color-text-accent, #ff6a55); font: 700 1rem Kalam, cursive; } .ds-aside p { margin: .35rem 0 0; font: 400 1rem/1.6 EON, sans-serif; }"
+		},
+		{
+			"name": "Inline Code",
+			"kind": "custom",
+			"refersTo": "inline-code",
+			"description": "A compact instrument label for identifiers inside prose.",
+			"html": "<code class=\"ds-inline-code\">handlerFactory</code>",
+			"css": ".ds-inline-code { color: var(--sl-color-white, #f3f0e9); background: var(--sl-color-bg-inline-code, rgba(255,255,255,.06)); border: 1px dashed var(--sl-color-hairline, rgba(255,255,255,.14)); border-radius: var(--rough-radius-inline, 6px 12px 8px 14px / 12px 6px 14px 8px); padding: .08em .35em; font: 500 .9rem 'JetBrains Mono', monospace; overflow-wrap: anywhere; }"
+		}
+	],
+	"narrative": {
+		"northStar": "The Infrastructure Drafting Table",
+		"overview": "The documentation feels like a working surface where AWS systems are actively reasoned through rather than a polished corporate portal. The mood is precise, handmade, and quietly confident; components resemble rough workshop labels and pinned notes.",
+		"keyCharacteristics": [
+			"Charcoal or warm paper surfaces with a faint fixed drafting grid.",
+			"Redline Ink as the singular high-energy annotation color.",
+			"Handwritten display typography paired with a highly legible technical body face.",
+			"Dashed rules, irregular contours, pasted-paper media, and restrained physical offsets.",
+			"Dense technical content held inside deliberate, readable measures."
+		],
+		"rules": [
+			{
+				"name": "The Redline Rarity Rule",
+				"body": "Redline Ink marks action, state, or annotation; it never becomes ambient decoration across large surfaces.",
+				"section": "colors"
+			},
+			{
+				"name": "The Two Papers Rule",
+				"body": "Dark charcoal and warm paper are equal theme expressions of the same drafting table, not separate brands.",
+				"section": "colors"
+			},
+			{
+				"name": "The Hand and Instrument Rule",
+				"body": "Kalam speaks for the human; EON explains; JetBrains Mono measures.",
+				"section": "typography"
+			},
+			{
+				"name": "The Pinned, Not Floating Rule",
+				"body": "Surfaces may look placed on the table, but they never hover like glossy SaaS glass panels.",
+				"section": "elevation"
+			}
+		],
+		"dos": [
+			"Do preserve the 45rem prose measure while allowing technical material to use the wider canvas.",
+			"Do use Redline Ink to communicate action, state, warning, or annotation.",
+			"Do combine irregular radii, dashed construction lines, and slight rotation with restraint.",
+			"Do keep dark and light modes materially consistent.",
+			"Do preserve keyboard focus, responsive navigation, and readable contrast."
+		],
+		"donts": [
+			"Don't introduce glossy SaaS cards, glassmorphism, or generic developer-portal chrome.",
+			"Don't replace the charcoal/paper drafting surfaces with sterile white or featureless flat gray.",
+			"Don't use monospace typography as a technical costume outside code and data.",
+			"Don't widen prose simply because the viewport is wide.",
+			"Don't scatter Redline Ink as decoration until it loses its signaling role."
+		]
+	}
+}

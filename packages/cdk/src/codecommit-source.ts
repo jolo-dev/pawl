@@ -100,8 +100,19 @@ export type CodeCommitSourceLimitKind =
 /**
  * Error thrown when a CodeCommit source exceeds an AWS initial-import limit.
  *
- * Contains structured metadata (kind, limit, actual, relativePath) but never
- * includes file contents in the error message.
+ * Contains kind, limit, actual, and optional relativePath metadata plus the Error
+ * name and message; no file contents are included. An optional reason customizes
+ * the message but is not retained as a field. This is contained error state, not
+ * validation implementation or deployed AWS resources. The undirected edge shows
+ * metadata belonging to the error.
+ *
+ * ```mermaid
+ * architecture-beta
+ *   group failure(server)[Contained error state]
+ *   service error(server)[Source limit error] in failure
+ *   service metadata(disk)[Kind limit actual and optional path] in failure
+ *   error:R -- L:metadata
+ * ```
  */
 export class CodeCommitSourceLimitError extends Error {
 	readonly kind: CodeCommitSourceLimitKind;

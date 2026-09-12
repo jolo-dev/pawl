@@ -7,7 +7,7 @@ title: "useSqsHandler"
 
 > **useSqsHandler**(`serviceName`, `handleRequest`): `HandlerWithHooks`\<`SQSHandler`, `SQSEvent`\>
 
-Defined in: sqs-handler.ts:16
+Defined in: [sqs-handler.ts:16](https://github.com/jolo-dev/pawl/blob/f40688429e7e2c3160e40f482375bd699be30970/packages/lambda/src/sqs-handler.ts#L16)
 
 The useSqsHandler function returns a handler with hooks for processing SQS events in TypeScript.
 

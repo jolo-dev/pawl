@@ -241,7 +241,45 @@ const computeTypes: Record<CodeBuildComputeSize, ComputeType> = {
 	LARGE: ComputeType.LARGE,
 };
 
-/** A secure, bounded CodeBuild project for Pawl review jobs. */
+/**
+ * A secure, bounded CodeBuild project for Pawl review jobs.
+ *
+ * Always provisions the project, build log group, rotating encryption key, and a
+ * placeholder S3 bucket. The placeholder is used only in pipeline source mode;
+ * it is not repository-mode source or real pipeline artifact storage. Repository
+ * and pipeline sources are alternative project configuration, not created targets.
+ *
+ * Private networking imports a VPC and creates an HTTPS-egress security group.
+ * Package registries and network endpoints are external. Undirected edges show
+ * encryption and network configuration, not data flow. The key encrypts the
+ * project and logs. Execution policies and opt-in reviewer run/read grants are
+ * supporting configuration; monitoring uses the existing stack facility.
+ *
+ * ```mermaid
+ * architecture-beta
+ *   group project(logos:aws-codebuild)[CodeBuild project]
+ *   group privateNetwork(logos:aws-vpc)[Private networking]
+ *   service placeholder(logos:aws-s3)[Placeholder source bucket] in project
+ *   service build(logos:aws-codebuild)[Build project] in project
+ *   service logs(logos:aws-cloudwatch)[Build log group] in project
+ *   service key(logos:aws-kms)[Rotating encryption key] in project
+ *   service security(logos:aws-iam)[Security group] in privateNetwork
+ *   junction encryption in project
+ *   junction bindings in project
+ *   placeholder:R -- L:build
+ *   build:R -- L:bindings
+ *   bindings:R -- L:logs
+ *   bindings:B -- L:security
+ *   key:R -- L:encryption
+ *   encryption:B -- T:build
+ *   encryption:R -- T:logs
+ *   align row key encryption
+ *   align row placeholder build bindings logs
+ *   align column key placeholder
+ *   align column encryption build
+ *   align column logs security
+ * ```
+ */
 export class CodeBuildProject extends BasicConstruct {
 	readonly project: Project;
 	readonly repository: Repository;

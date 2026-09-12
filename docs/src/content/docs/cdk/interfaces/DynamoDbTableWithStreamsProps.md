@@ -5,7 +5,7 @@ prev: false
 title: "DynamoDbTableWithStreamsProps"
 ---
 
-Defined in: packages/cdk/src/dynamodb-streams.ts:29
+Defined in: [packages/cdk/src/dynamodb-streams.ts:33](https://github.com/jolo-dev/pawl/blob/f40688429e7e2c3160e40f482375bd699be30970/packages/cdk/src/dynamodb-streams.ts#L33)
 
 The DynamoDbTableWithStreamsProp
 
@@ -13,9 +13,9 @@ The DynamoDbTableWithStreamsProp
 
 ### billing?
 
-> `readonly` `optional` **billing**: `Billing`
+> `readonly` `optional` **billing?**: `Billing`
 
-Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2.d.ts:218
+Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2.d.ts:310
 
 The billing mode and capacity settings to apply to the table.
 
@@ -27,13 +27,17 @@ Billing.onDemand()
 
 ***
 
-### contributorInsights?
+### ~~contributorInsights?~~
 
-> `readonly` `optional` **contributorInsights**: `boolean`
+> `readonly` `optional` **contributorInsights?**: `boolean`
 
-Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2.d.ts:101
+Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2.d.ts:175
 
 Whether CloudWatch contributor insights is enabled.
+
+:::caution[Deprecated]
+use `contributorInsightsSpecification` instead
+:::
 
 #### Default
 
@@ -43,11 +47,27 @@ false
 
 ***
 
+### contributorInsightsSpecification?
+
+> `readonly` `optional` **contributorInsightsSpecification?**: `ContributorInsightsSpecification`
+
+Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2.d.ts:180
+
+Whether CloudWatch contributor insights is enabled and what mode is selected
+
+#### Default
+
+```ts
+- contributor insights is not enabled
+```
+
+***
+
 ### deletionProtection?
 
-> `readonly` `optional` **deletionProtection**: `boolean`
+> `readonly` `optional` **deletionProtection?**: `boolean`
 
-Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2.d.ts:107
+Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2.d.ts:186
 
 Whether deletion protection is enabled.
 
@@ -63,15 +83,15 @@ false
 
 > **dynamoStream**: `"KEYS_ONLY"` \| `"NEW_AND_OLD_IMAGES"` \| `"NEW_IMAGE"` \| `"OLD_IMAGE"`
 
-Defined in: packages/cdk/src/dynamodb-streams.ts:33
+Defined in: [packages/cdk/src/dynamodb-streams.ts:37](https://github.com/jolo-dev/pawl/blob/f40688429e7e2c3160e40f482375bd699be30970/packages/cdk/src/dynamodb-streams.ts#L37)
 
 ***
 
 ### encryption?
 
-> `readonly` `optional` **encryption**: `TableEncryptionV2`
+> `readonly` `optional` **encryption?**: `TableEncryptionV2`
 
-Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2.d.ts:250
+Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2.d.ts:371
 
 The server-side encryption.
 
@@ -87,23 +107,23 @@ TableEncryptionV2.dynamoOwnedKey()
 
 > **eventSource**: [`EventSource`](/cdk/interfaces/eventsource/)
 
-Defined in: packages/cdk/src/dynamodb-streams.ts:41
+Defined in: [packages/cdk/src/dynamodb-streams.ts:45](https://github.com/jolo-dev/pawl/blob/f40688429e7e2c3160e40f482375bd699be30970/packages/cdk/src/dynamodb-streams.ts#L45)
 
 ***
 
 ### existingTable?
 
-> `optional` **existingTable**: `string`
+> `optional` **existingTable?**: `string`
 
-Defined in: packages/cdk/src/dynamodb-streams.ts:40
+Defined in: [packages/cdk/src/dynamodb-streams.ts:44](https://github.com/jolo-dev/pawl/blob/f40688429e7e2c3160e40f482375bd699be30970/packages/cdk/src/dynamodb-streams.ts#L44)
 
 ***
 
 ### globalSecondaryIndexes?
 
-> `readonly` `optional` **globalSecondaryIndexes**: `GlobalSecondaryIndexPropsV2`[]
+> `readonly` `optional` **globalSecondaryIndexes?**: `GlobalSecondaryIndexPropsV2`[]
 
-Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2.d.ts:236
+Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2.d.ts:357
 
 Global secondary indexes.
 
@@ -117,11 +137,34 @@ Note: You can provide a maximum of 20 global secondary indexes.
 
 ***
 
+### globalTableSettingsReplicationMode?
+
+> `readonly` `optional` **globalTableSettingsReplicationMode?**: `GlobalTableSettingsReplicationMode`
+
+Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2.d.ts:333
+
+Controls whether table settings are synchronized across replicas.
+
+When set to ALL, synchronizable settings (billing mode, throughput, TTL, streams view type, GSIs)
+are automatically replicated across all replicas. When set to NONE, each replica manages its own
+settings independently (billing mode must be PAY_PER_REQUEST).
+
+Note: Some settings are always synchronized (key schema, LSIs) regardless of this setting,
+and some are never synchronized (table class, SSE, deletion protection, PITR, tags, resource policy).
+
+#### Default
+
+```ts
+GlobalTableSettingsReplicationMode.NONE
+```
+
+***
+
 ### kinesisStream?
 
-> `readonly` `optional` **kinesisStream**: `IStream`
+> `readonly` `optional` **kinesisStream?**: `IStream`
 
-Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2.d.ts:125
+Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2.d.ts:211
 
 Kinesis Data Stream to capture item level changes.
 
@@ -137,15 +180,15 @@ Kinesis Data Stream to capture item level changes.
 
 > **lambdaFunction**: [`LambdaFunction`](/cdk/classes/lambdafunction/)
 
-Defined in: packages/cdk/src/dynamodb-streams.ts:34
+Defined in: [packages/cdk/src/dynamodb-streams.ts:38](https://github.com/jolo-dev/pawl/blob/f40688429e7e2c3160e40f482375bd699be30970/packages/cdk/src/dynamodb-streams.ts#L38)
 
 ***
 
 ### localSecondaryIndexes?
 
-> `readonly` `optional` **localSecondaryIndexes**: `LocalSecondaryIndexProps`[]
+> `readonly` `optional` **localSecondaryIndexes?**: `LocalSecondaryIndexProps`[]
 
-Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2.d.ts:244
+Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2.d.ts:365
 
 Local secondary indexes.
 
@@ -159,11 +202,27 @@ Note: You can only provide a maximum of 5 local secondary indexes.
 
 ***
 
+### multiRegionConsistency?
+
+> `readonly` `optional` **multiRegionConsistency?**: `MultiRegionConsistency`
+
+Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2.d.ts:349
+
+Specifies the consistency mode for a new global table.
+
+#### Default
+
+```ts
+MultiRegionConsistency.EVENTUAL
+```
+
+***
+
 ### partitionKey
 
 > **partitionKey**: `object`
 
-Defined in: packages/cdk/src/dynamodb-streams.ts:35
+Defined in: [packages/cdk/src/dynamodb-streams.ts:39](https://github.com/jolo-dev/pawl/blob/f40688429e7e2c3160e40f482375bd699be30970/packages/cdk/src/dynamodb-streams.ts#L39)
 
 #### name
 
@@ -177,35 +236,56 @@ Defined in: packages/cdk/src/dynamodb-streams.ts:35
 
 ### permissions?
 
-> `optional` **permissions**: `ConstructPermission`[]
+> `optional` **permissions?**: `ConstructPermission`[]
 
-Defined in: packages/cdk/src/basic-construct.ts:28
+Defined in: [packages/cdk/src/basic-construct.ts:28](https://github.com/jolo-dev/pawl/blob/f40688429e7e2c3160e40f482375bd699be30970/packages/cdk/src/basic-construct.ts#L28)
 
 Optional permissions to grant during creation
 
 ***
 
-### pointInTimeRecovery?
+### ~~pointInTimeRecovery?~~
 
-> `readonly` `optional` **pointInTimeRecovery**: `boolean`
+> `readonly` `optional` **pointInTimeRecovery?**: `boolean`
 
-Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2.d.ts:113
+Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2.d.ts:192
 
 Whether point-in-time recovery is enabled.
+
+:::caution[Deprecated]
+use `pointInTimeRecoverySpecification` instead
+:::
 
 #### Default
 
 ```ts
-false
+false - point in time recovery is not enabled.
+```
+
+***
+
+### pointInTimeRecoverySpecification?
+
+> `readonly` `optional` **pointInTimeRecoverySpecification?**: `PointInTimeRecoverySpecification`
+
+Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2.d.ts:199
+
+Whether point-in-time recovery is enabled
+and recoveryPeriodInDays is set.
+
+#### Default
+
+```ts
+- point in time recovery is not enabled.
 ```
 
 ***
 
 ### removalPolicy?
 
-> `readonly` `optional` **removalPolicy**: `undefined`
+> `readonly` `optional` **removalPolicy?**: `undefined`
 
-Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2.d.ts:212
+Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2.d.ts:304
 
 The removal policy applied to the table.
 
@@ -219,9 +299,9 @@ RemovalPolicy.RETAIN
 
 ### replicas?
 
-> `readonly` `optional` **replicas**: `ReplicaTableProps`[]
+> `readonly` `optional` **replicas?**: `ReplicaTableProps`[]
 
-Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2.d.ts:228
+Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2.d.ts:320
 
 Replica tables to deploy with the primary table.
 
@@ -239,9 +319,9 @@ to. Replica tables will only be supported if the stack deployment region is defi
 
 ### resourcePolicy?
 
-> `readonly` `optional` **resourcePolicy**: `PolicyDocument`
+> `readonly` `optional` **resourcePolicy?**: `PolicyDocument`
 
-Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2.d.ts:137
+Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2.d.ts:223
 
 Resource policy to assign to DynamoDB Table.
 
@@ -259,9 +339,9 @@ https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-dy
 
 ### sortKey?
 
-> `readonly` `optional` **sortKey**: `Attribute`
+> `readonly` `optional` **sortKey?**: `Attribute`
 
-Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2.d.ts:185
+Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2.d.ts:277
 
 Sort key attribute definition.
 
@@ -273,11 +353,31 @@ Sort key attribute definition.
 
 ***
 
+### streamResourcePolicy?
+
+> `readonly` `optional` **streamResourcePolicy?**: `PolicyDocument`
+
+Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2.d.ts:229
+
+Resource policy to assign to DynamoDB Stream.
+
+#### See
+
+https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-dynamodb-globaltable-replicastreamspecification.html#cfn-dynamodb-globaltable-replicastreamspecification-resourcepolicy
+
+#### Default
+
+```ts
+- No resource policy statements are added to the stream.
+```
+
+***
+
 ### tableClass?
 
-> `readonly` `optional` **tableClass**: `TableClass`
+> `readonly` `optional` **tableClass?**: `TableClass`
 
-Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2.d.ts:119
+Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2.d.ts:205
 
 The table class.
 
@@ -291,9 +391,9 @@ TableClass.STANDARD
 
 ### tags?
 
-> `readonly` `optional` **tags**: `CfnTag`[]
+> `readonly` `optional` **tags?**: `CfnTag`[]
 
-Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2.d.ts:131
+Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2.d.ts:217
 
 Tags to be applied to the primary table (default replica table).
 
@@ -307,9 +407,9 @@ Tags to be applied to the primary table (default replica table).
 
 ### timeToLiveAttribute?
 
-> `readonly` `optional` **timeToLiveAttribute**: `string`
+> `readonly` `optional` **timeToLiveAttribute?**: `string`
 
-Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2.d.ts:197
+Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2.d.ts:289
 
 The name of the TTL attribute.
 
@@ -323,9 +423,9 @@ The name of the TTL attribute.
 
 ### warmThroughput?
 
-> `readonly` `optional` **warmThroughput**: `WarmThroughput`
+> `readonly` `optional` **warmThroughput?**: `WarmThroughput`
 
-Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2.d.ts:256
+Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2.d.ts:377
 
 The warm throughput configuration for the table.
 
@@ -333,4 +433,24 @@ The warm throughput configuration for the table.
 
 ```ts
 - no warm throughput is configured
+```
+
+***
+
+### witnessRegion?
+
+> `readonly` `optional` **witnessRegion?**: `string`
+
+Defined in: node\_modules/aws-cdk-lib/aws-dynamodb/lib/table-v2.d.ts:343
+
+The witness Region for the MRSC global table.
+A MRSC global table can be configured with either three replicas, or with two replicas and one witness.
+
+Note: Witness region cannot be specified for a Multi-Region Eventual Consistency (MREC) Global Table.
+Witness regions are only supported for Multi-Region Strong Consistency (MRSC) Global Tables.
+
+#### Default
+
+```ts
+- no witness region
 ```

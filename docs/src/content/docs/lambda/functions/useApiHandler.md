@@ -7,7 +7,7 @@ title: "useApiHandler"
 
 > **useApiHandler**(`serviceName`, `handleRequest`): `HandlerWithHooks`\<`APIGatewayProxyHandlerV2`, `APIGatewayProxyEventV2`, `ApiResponse`\>
 
-Defined in: api-handler.ts:27
+Defined in: [api-handler.ts:27](https://github.com/jolo-dev/pawl/blob/f40688429e7e2c3160e40f482375bd699be30970/packages/lambda/src/api-handler.ts#L27)
 
 The function `useApiHandler` returns a handler with hooks for processing API Gateway proxy events in
 TypeScript.

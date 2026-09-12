@@ -6,9 +6,29 @@ import { Stack } from "./stack";
 
 interface LocalStackProps {
 	lambdaDir: string;
-	runtime: "node22" | "node24";
+	/** @deprecated Retained for compatibility; functions always use Node.js 24. */
+	runtime?: "node22" | "node24";
 }
 
+/**
+ * Scans the configured lambdaDir and creates a Node.js 24 LambdaFunction, function
+ * URL, and URL output per directory entry. An empty directory creates none. Entries
+ * are not filtered to TypeScript files. The legacy runtime hint does not override
+ * the runtime pinned by LambdaFunction. This class does not start Docker or a
+ * LocalStack container; its name does not enable LOCAL. It inherits Stack's
+ * monitoring mode. The standalone Local helper, not this class, creates an App.
+ * Undirected edges show URL configuration and output, not request routing.
+ *
+ * ```mermaid
+ * architecture-beta
+ *   group entryGroup(logos:aws-lambda)[Per directory entry]
+ *   service lambda(logos:aws-lambda)[Node 24 LambdaFunction] in entryGroup
+ *   service url(internet)[Function URL] in entryGroup
+ *   service outputs(logos:aws-cloudformation)[URL output] in entryGroup
+ *   lambda:R -- L:url
+ *   url:R -- L:outputs
+ * ```
+ */
 export class LocalStack extends Stack {
 	/**
 	 * The constructor function checks for the existence of a directory specified in the props, creates
@@ -50,12 +70,9 @@ export class LocalStack extends Stack {
 }
 
 /**
- * The function `Local` creates a new `LocalStack` in an AWS CDK application with specified lambda
- * directory and runtime.
- * @param {LocalStackProps} props - The `props` parameter in the `Local` function likely contains
- * information or configurations needed for setting up a local stack. This could include properties
- * such as `lambdaDir` which specifies the directory where Lambda functions are located, and `runtime`
- * which specifies the runtime environment for the Lambda functions. These properties
+ * Creates a LocalStack for the specified Lambda directory. Functions use Node.js 24.
+ * @param props - The Lambda directory and an optional, deprecated runtime hint.
+ * The hint is retained for compatibility and does not change the deployed runtime.
  */
 export const Local = (props: LocalStackProps) => {
 	const app = new App();

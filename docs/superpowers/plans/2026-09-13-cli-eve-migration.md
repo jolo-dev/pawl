@@ -1,5 +1,13 @@
 # pawl CLI: pi-coding-agent + Flue → eve Implementation Plan
 
+> **Status: IMPLEMENTED** (2026-09-13). All tasks executed inline; commits `634a93a`..`bf5c5d0`. Verification: `bun lint` clean, 181 `packages/cli` tests pass, `eve info` reports 0 diagnostics with 3 skills / 16 tools / 3 subagents, `eve build` produces `.output`, and `eve dev --no-ui` accepts a session and resolves `amazon-bedrock/<model>` (fails only on missing AWS credentials). `bunx tsc --noEmit` reports 50 pre-existing errors, down from a 77-error baseline measured with the same config.
+>
+> Deviations from the plan below, all deliberate:
+> - `FoundationModelLike` also carries `inputModalities`; `init_project` exports its zod schema so tests can validate input without eve's wrapper.
+> - A `src/project-dir.ts` seam was added. The plan assumed tools could use `process.cwd()`, but eve resolves its app root by walking up for `agent/`, so the launcher must run from the package root while the agent works on the user's project. `PAWL_PROJECT_DIR` carries the split.
+> - `src/codecommit-init/prompts.ts` also imported the undeclared `@earendil-works/pi-ai`; it now offers a curated Anthropic list instead of the pi-ai catalog.
+> - The eve sandbox cannot reach the host project, so the design keeps all pawl work in authored tools (app runtime) and leaves the sandbox to eve's built-in file tools.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Replace `@earendil-works/pi-coding-agent` and `@flue/runtime` in `packages/cli` with the `eve` framework (Vercel), keeping AWS Bedrock as the model provider and preserving the existing CLI workflows.

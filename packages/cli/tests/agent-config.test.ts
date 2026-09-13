@@ -17,6 +17,16 @@ test("instructions carry the AWS scope guard and the two-phase workflow", async 
 	expect(instructions).toContain(".pawl/plan.md");
 });
 
+test("each declared subagent has a description and an agent config", async () => {
+	for (const id of ["planner", "generator", "well-architected"]) {
+		const source = await Bun.file(
+			path.join(agentDir, "subagents", id, "agent.ts"),
+		).text();
+		expect(source).toContain("description:");
+		expect(source).toContain("defineAgent");
+	}
+});
+
 test("the authored surface imports no removed dependency", async () => {
 	const proc = Bun.spawnSync([
 		"grep",

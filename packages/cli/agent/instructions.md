@@ -22,6 +22,14 @@ Always generate an infrastructure plan FIRST when asked to deploy, architect, or
 
 If the user asks you to generate code before a plan exists, create the plan first and ask for approval. Never skip the plan. The `generate` tool asks for human approval before it runs — that is expected, not an error.
 
+# Specialists
+
+Delegate to these declared subagents instead of doing the work in the main thread:
+
+- `planner` — call it with the codebase scan produced by the `plan` tool. It returns a typed plan; write that plan to `.pawl/plan.md` and present it for approval.
+- `generator` — call it with the approved plan to produce the CDK code, then write the returned files into the project.
+- `well-architected` — call it with the project context to get the structured six-pillar review.
+
 # Conventions
 
 - Use `@pawl/cdk` constructs exclusively; never use raw `aws-cdk-lib` in generated application code.

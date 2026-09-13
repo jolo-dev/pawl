@@ -177,10 +177,11 @@ while (true) {
 				...providerModels.map((g) => ({ value: g.baseId, label: g.name })),
 			],
 		});
-		if (typeof choice === "symbol") {
+		if (typeof choice === "symbol" && choice === BACK) {
 			step = "provider";
 			continue;
 		}
+		if (typeof choice !== "string") process.exit(0);
 		modelChoice = choice;
 		step = "scope";
 	} else {
@@ -200,10 +201,11 @@ while (true) {
 				...group.scopes.map((id) => ({ value: id, label: id })),
 			],
 		});
-		if (typeof scope === "symbol") {
+		if (typeof scope === "symbol" && scope === BACK) {
 			step = "model";
 			continue;
 		}
+		if (typeof scope !== "string") process.exit(0);
 		modelId = scope;
 		break;
 	}

@@ -35,6 +35,32 @@ export interface BedrockModelGroup {
 /** Cross-region inference-profile prefixes recognised by Bedrock. */
 const SCOPES = ["us", "eu", "global", "apac"] as const;
 
+/**
+ * Region-appropriate cross-region inference-profile prefix.
+ *
+ * Mirrors the prefixing the old pi-ai picker applied to bare model ids: an
+ * `eu-*` region talks to the `eu.` profiles, `ap-*` to `apac.`, everything
+ * else to `us.`.
+ */
+function profilePrefixForRegion(region: string): string {
+	if (region.startsWith("eu-")) return "eu.";
+	if (region.startsWith("ap-")) return "apac.";
+	return "us.";
+}
+
+/**
+ * Fallback Bedrock model id for bare `eve dev` runs that skip the launcher.
+ *
+ * The launcher always sets `PAWL_BEDROCK_MODEL` from the interactive picker;
+ * this keeps the agent runnable without it, using the same region-aware
+ * inference-profile prefix the picker would have produced.
+ */
+export function defaultBedrockModelId(
+	region: string = process.env.AWS_REGION ?? "us-east-1",
+): string {
+	return `${profilePrefixForRegion(region)}anthropic.claude-sonnet-4-6`;
+}
+
 /** Strip a leading `<scope>.` inference-profile prefix, returning the scope. */
 export function splitScope(modelId: string): {
 	scope: string | null;
@@ -85,6 +111,31 @@ export function groupBedrockModels(
 		});
 	}
 	return groups.sort((a, b) => a.baseId.localeCompare(b.baseId));
+}
+
+/**
+ * Anthropic Claude families pawl offers in its picker.
+ *
+ * A static list rather than a live Bedrock catalog: `promptModelId` runs
+ * during `codecommit-init` before an AWS profile or region is committed, so
+ * Bedrock cannot be queried yet. Users can still enter any id that
+ * `AnthropicModelIdSchema` accepts.
+ */
+export const ANTHROPIC_CLAUDE_FAMILIES = [
+	{ baseId: "anthropic.claude-opus-4-8", label: "Claude Opus 4.8" },
+	{ baseId: "anthropic.claude-sonnet-4-6", label: "Claude Sonnet 4.6" },
+	{ baseId: "anthropic.claude-haiku-4-5", label: "Claude Haiku 4.5" },
+] as const;
+
+/** Cross-region inference-profile prefixes a Claude family can be invoked through. */
+export const INFERENCE_PROFILE_SCOPES = ["us", "eu", "apac", "global"] as const;
+
+/** Build the full model id for a family invoked through a cross-region profile. */
+export function inferenceProfileModelId(
+	familyBaseId: string,
+	scope: string,
+): string {
+	return `${scope}.${familyBaseId}`;
 }
 
 /** Fetch and group the Bedrock catalog for a profile/region. */

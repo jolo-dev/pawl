@@ -7,10 +7,9 @@ import {
 } from "../../src/scaffold";
 import {
 	scaffoldPackageManagerSchema,
+	scaffoldStageSchema,
 	scaffoldTestModeSchema,
 } from "../../src/scaffold/types";
-
-const stageSchema = z.enum(["dev", "qa", "prod"]);
 
 /**
  * A tool call cannot answer a prompt: stdin belongs to the eve server. Fail
@@ -37,7 +36,7 @@ export default defineTool({
 			"Whether the project uses LocalStack for integration tests.",
 		),
 		team: z.string().min(1).describe("Owning team tag."),
-		stage: stageSchema.describe("Deployment stage tag."),
+		stage: scaffoldStageSchema.describe("Deployment stage tag."),
 		tags: z
 			.record(z.string(), z.string())
 			.optional()

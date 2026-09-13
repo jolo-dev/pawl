@@ -1,10 +1,14 @@
 import { confirm, isCancel, select, text } from "@clack/prompts";
-import { getModels } from "@earendil-works/pi-ai";
 import {
 	AnthropicModelIdSchema,
 	CodeCommitBranchNameSchema,
 	CodeCommitRepositoryNameSchema,
 } from "@pawl/cdk";
+import {
+	ANTHROPIC_CLAUDE_FAMILIES,
+	INFERENCE_PROFILE_SCOPES,
+	inferenceProfileModelId,
+} from "../bedrock-models";
 import type { ValidatedCodeCommitInitCoreConfig } from "./config";
 
 export interface CodeCommitInitPromptDeps {
@@ -151,40 +155,45 @@ export async function promptAutoReviewer(): Promise<boolean> {
 	return handleCancel(value);
 }
 
+/** Sentinel option that opens the free-form model id prompt. */
+const OTHER_MODEL = Symbol("other-model");
+
 export async function promptModelId(): Promise<string> {
-	const allModels = getModels("amazon-bedrock");
-	const anthropicModels = allModels.filter(
-		(m) => AnthropicModelIdSchema.safeParse(m.id).success,
-	);
-
-	if (anthropicModels.length === 0) {
-		const value = await text({
-			message:
-				"Anthropic Bedrock model ID (e.g. eu.anthropic.claude-sonnet-4-6)",
-			validate: (v) => {
-				const result = AnthropicModelIdSchema.safeParse(v.trim());
-				return result.success ? undefined : result.error.issues[0]?.message;
-			},
-		});
-		return handleCancel(value).trim();
-	}
-
-	const grouped = new Map<string, typeof anthropicModels>();
-	for (const m of anthropicModels) {
-		const baseId = m.id.replace(/^(us|eu|global)\./, "");
-		const existing = grouped.get(baseId) ?? [];
-		existing.push(m);
-		grouped.set(baseId, existing);
-	}
-
-	const value = await select<string>({
+	const family = await select<string | symbol>({
 		message: "Select Anthropic Bedrock model",
-		options: [...grouped.entries()].map(([_baseId, variants]) => ({
-			value: variants[0]?.id,
-			label: `${variants[0]?.name} (${variants.map((v) => v.id).join(", ")})`,
+		options: [
+			...ANTHROPIC_CLAUDE_FAMILIES.map((entry) => ({
+				value: entry.baseId as string,
+				label: entry.label,
+			})),
+			{ value: OTHER_MODEL, label: "Other — enter a model ID" },
+		],
+	});
+	const baseId = handleCancel(family);
+	if (typeof baseId === "symbol") {
+		return promptCustomModelId();
+	}
+
+	const scope = await select<string>({
+		message: "Cross-region inference profile scope",
+		options: INFERENCE_PROFILE_SCOPES.map((value) => ({
+			value: value as string,
+			label: value.toUpperCase(),
 		})),
 	});
-	return handleCancel(value);
+	return inferenceProfileModelId(baseId, handleCancel(scope));
+}
+
+async function promptCustomModelId(): Promise<string> {
+	const value = await text({
+		message:
+			"Anthropic Bedrock model ID (e.g. eu.anthropic.claude-sonnet-4-6)",
+		validate: (v) => {
+			const result = AnthropicModelIdSchema.safeParse(v.trim());
+			return result.success ? undefined : result.error.issues[0]?.message;
+		},
+	});
+	return handleCancel(value).trim();
 }
 
 export async function promptConfirm(summary: string): Promise<boolean> {

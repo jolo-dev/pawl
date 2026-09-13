@@ -1,5 +1,19 @@
 import { describe, expect, test } from "bun:test";
-import { groupBedrockModels } from "../src/bedrock-models";
+import { defaultBedrockModelId, groupBedrockModels } from "../src/bedrock-models";
+
+describe("defaultBedrockModelId", () => {
+	test("picks the inference-profile prefix from the region", () => {
+		expect(defaultBedrockModelId("eu-central-1")).toBe(
+			"eu.anthropic.claude-sonnet-4-6",
+		);
+		expect(defaultBedrockModelId("us-east-1")).toBe(
+			"us.anthropic.claude-sonnet-4-6",
+		);
+		expect(defaultBedrockModelId("ap-southeast-2")).toBe(
+			"apac.anthropic.claude-sonnet-4-6",
+		);
+	});
+});
 
 describe("groupBedrockModels", () => {
 	test("groups a base model with its inference-profile scopes", () => {

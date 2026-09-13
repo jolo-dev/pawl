@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
 	BedrockClient,
@@ -23,7 +25,7 @@ import {
 	loadSsoSessionData,
 	parseKnownFiles,
 } from "@smithy/core/config";
-import { $ } from "bun";
+import { openInBrowser } from "./open-browser";
 
 export async function listProfiles(): Promise<string[]> {
 	const configPath =
@@ -99,7 +101,9 @@ export async function ssoLogin(profile: string): Promise<void> {
 	);
 
 	console.log(`Opening browser for SSO login:\n${verificationUriComplete}`);
-	await $`open ${verificationUriComplete ?? ""}`.quiet();
+	if (verificationUriComplete) {
+		await openInBrowser(verificationUriComplete);
+	}
 
 	const pollMs = (interval ?? 5) * 1000;
 	let token: CreateTokenCommandOutput | undefined;
@@ -125,13 +129,11 @@ export async function ssoLogin(profile: string): Promise<void> {
 		}
 	}
 
-	const home = Bun.env.HOME || "~";
+	const home = process.env.HOME || "~";
 	const cacheDir = join(home, ".aws", "sso", "cache");
-	await $`mkdir -p ${cacheDir}`.quiet();
-	const cacheKey = new Bun.CryptoHasher("sha1")
-		.update(ssoSessionName)
-		.digest("hex");
-	await Bun.write(
+	await mkdir(cacheDir, { recursive: true });
+	const cacheKey = createHash("sha1").update(ssoSessionName).digest("hex");
+	await writeFile(
 		join(cacheDir, `${cacheKey}.json`),
 		JSON.stringify(
 			{
@@ -145,6 +147,7 @@ export async function ssoLogin(profile: string): Promise<void> {
 			null,
 			2,
 		),
+		"utf8",
 	);
 
 	console.log(`SSO login successful for profile "${profile}"`);

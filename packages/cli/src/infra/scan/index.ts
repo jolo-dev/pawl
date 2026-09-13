@@ -1,3 +1,8 @@
+export {
+	buildScanners,
+	DEFERRED_SERVICES,
+	PAWL_SCANNER_FACTORIES,
+} from "./registry";
 export { classifyScanFailure, coverageSummary, runScanners } from "./run";
 export {
 	type CoverageSummary,

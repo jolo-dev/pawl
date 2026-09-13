@@ -42,7 +42,16 @@
 **Two edge cases that will bite a naive parser:**
 1. **`AgentCore` sanitizes**: `[^a-zA-Z0-9_]` → `_` and truncates to 48, so `platform-dev-myid-agentcore` becomes `platform_dev_myid_agentcore`. The parser must accept `_` separators for this kind.
 2. **`-dlq` is ambiguous** — both `Sqs` and `EventBridge` produce it (`EventBridge` uses `{eventBusName}-dlq`, not `{id}`). Disambiguate with tags, not the name.
-3. **`CodeBuild` and `CodeCommit` take names from props**, not the prefix, so their provenance is tags-only.
+
+### Name provenance covers only half the constructs
+
+A name-identifiable resource yields the *construct*; everything else yields only *ownership* (the `team`/`stage` tags). Measured from the construct sources:
+
+| Name-identifiable (construct recovered) | Tags only (ownership only) |
+| --- | --- |
+| `LambdaFunction` (`-lambda`), `ApiGateway` / `ApiGatewayV1` (`-apigateway`), `DynamoDbTable` (`-table`), `Sqs` (`-sqs`, `-dlq`), `CodePipeline` (`-pipeline`), `Websocket` (`-appsync-event-api`), `AgentCore` (`-agentcore`), plus the ApiGateway log groups | `StaticSite` (CDK generates bucket names), `EventBridge` (bus name comes from props), `CodeBuildProject` (props), `CodeCommit` (props), `SnsTopic` (no name pinned) |
+
+So the drift classifier's `foreign` status is the *common* outcome for half of pawl's surface, not an edge case, and suggestions for those must reason from resource type plus tags rather than a recovered construct id. This is why `DriftEntry.provenance` discriminates on `source: "name" | "tags"`.
 
 ---
 
@@ -232,15 +241,13 @@ git commit -m "feat(cli): parse pawl provenance from resource names"
 
 ---
 
-## Task 5: Remaining pawl-service scanners
+## Task 5: The rest of the v1 scanner set — DONE, reduced
 
-**Files:** create one module + test per remaining service
+Covered: `dynamodb`, `sqs`, `apigateway` (v2), `apigateway-v1`, `s3`, `eventbridge` — each with a fixture test using the command-dispatch mock, committed per service.
 
-Cover, in this order: `sns`, `s3`, `eventbridge`, `codebuild`, `codecommit`, `codepipeline`, `cognito`, `cloudfront`, `logs`, `iam`, `kms`, `ec2` (VPC and security groups only), `appsync`, `agentcore`, and the `tagging` broad net.
+**Deferred by decision**, listed in `DEFERRED_SERVICES` so coverage names them instead of omitting them: `sns`, `codebuild`, `codecommit`, `codepipeline`, `cognito`, `cloudfront`, `logs`, `iam`, `kms`, `ec2`, `appsync`, `agentcore`. Add one when a real scan reports a gap — that is what the coverage reporting is for.
 
-Per service: write the failing fixture test first, implement, verify, commit individually (`feat(cli): scan <service>`). Each scanner must return `unsupported` for regions where the service is absent rather than throwing.
-
-- [ ] **Step 1–4 per service.** Services whose resources cannot be enumerated without a broader grant (IAM, KMS, EC2) must degrade to coverage `denied` and never block the scan.
+**Rule for every scanner:** assert mock interactions by **command type, never by call order** — per-resource lookups run concurrently, so a fixed response queue is both wrong and flaky.
 
 ---
 

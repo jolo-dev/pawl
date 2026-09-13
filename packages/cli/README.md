@@ -6,13 +6,20 @@ An AI-powered infrastructure agent that generates, reviews, and optimizes AWS in
 
 pawl CLI is built in two layers:
 
-1. **`PawlHarness`** — Runtime-agnostic core that handles codebase scanning and prompt construction. Use this to integrate pawl with any agent framework.
-2. **Pi TUI** — Interactive terminal interface powered by `pi-coding-agent`.
-3. **Flue Agents** — HTTP-accessible agents powered by `@flue/runtime`.
+1. **`PawlHarness`** — Runtime-agnostic core that handles codebase scanning and prompt construction (`src/harness.ts`). Use this to integrate pawl with any agent framework.
+2. **eve agent** — The `agent/` directory is an [eve](https://eve.dev) app: always-on instructions, typed tools, skills, declared subagents, and the HTTP channel.
+
+`index.ts` is the launcher. It resolves an AWS profile, validates credentials (auto-login via SSO if needed), lets you choose a Bedrock model from the live catalog, then hands the terminal over to `eve dev`.
+
+The launcher starts eve from the pawl package root, because eve locates its application by walking up for `agent/`. The directory you ran pawl from travels in `PAWL_PROJECT_DIR`, and every tool resolves the project through `src/project-dir.ts` — so the agent operates on *your* project, not on the CLI package.
+
+### Where things run
+
+Authored eve tools run in the app runtime, not in eve's sandbox, so they can drive `PawlHarness` against your real project directory. The sandbox stays on its default backend and backs eve's built-in `bash`, `read_file`, and `write_file` tools only.
 
 ## Usage
 
-### Pi TUI (interactive terminal)
+### Interactive terminal (eve TUI)
 
 ```bash
 bun run index.ts
@@ -22,8 +29,11 @@ The CLI will:
 
 1. Prompt you to select an AWS profile
 2. Validate credentials (auto-login via SSO if needed)
-3. Let you choose a Bedrock model (provider → model → scope → region)
-4. Start an interactive agent session
+3. Ask for the AWS region and load the Bedrock model catalog
+4. Let you choose a provider → model → inference-profile scope
+5. Hand the terminal over to `eve dev`
+
+Once in the eve TUI, ask for what you want in plain language — the agent calls the tools above. `eve dev` also serves `/help`, `/model`, `/reset`, `/compact`, and the rest of the built-in commands.
 
 ### `pawl init`
 
@@ -158,14 +168,24 @@ supplied-repository fields are mutually exclusive.
 `BasicConstruct` reads that context for naming, tags, and reviewer identity;
 they are intentionally not `CodePipeline` constructor properties.
 
-### Flue Agents (HTTP API)
+### eve HTTP API
 
 ```bash
-npx flue dev --target node --env .env
-curl http://localhost:3583/agents/plan/test-1 \
+eve dev --no-ui
+curl -X POST http://localhost:2000/eve/v1/session \
   -H "Content-Type: application/json" \
-  -d '{"notes": "Use RDS, not DynamoDB"}'
+  -d '{"message": "Plan infrastructure for this project"}'
 ```
+
+The built-in eve session route replaces the old `/agents/*` endpoints:
+
+| Route | Purpose |
+|-------|---------|
+| `POST /eve/v1/session` | Create a session and send the first message |
+| `POST /eve/v1/session/:id` | Send a follow-up message |
+| `GET /eve/v1/session/:id/stream` | Attach to the reconnectable event stream |
+
+Pass a JSON schema with a message to get structured output, or use `eve invoke --json-schema` from the CLI.
 
 ### Harness (programmatic)
 
@@ -181,19 +201,23 @@ const planPrompt = await harness.commands.plan("Use serverless architecture");
 
 - AWS account with Bedrock access
 - AWS SSO configured (`aws configure sso`)
-- Bun runtime
+- **Node.js 24+** (required by eve; `packages/cli` declares `engines.node: 24.x`)
+- Bun for development in this repo
 
-## Built-in Commands
+## Built-in Tools
 
-| Command | Description |
-|---------|-------------|
-| `/plan` | Analyze codebase, generate infrastructure plan |
-| `/generate` | Generate CDK code from approved plan |
-| `/well-architected` | AWS Well-Architected Framework review |
-| `/cost` | Cost optimization analysis |
-| `/deploy` | Deploy with CDK (TODO) |
-| `/init` | Initialize new pawl project |
-| `/simulate` | Simulate infrastructure changes (TODO) |
+The agent calls these tools itself — they are typed capabilities, not slash commands:
+
+| Tool | Description |
+|------|-------------|
+| `plan` | Analyze codebase, generate infrastructure plan |
+| `generate` | Generate CDK code from approved plan (**requires human approval**) |
+| `well_architected` | AWS Well-Architected Framework review |
+| `cost` | Cost optimization analysis |
+| `architecture` | Render the plan's Mermaid diagram as ASCII |
+| `init_project` | Scaffold a new pawl project (non-interactive) |
+
+The root agent delegates the heavy lifting to declared subagents: `planner`, `generator`, and `well-architected`.
 
 ## Built-in Prompts
 
@@ -205,8 +229,19 @@ Located in `prompts/`:
 
 ## Skills
 
-Located in `skills/`:
+Located in `agent/skills/`:
 
 - `pawl-constructs` — Reference for `@pawl/cdk` and `@pawl/lambda` APIs
 - `pawl-plan` — Infrastructure plan generation workflow
 - `pawl-codegen` — Infrastructure code generation workflow
+
+## Development
+
+```bash
+bun test            # unit tests
+bunx eve info       # discovery + diagnostics
+bunx eve dev        # terminal UI (PAWL_PROJECT_DIR defaults to cwd)
+bunx eve build      # compile .eve/ and build the host output
+```
+
+`bunx tsc --noEmit` currently reports 50 pre-existing type errors in `src/scaffold/prompts.ts`, `src/codecommit-init/`, `@pawl/cdk`, and a few tests. They predate the eve migration (the same config reported 77 before it) and none are in `agent/`, `src/launch.ts`, `src/project-dir.ts`, or `src/host-exec.ts`.

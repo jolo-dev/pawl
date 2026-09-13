@@ -10,6 +10,7 @@ pawl (Proficient AWs Library) is a TypeScript monorepo providing opinionated AWS
 - Language: TypeScript 5.x (strict mode, no `any`)
 - Linting/Formatting: Biome (tabs, double quotes, recommended rules)
 - Validation: Zod (runtime schema validation)
+- Agent framework: eve (Vercel) — `packages/cli/agent`, on AWS Bedrock via `@ai-sdk/amazon-bedrock`
 - CDK: aws-cdk-lib 2.x with cdk-nag for compliance
 - Lambda: AWS Lambda Powertools (Logger, Tracer, Metrics)
 - Testing: Bun test with Localstack (via Docker/Testcontainers)
@@ -23,7 +24,7 @@ pawl/
 ├── packages/
 │   ├── cdk/          # @pawl/cdk — CDK construct library
 │   ├── lambda/       # @pawl/lambda — Lambda handler wrappers
-│   └── cli/          # AI-powered infrastructure CLI (Bedrock + pi-coding-agent)
+│   └── cli/          # AI-powered infrastructure CLI (Bedrock + eve)
 ├── example/
 │   ├── some-service/ # Full example using @pawl/cdk + @pawl/lambda
 │   └── tutorial/     # Getting started tutorial
@@ -66,6 +67,15 @@ pawl/
 - Handler functions must be `export`-ed (required for Lambda runtime)
 - First parameter is always `serviceName` (used for CloudWatch identification)
 - Export all handlers from `index.ts`
+
+### CLI / eve (`packages/cli/`)
+
+- The `agent/` directory is an eve app; read `node_modules/eve/docs/README.md` before changing it
+- `agent/agent.ts` selects the model; pawl runs on Bedrock via `@ai-sdk/amazon-bedrock` (not Vercel AI Gateway)
+- Tools live in `agent/tools/<name>.ts` and are model-invoked — there are no slash commands
+- Tools run in the eve **app runtime**, not the sandbox: resolve the project with `projectDir()`, never `process.cwd()`
+- Authored modules are bundled for eve's Node runtime, so they must not import `bun` or runtime-specific packages, and must keep their import graph light (`@pawl/cdk` is too heavy — see `src/scaffold/types.ts`)
+- `packages/cli` requires Node 24 (`engines.node: 24.x`); the rest of the monorepo stays on 22+
 
 ### Tests
 

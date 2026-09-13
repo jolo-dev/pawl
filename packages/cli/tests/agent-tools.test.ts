@@ -2,7 +2,9 @@ import { describe, expect, test } from "bun:test";
 import architectureTool from "../agent/tools/architecture";
 import costTool from "../agent/tools/cost";
 import generateTool from "../agent/tools/generate";
-import initProjectTool from "../agent/tools/init_project";
+import initProjectTool, {
+	initProjectInputSchema,
+} from "../agent/tools/init_project";
 import planTool from "../agent/tools/plan";
 import wellArchitectedTool from "../agent/tools/well_architected";
 
@@ -64,12 +66,12 @@ describe("pawl workflow tools", () => {
 
 describe("init_project", () => {
 	test("requires the values a prompt could otherwise collect", () => {
-		const result = initProjectTool.inputSchema.safeParse({});
+		const result = initProjectInputSchema.safeParse({});
 		expect(result.success).toBe(false);
 	});
 
 	test("rejects an unknown stage", () => {
-		const result = initProjectTool.inputSchema.safeParse({
+		const result = initProjectInputSchema.safeParse({
 			projectName: "demo",
 			packageManager: "bun",
 			awsProfile: "dev",
@@ -81,7 +83,7 @@ describe("init_project", () => {
 	});
 
 	test("accepts a complete non-interactive request", () => {
-		const result = initProjectTool.inputSchema.safeParse({
+		const result = initProjectInputSchema.safeParse({
 			projectName: "demo",
 			packageManager: "bun",
 			awsProfile: "dev",

@@ -1,5 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { defaultBedrockModelId, groupBedrockModels } from "../src/bedrock-models";
+import {
+	defaultBedrockModelId,
+	groupBedrockModels,
+} from "../src/bedrock-models";
 
 describe("defaultBedrockModelId", () => {
 	test("picks the inference-profile prefix from the region", () => {

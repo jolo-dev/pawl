@@ -1,5 +1,4 @@
 import { intro, log, outro, select, spinner, text } from "@clack/prompts";
-import { getModels } from "@earendil-works/pi-ai";
 import { parseKnownFiles } from "@smithy/core/config";
 import {
 	checkBedrockAccess,
@@ -9,6 +8,10 @@ import {
 	ssoLogin,
 } from "./src/aws-credentials";
 import {
+	type BedrockModelGroup,
+	listBedrockModelGroups,
+} from "./src/bedrock-models";
+import {
 	printCodeCommitInitResult,
 	runCodeCommitInit,
 } from "./src/codecommit-init";
@@ -16,7 +19,7 @@ import {
 	printCodePipelineInitResult,
 	runCodePipelineInit,
 } from "./src/codepipeline-init";
-import { startAgent } from "./src/infra-agent";
+import { launchEveDev } from "./src/launch";
 import {
 	installScaffoldDependencies,
 	runPawlInit,
@@ -120,121 +123,7 @@ if (valid) {
 
 process.env.AWS_PROFILE = profile;
 
-// 3. Select model — provider → model → scope → region
-const allModels = getModels("amazon-bedrock");
-
-// Group models by base name: strip us./eu./global. prefix to find variants
-type Scope = "us" | "eu" | "global" | "amazon" | "base";
-
-type ModelEntry = (typeof allModels)[number];
-interface ModelGroup {
-	baseName: string;
-	provider: string;
-	variants: Map<Scope, ModelEntry>;
-}
-
-const groups = new Map<string, ModelGroup>();
-for (const m of allModels) {
-	let scope: Scope | null = null;
-	let baseId = m.id;
-	for (const p of ["us.", "eu.", "global."]) {
-		if (m.id.startsWith(p)) {
-			scope = p.slice(0, -1) as Scope;
-			baseId = m.id.slice(p.length);
-			break;
-		}
-	}
-	if (!scope && m.id.startsWith("amazon.")) {
-		scope = "amazon";
-		baseId = m.id;
-	}
-	if (!scope) scope = "base";
-
-	const prov = baseId.split(".")[0];
-	if (!groups.has(baseId) && prov) {
-		groups.set(baseId, {
-			baseName: m.name.replace(/ \((US|EU|Global)\)$/, ""),
-			provider: prov,
-			variants: new Map(),
-		});
-	}
-	const group = groups.get(baseId);
-	if (group) group.variants.set(scope, m);
-}
-
-// Build provider list
-const BACK = Symbol("back");
-const providers = [
-	...new Set([...groups.values()].map((g) => g.provider)),
-].sort();
-
-let provider = "";
-let modelChoice = "";
-let scope: Scope = "base";
-
-let step: "provider" | "model" | "scope" = "provider";
-while (true) {
-	if (step === "provider") {
-		const p = await select({
-			message: "Select provider",
-			options: providers.map((p) => ({
-				value: p,
-				label: p.charAt(0).toUpperCase() + p.slice(1),
-			})),
-		});
-		if (typeof p !== "string") process.exit(0);
-		provider = p;
-		step = "model";
-	} else if (step === "model") {
-		const providerModels = [...groups.entries()].filter(
-			([, g]) => g.provider === provider,
-		);
-		const mc = await select<string | symbol>({
-			message: "Select model",
-			options: [
-				{ value: BACK, label: "← Back" },
-				...providerModels.map(([baseId, g]) => ({
-					value: baseId,
-					label: `${g.baseName} — ${[...g.variants.keys()].join(", ")}`,
-				})),
-			],
-		});
-		if (typeof mc === "symbol" && mc === BACK) {
-			step = "provider";
-			continue;
-		}
-		if (typeof mc !== "string") process.exit(0);
-		modelChoice = mc;
-		step = "scope";
-	} else {
-		const group = groups.get(modelChoice);
-		if (!group) {
-			step = "model";
-			continue;
-		}
-		const scopes = [...group.variants.keys()];
-		if (scopes.length === 1 && scopes[0]) {
-			scope = scopes[0];
-			break;
-		}
-		const sc = await select<string | symbol>({
-			message: "Select scope",
-			options: [
-				{ value: BACK, label: "← Back" },
-				...scopes.map((s) => ({ value: s as string, label: s.toUpperCase() })),
-			],
-		});
-		if (typeof sc === "symbol" && sc === BACK) {
-			step = "model";
-			continue;
-		}
-		if (typeof sc !== "string") process.exit(0);
-		scope = sc as Scope;
-		break;
-	}
-}
-
-// Pick region
+// 3. Select model — provider → model → scope, from the live Bedrock catalog
 const region = await text({
 	message: "AWS region",
 	initialValue: allProfiles[profile]?.region || "us-east-1",
@@ -243,32 +132,87 @@ const region = await text({
 if (typeof region !== "string") process.exit(0);
 process.env.AWS_REGION = region;
 
-// Patch all base model IDs with region-appropriate inference profile prefix
-const regionPrefix = region.startsWith("eu-")
-	? "eu."
-	: region.startsWith("ap-")
-		? "ap."
-		: "us.";
-for (const m of allModels) {
-	if (
-		!m.id.startsWith("us.") &&
-		!m.id.startsWith("eu.") &&
-		!m.id.startsWith("global.")
-	) {
-		m.id = `${regionPrefix}${m.id}`;
-	}
-}
-
-const model = groups.get(modelChoice)?.variants.get(scope);
-if (!model) {
-	log.error("Could not resolve model");
+const catalogSpin = spinner();
+catalogSpin.start("Loading Bedrock models...");
+let groups: BedrockModelGroup[];
+try {
+	groups = await listBedrockModelGroups(profile, region);
+} catch (error: unknown) {
+	catalogSpin.stop("Could not list Bedrock models");
+	log.error(error instanceof Error ? error.message : String(error));
 	process.exit(1);
+}
+if (groups.length === 0) {
+	catalogSpin.stop("No text models available for this profile/region");
+	process.exit(1);
+}
+catalogSpin.stop(`Found ${groups.length} Bedrock models ✓`);
+
+const BACK = Symbol("back");
+const providers = [...new Set(groups.map((g) => g.provider))].sort();
+
+let provider = "";
+let modelChoice = "";
+let modelId = "";
+
+let step: "provider" | "model" | "scope" = "provider";
+while (true) {
+	if (step === "provider") {
+		const p = await select<string | symbol>({
+			message: "Select provider",
+			options: providers.map((value) => ({
+				value,
+				label: value.charAt(0).toUpperCase() + value.slice(1),
+			})),
+		});
+		if (typeof p !== "string") process.exit(0);
+		provider = p;
+		step = "model";
+	} else if (step === "model") {
+		const providerModels = groups.filter((g) => g.provider === provider);
+		const choice = await select<string | symbol>({
+			message: "Select model",
+			options: [
+				{ value: BACK, label: "← Back" },
+				...providerModels.map((g) => ({ value: g.baseId, label: g.name })),
+			],
+		});
+		if (typeof choice === "symbol") {
+			step = "provider";
+			continue;
+		}
+		modelChoice = choice;
+		step = "scope";
+	} else {
+		const group = groups.find((g) => g.baseId === modelChoice);
+		if (!group || group.scopes.length === 0) {
+			step = "model";
+			continue;
+		}
+		if (group.scopes.length === 1 && group.scopes[0]) {
+			modelId = group.scopes[0];
+			break;
+		}
+		const scope = await select<string | symbol>({
+			message: "Select inference profile scope",
+			options: [
+				{ value: BACK, label: "← Back" },
+				...group.scopes.map((id) => ({ value: id, label: id })),
+			],
+		});
+		if (typeof scope === "symbol") {
+			step = "model";
+			continue;
+		}
+		modelId = scope;
+		break;
+	}
 }
 
 // Verify Bedrock access
 const b = spinner();
 b.start("Checking Bedrock access...");
-const hasBedrock = await checkBedrockAccess(profile);
+const hasBedrock = await checkBedrockAccess(profile, region);
 if (hasBedrock) {
 	b.stop("Bedrock access confirmed ✓");
 } else {
@@ -277,11 +221,15 @@ if (hasBedrock) {
 }
 
 outro(
-	`Starting — profile: ${profile} | region: ${region} | model: ${model.name} (${model.id})`,
+	`Starting eve — profile: ${profile} | region: ${region} | model: ${modelId}`,
 );
 
-// 6. Start pi-coding-agent interactive TUI
-await startAgent(
-	model,
-	`[pawl-cli] Connected — profile: ${profile} | region: ${region} | model: ${model.name}`,
+// 4. Hand off to the eve terminal UI, pinned to the directory pawl was run from
+process.exit(
+	await launchEveDev({
+		profile,
+		region,
+		modelId,
+		projectDir: process.cwd(),
+	}),
 );

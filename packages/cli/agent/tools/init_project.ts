@@ -1,5 +1,6 @@
 import { defineTool } from "eve/tools";
 import { z } from "zod";
+import { projectDir } from "../../src/project-dir";
 import {
 	installScaffoldDependencies,
 	runPawlInit,
@@ -10,6 +11,32 @@ import {
 	scaffoldStageSchema,
 	scaffoldTestModeSchema,
 } from "../../src/scaffold/types";
+
+/** Exported so tests can validate input without reaching into eve's wrapper. */
+export const initProjectInputSchema = z.object({
+	projectName: z.string().min(1).describe("Name of the new project."),
+	packageManager: scaffoldPackageManagerSchema.describe(
+		"Package manager for the generated project.",
+	),
+	awsProfile: z.string().min(1).describe("AWS profile written into cdk.json."),
+	testMode: scaffoldTestModeSchema.describe(
+		"Whether the project uses LocalStack for integration tests.",
+	),
+	team: z.string().min(1).describe("Owning team tag."),
+	stage: scaffoldStageSchema.describe("Deployment stage tag."),
+	tags: z
+		.record(z.string(), z.string())
+		.optional()
+		.describe("Additional tags to apply."),
+	localstackSecretPath: z
+		.string()
+		.optional()
+		.describe("Required when testMode is localstack."),
+	install: z
+		.boolean()
+		.optional()
+		.describe("Install dependencies after writing the files."),
+});
 
 /**
  * A tool call cannot answer a prompt: stdin belongs to the eve server. Fail
@@ -26,32 +53,9 @@ function refusePrompt(field: string): () => never {
 export default defineTool({
 	description:
 		"Scaffold a new pawl project (CDK app, infra directory, config files) in a new directory. Collect every required value from the user before calling; this tool never prompts.",
-	inputSchema: z.object({
-		projectName: z.string().min(1).describe("Name of the new project."),
-		packageManager: scaffoldPackageManagerSchema.describe(
-			"Package manager for the generated project.",
-		),
-		awsProfile: z.string().min(1).describe("AWS profile written into cdk.json."),
-		testMode: scaffoldTestModeSchema.describe(
-			"Whether the project uses LocalStack for integration tests.",
-		),
-		team: z.string().min(1).describe("Owning team tag."),
-		stage: scaffoldStageSchema.describe("Deployment stage tag."),
-		tags: z
-			.record(z.string(), z.string())
-			.optional()
-			.describe("Additional tags to apply."),
-		localstackSecretPath: z
-			.string()
-			.optional()
-			.describe("Required when testMode is localstack."),
-		install: z
-			.boolean()
-			.optional()
-			.describe("Install dependencies after writing the files."),
-	}),
+	inputSchema: initProjectInputSchema,
 	async execute(input) {
-		const cwd = process.cwd();
+		const cwd = projectDir();
 		const installNow = input.install ?? false;
 		const config = await runPawlInit({
 			cwd,

@@ -186,10 +186,10 @@ export async function promptModelId(): Promise<string> {
 
 async function promptCustomModelId(): Promise<string> {
 	const value = await text({
-		message:
-			"Anthropic Bedrock model ID (e.g. eu.anthropic.claude-sonnet-4-6)",
+		message: "Anthropic Bedrock model ID (e.g. eu.anthropic.claude-sonnet-4-6)",
 		validate: (v) => {
-			const result = AnthropicModelIdSchema.safeParse(v.trim());
+			const candidate = (v ?? "").trim();
+			const result = AnthropicModelIdSchema.safeParse(candidate);
 			return result.success ? undefined : result.error.issues[0]?.message;
 		},
 	});

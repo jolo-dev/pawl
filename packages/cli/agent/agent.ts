@@ -15,9 +15,7 @@ import { defaultBedrockModelId } from "../src/bedrock-models";
  * context window up and we must set it explicitly.
  */
 export default defineAgent({
-	model: bedrock(
-		process.env.PAWL_BEDROCK_MODEL ?? defaultBedrockModelId(),
-	),
+	model: bedrock(process.env.PAWL_BEDROCK_MODEL ?? defaultBedrockModelId()),
 	modelContextWindowTokens: 200_000,
 	reasoning: "medium",
 });

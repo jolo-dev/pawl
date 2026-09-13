@@ -14,6 +14,10 @@
 		"verbatimModuleSyntax": true,
 		"noEmit": true,
 
+		// eve authors agent/ against node builtins; the workflow-modules types
+		// provide the globals eve's durable runtime injects.
+		"types": ["bun", "node", "eve/workflow-modules"],
+
 		// Best practices
 		"strict": true,
 		"skipLibCheck": true,
@@ -25,5 +29,6 @@
 		"noUnusedLocals": false,
 		"noUnusedParameters": false,
 		"noPropertyAccessFromIndexSignature": false
-	}
+	},
+	"include": ["agent/**/*.ts", "src/**/*.ts", "index.ts", "tests/**/*.ts"]
 }

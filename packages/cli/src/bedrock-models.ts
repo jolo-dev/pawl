@@ -10,6 +10,7 @@ export interface FoundationModelLike {
 	modelId?: string | undefined;
 	modelName?: string | undefined;
 	providerName?: string | undefined;
+	inputModalities?: string[] | undefined;
 	outputModalities?: string[] | undefined;
 }
 

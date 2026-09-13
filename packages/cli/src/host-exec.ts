@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import { type ExecFn, PawlHarness } from "./harness";
+import { projectDir } from "./project-dir";
 
 /**
  * Build an {@link ExecFn} that runs commands on the host in `cwd`.
@@ -41,11 +42,11 @@ export function createHostExec(cwd: string): ExecFn {
 }
 
 /**
- * A `PawlHarness` bound to the host working directory.
+ * A `PawlHarness` bound to the project the agent is operating on.
  *
  * Every pawl tool needs the same wiring; centralising it keeps the tools to a
  * single line and gives tests one seam to substitute.
  */
-export function createPawlHarness(cwd: string = process.cwd()): PawlHarness {
+export function createPawlHarness(cwd: string = projectDir()): PawlHarness {
 	return new PawlHarness({ cwd, exec: createHostExec(cwd) });
 }

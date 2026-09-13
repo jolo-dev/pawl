@@ -17,8 +17,10 @@
 
 import {
 	type PawlProvenance,
+	type PawlResourceKind,
 	parsePawlName,
 	parsePawlTagProvenance,
+	type Stage,
 } from "./provenance";
 
 /** A resource a project's infrastructure code declares. */
@@ -54,12 +56,48 @@ export type DriftStatus = "matched" | "not-deployed" | "unmanaged" | "foreign";
 /** What a pair was matched on, or why nothing matched. */
 export type DriftBasis = "logical-id" | "physical-name" | "provenance" | "none";
 
+/**
+ * Provenance as it applies to a deployed resource.
+ *
+ * The `source` matters: a name that parses identifies the *construct*, while
+ * tags only establish *ownership* by a team and stage. `CodeBuildProject` and
+ * `CodeCommit` take their names from props, so they can never carry the first.
+ */
+export interface DriftProvenance {
+	readonly source: "name" | "tags";
+	readonly team: string;
+	readonly stage: Stage;
+	/** Present only when the name identified the construct. */
+	readonly constructId?: string | undefined;
+	readonly kind?: PawlResourceKind | undefined;
+}
+
+export function toDriftProvenance(
+	provenance: PawlProvenance | ReturnType<typeof parsePawlTagProvenance>,
+): DriftProvenance | null {
+	if (!provenance) return null;
+	if ("constructId" in provenance) {
+		return {
+			source: "name",
+			team: provenance.team,
+			stage: provenance.stage,
+			constructId: provenance.constructId,
+			kind: provenance.kind,
+		};
+	}
+	return {
+		source: "tags",
+		team: provenance.team,
+		stage: provenance.stage,
+	};
+}
+
 export interface DriftEntry {
 	readonly status: DriftStatus;
 	readonly synthesized?: SynthesizedResource | undefined;
 	readonly deployed?: DeployedResource | undefined;
 	readonly basis: DriftBasis;
-	readonly provenance?: PawlProvenance | undefined;
+	readonly provenance?: DriftProvenance | undefined;
 	/** Short, human-readable explanation, safe to show the user. */
 	readonly reason: string;
 }
@@ -119,9 +157,10 @@ export function classifyDrift(input: DriftInput): DriftEntry[] {
 			continue;
 		}
 
-		const provenance =
+		const rawProvenance =
 			parsePawlName(resource.physicalName) ??
 			parsePawlTagProvenance(resource.tags);
+		const provenance = toDriftProvenance(rawProvenance);
 		if (provenance) {
 			entries.push({
 				status: "foreign",

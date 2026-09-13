@@ -37,13 +37,13 @@
 			"@aws-sdk/client-dynamodb": "3.1089.0",
 			"@aws-sdk/lib-dynamodb": "3.1089.0",
 			"@aws-sdk/client-cloudwatch-logs": "3.1089.0",
-			"diff": "8.0.4"
+			"diff": "8.0.4",
+			"@ai-sdk/amazon-bedrock": "5.0.82",
+			"ai": "7.0.99",
+			"eve": "0.54.3"
 		}
 	},
 	"dependencies": {
 		"@biomejs/biome": "catalog:"
-	},
-	"patchedDependencies": {
-		"@earendil-works/pi-coding-agent@0.74.0": "patches/@earendil-works%2Fpi-coding-agent@0.74.0.patch"
 	}
 }

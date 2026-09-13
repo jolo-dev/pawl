@@ -1,6 +1,6 @@
 import { defineAgent } from "eve";
 import { z } from "zod";
-import { PAWL_CONTEXT_WINDOW_TOKENS, pawlModel } from "../../lib/bedrock";
+import { pawlModelConfig } from "../../lib/bedrock";
 
 /**
  * Structured six-pillar review, replacing the Flue `agents/well-architected.ts`
@@ -10,8 +10,7 @@ import { PAWL_CONTEXT_WINDOW_TOKENS, pawlModel } from "../../lib/bedrock";
 export default defineAgent({
 	description:
 		"Review a project against the six AWS Well-Architected pillars and report risks with priorities.",
-	model: pawlModel(),
-	modelContextWindowTokens: PAWL_CONTEXT_WINDOW_TOKENS,
+	...pawlModelConfig(),
 	outputSchema: z.object({
 		pillars: z.array(
 			z.object({

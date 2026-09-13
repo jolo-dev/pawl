@@ -34,32 +34,49 @@ export interface BedrockModelGroup {
 }
 
 /** Cross-region inference-profile prefixes recognised by Bedrock. */
-const SCOPES = ["us", "eu", "global", "apac"] as const;
+const SCOPES = ["us", "eu", "global", "apac", "jp"] as const;
 
 /**
- * Region-appropriate cross-region inference-profile prefix.
+ * Default model for runs that skip the launcher.
  *
- * Mirrors the prefixing the old pi-ai picker applied to bare model ids: an
- * `eu-*` region talks to the `eu.` profiles, `ap-*` to `apac.`, everything
- * else to `us.`.
+ * The launcher normally sets `PAWL_BEDROCK_MODEL` from the live catalog. This
+ * keeps a bare `eve dev` runnable. It is a literal inference-profile id rather
+ * than a region-derived one: the available prefixes differ per model (Nova 2
+ * Lite, for example, has no `apac.` profile), so deriving a prefix from the
+ * region can produce an id Bedrock does not offer.
  */
-function profilePrefixForRegion(region: string): string {
-	if (region.startsWith("eu-")) return "eu.";
-	if (region.startsWith("ap-")) return "apac.";
-	return "us.";
-}
+export const DEFAULT_BEDROCK_MODEL_ID = "eu.amazon.nova-2-lite-v1:0";
 
 /**
- * Fallback Bedrock model id for bare `eve dev` runs that skip the launcher.
+ * Context window for a model, in tokens.
  *
- * The launcher always sets `PAWL_BEDROCK_MODEL` from the interactive picker;
- * this keeps the agent runnable without it, using the same region-aware
- * inference-profile prefix the picker would have produced.
+ * Bedrock models are not in the AI Gateway catalog, so eve cannot look this up
+ * and guessing high is dangerous: eve compacts at 90% of this number, so an
+ * over-estimate lets a turn overflow the provider. Unknown models therefore
+ * fall back to the smallest window we ship support for. `PAWL_CONTEXT_WINDOW_TOKENS`
+ * overrides it for models we have never seen.
  */
-export function defaultBedrockModelId(
-	region: string = process.env.AWS_REGION ?? "us-east-1",
-): string {
-	return `${profilePrefixForRegion(region)}anthropic.claude-sonnet-4-6`;
+const CONTEXT_WINDOWS: Record<string, number> = {
+	"amazon.nova-2-lite-v1:0": 1_000_000,
+	"anthropic.claude-opus-4-8": 200_000,
+	"anthropic.claude-sonnet-4-6": 200_000,
+	"anthropic.claude-haiku-4-5": 200_000,
+};
+
+const CONTEXT_WINDOW_FALLBACK = 200_000;
+
+/** Resolve the context window for a model id, honouring an explicit override. */
+export function contextWindowForModel(
+	modelId: string,
+	override?: string,
+): number {
+	const explicit = override?.trim();
+	if (explicit) {
+		const parsed = Number(explicit);
+		if (Number.isFinite(parsed) && parsed > 0) return parsed;
+	}
+	const { baseId } = splitScope(modelId);
+	return CONTEXT_WINDOWS[baseId] ?? CONTEXT_WINDOW_FALLBACK;
 }
 
 /** Strip a leading `<scope>.` inference-profile prefix, returning the scope. */

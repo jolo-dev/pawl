@@ -1,5 +1,5 @@
 import { defineAgent } from "eve";
-import { PAWL_CONTEXT_WINDOW_TOKENS, pawlModel } from "../../lib/bedrock";
+import { pawlModelConfig } from "../../lib/bedrock";
 
 /**
  * Writes CDK infrastructure code from an approved plan, in its own context so
@@ -7,6 +7,5 @@ import { PAWL_CONTEXT_WINDOW_TOKENS, pawlModel } from "../../lib/bedrock";
  */
 export default defineAgent({
 	description: "Generate CDK infrastructure code from an approved pawl plan.",
-	model: pawlModel(),
-	modelContextWindowTokens: PAWL_CONTEXT_WINDOW_TOKENS,
+	...pawlModelConfig(),
 });

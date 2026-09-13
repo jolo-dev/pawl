@@ -1,19 +1,46 @@
 import { describe, expect, test } from "bun:test";
 import {
-	defaultBedrockModelId,
+	contextWindowForModel,
+	DEFAULT_BEDROCK_MODEL_ID,
 	groupBedrockModels,
 } from "../src/bedrock-models";
 
-describe("defaultBedrockModelId", () => {
-	test("picks the inference-profile prefix from the region", () => {
-		expect(defaultBedrockModelId("eu-central-1")).toBe(
-			"eu.anthropic.claude-sonnet-4-6",
+describe("DEFAULT_BEDROCK_MODEL_ID", () => {
+	test("is the Nova 2 Lite eu inference profile", () => {
+		expect(DEFAULT_BEDROCK_MODEL_ID).toBe("eu.amazon.nova-2-lite-v1:0");
+	});
+});
+
+describe("contextWindowForModel", () => {
+	test("reports Nova 2 Lite's 1M window", () => {
+		expect(contextWindowForModel("eu.amazon.nova-2-lite-v1:0")).toBe(1_000_000);
+		expect(contextWindowForModel("global.amazon.nova-2-lite-v1:0")).toBe(
+			1_000_000,
 		);
-		expect(defaultBedrockModelId("us-east-1")).toBe(
-			"us.anthropic.claude-sonnet-4-6",
+	});
+
+	test("reports Claude's 200k window regardless of profile prefix", () => {
+		expect(contextWindowForModel("us.anthropic.claude-sonnet-4-6")).toBe(
+			200_000,
 		);
-		expect(defaultBedrockModelId("ap-southeast-2")).toBe(
-			"apac.anthropic.claude-sonnet-4-6",
+	});
+
+	test("falls back conservatively for an unknown model", () => {
+		expect(contextWindowForModel("eu.unknown.model-v9:0")).toBe(200_000);
+	});
+
+	test("honours an explicit override", () => {
+		expect(contextWindowForModel("eu.amazon.nova-2-lite-v1:0", "512000")).toBe(
+			512_000,
+		);
+	});
+
+	test("ignores a blank or nonsense override", () => {
+		expect(contextWindowForModel("eu.amazon.nova-2-lite-v1:0", "  ")).toBe(
+			1_000_000,
+		);
+		expect(contextWindowForModel("eu.amazon.nova-2-lite-v1:0", "abc")).toBe(
+			1_000_000,
 		);
 	});
 });

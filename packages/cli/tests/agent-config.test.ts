@@ -3,10 +3,20 @@ import path from "node:path";
 
 const agentDir = path.join(import.meta.dir, "../agent");
 
-test("agent.ts wires the Bedrock model with an explicit context window", async () => {
+test("agent.ts takes its model config from the shared helper", async () => {
 	const source = await Bun.file(path.join(agentDir, "agent.ts")).text();
-	expect(source).toContain("pawlModel()");
-	expect(source).toContain("modelContextWindowTokens");
+	// The helper returns model and context window together, so they cannot
+	// disagree about which model is configured.
+	expect(source).toContain("pawlModelConfig()");
+});
+
+test("every subagent shares the same model config helper", async () => {
+	for (const id of ["planner", "generator", "well-architected"]) {
+		const source = await Bun.file(
+			path.join(agentDir, "subagents", id, "agent.ts"),
+		).text();
+		expect(source).toContain("pawlModelConfig()");
+	}
 });
 
 test("the Bedrock provider is given a credential provider, not just env keys", async () => {

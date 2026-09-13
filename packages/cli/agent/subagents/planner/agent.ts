@@ -1,6 +1,6 @@
 import { defineAgent } from "eve";
 import { z } from "zod";
-import { PAWL_CONTEXT_WINDOW_TOKENS, pawlModel } from "../../lib/bedrock";
+import { pawlModelConfig } from "../../lib/bedrock";
 
 /**
  * Produces the structured infrastructure plan. Declared as a subagent so the
@@ -10,8 +10,7 @@ import { PAWL_CONTEXT_WINDOW_TOKENS, pawlModel } from "../../lib/bedrock";
 export default defineAgent({
 	description:
 		"Turn a codebase scan and user notes into a structured AWS infrastructure plan.",
-	model: pawlModel(),
-	modelContextWindowTokens: PAWL_CONTEXT_WINDOW_TOKENS,
+	...pawlModelConfig(),
 	outputSchema: z.object({
 		summary: z.string(),
 		services: z.array(

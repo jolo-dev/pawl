@@ -244,4 +244,17 @@ bunx eve dev        # terminal UI (PAWL_PROJECT_DIR defaults to cwd)
 bunx eve build      # compile .eve/ and build the host output
 ```
 
+### Model configuration
+
+The agent runs on AWS Bedrock through a direct AI SDK provider (`agent/lib/bedrock.ts`), not the Vercel AI Gateway. The launcher sets these before starting `eve dev`:
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `AWS_PROFILE` | — | Profile resolved by the launcher; the provider reads it via the AWS credential chain (profiles, SSO cache, web identity, ECS, IMDS) |
+| `AWS_REGION` | `us-east-1` | Region for the Bedrock endpoint |
+| `PAWL_BEDROCK_MODEL` | `eu.amazon.nova-2-lite-v1:0` | Inference-profile id |
+| `PAWL_CONTEXT_WINDOW_TOKENS` | per-model (Nova 2 Lite 1M, Claude 200k) | Override for models pawl does not know |
+
+Set `PAWL_BEDROCK_MODEL` (and `PAWL_CONTEXT_WINDOW_TOKENS` if the model is unknown to pawl) to run a different model without the launcher. Note that `eve`'s `/model` command cannot edit a provider-authored model — change it here or via the launcher.
+
 `bunx tsc --noEmit` currently reports 50 pre-existing type errors in `src/scaffold/prompts.ts`, `src/codecommit-init/`, `@pawl/cdk`, and a few tests. They predate the eve migration (the same config reported 77 before it) and none are in `agent/`, `src/launch.ts`, `src/project-dir.ts`, or `src/host-exec.ts`.

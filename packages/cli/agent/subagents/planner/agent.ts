@@ -1,7 +1,6 @@
-import { bedrock } from "@ai-sdk/amazon-bedrock";
 import { defineAgent } from "eve";
 import { z } from "zod";
-import { defaultBedrockModelId } from "../../../src/bedrock-models";
+import { PAWL_CONTEXT_WINDOW_TOKENS, pawlModel } from "../../lib/bedrock";
 
 /**
  * Produces the structured infrastructure plan. Declared as a subagent so the
@@ -11,8 +10,8 @@ import { defaultBedrockModelId } from "../../../src/bedrock-models";
 export default defineAgent({
 	description:
 		"Turn a codebase scan and user notes into a structured AWS infrastructure plan.",
-	model: bedrock(process.env.PAWL_BEDROCK_MODEL ?? defaultBedrockModelId()),
-	modelContextWindowTokens: 200_000,
+	model: pawlModel(),
+	modelContextWindowTokens: PAWL_CONTEXT_WINDOW_TOKENS,
 	outputSchema: z.object({
 		summary: z.string(),
 		services: z.array(

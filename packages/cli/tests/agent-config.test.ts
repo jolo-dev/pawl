@@ -5,8 +5,19 @@ const agentDir = path.join(import.meta.dir, "../agent");
 
 test("agent.ts wires the Bedrock model with an explicit context window", async () => {
 	const source = await Bun.file(path.join(agentDir, "agent.ts")).text();
-	expect(source).toContain("@ai-sdk/amazon-bedrock");
+	expect(source).toContain("pawlModel()");
 	expect(source).toContain("modelContextWindowTokens");
+});
+
+test("the Bedrock provider is given a credential provider, not just env keys", async () => {
+	const source = await Bun.file(
+		path.join(agentDir, "lib", "bedrock.ts"),
+	).text();
+	// @ai-sdk/amazon-bedrock ignores ~/.aws/config and the SSO cache unless a
+	// credential provider is supplied, which is pawl's entire auth model.
+	expect(source).toContain("@aws-sdk/credential-providers");
+	expect(source).toContain("credentialProvider");
+	expect(source).toContain("fromNodeProviderChain");
 });
 
 test("instructions carry the AWS scope guard and the two-phase workflow", async () => {

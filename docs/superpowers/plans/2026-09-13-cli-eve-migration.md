@@ -6,6 +6,7 @@
 > - `FoundationModelLike` also carries `inputModalities`; `init_project` exports its zod schema so tests can validate input without eve's wrapper.
 > - A `src/project-dir.ts` seam was added. The plan assumed tools could use `process.cwd()`, but eve resolves its app root by walking up for `agent/`, so the launcher must run from the package root while the agent works on the user's project. `PAWL_PROJECT_DIR` carries the split.
 > - `src/codecommit-init/prompts.ts` also imported the undeclared `@earendil-works/pi-ai`; it now offers a curated Anthropic list instead of the pi-ai catalog.
+> - **`@ai-sdk/amazon-bedrock` does not use the AWS SDK credential chain.** It reads only `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`, so a profile/SSO-based run fails SigV4 signing. `agent/lib/bedrock.ts` now passes `fromNodeProviderChain()` as the provider's `credentialProvider`, which restores the profile, SSO-cache, web-identity, ECS and IMDS paths pawl's auth model depends on.
 > - The eve sandbox cannot reach the host project, so the design keeps all pawl work in authored tools (app runtime) and leaves the sandbox to eve's built-in file tools.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.

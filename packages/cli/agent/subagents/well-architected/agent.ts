@@ -1,7 +1,6 @@
-import { bedrock } from "@ai-sdk/amazon-bedrock";
 import { defineAgent } from "eve";
 import { z } from "zod";
-import { defaultBedrockModelId } from "../../../src/bedrock-models";
+import { PAWL_CONTEXT_WINDOW_TOKENS, pawlModel } from "../../lib/bedrock";
 
 /**
  * Structured six-pillar review, replacing the Flue `agents/well-architected.ts`
@@ -11,8 +10,8 @@ import { defaultBedrockModelId } from "../../../src/bedrock-models";
 export default defineAgent({
 	description:
 		"Review a project against the six AWS Well-Architected pillars and report risks with priorities.",
-	model: bedrock(process.env.PAWL_BEDROCK_MODEL ?? defaultBedrockModelId()),
-	modelContextWindowTokens: 200_000,
+	model: pawlModel(),
+	modelContextWindowTokens: PAWL_CONTEXT_WINDOW_TOKENS,
 	outputSchema: z.object({
 		pillars: z.array(
 			z.object({

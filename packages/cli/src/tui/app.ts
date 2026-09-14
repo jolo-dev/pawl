@@ -20,12 +20,20 @@ import {
 } from "@opentui/core";
 import { PAWL_TAGLINE, PAWL_WORDMARK, THEME } from "./theme";
 
-/** How a line is attributed, which decides its colour. */
-export type TranscriptRole = "user" | "assistant" | "notice" | "alert";
+/** How a line is attributed, which decides its colour and marker. */
+export type TranscriptRole =
+	| "user"
+	| "assistant"
+	| "reasoning"
+	| "tool"
+	| "notice"
+	| "alert";
 
 const ROLE_COLOR: Record<TranscriptRole, string> = {
 	user: THEME.strong,
 	assistant: THEME.body,
+	reasoning: THEME.muted,
+	tool: THEME.muted,
 	notice: THEME.muted,
 	// Anything asking the user to act, or warning that coverage was partial,
 	// carries the brand's redline accent.
@@ -35,9 +43,24 @@ const ROLE_COLOR: Record<TranscriptRole, string> = {
 const ROLE_PREFIX: Record<TranscriptRole, string> = {
 	user: "› ",
 	assistant: "",
+	reasoning: "∴ ",
+	tool: "⚙ ",
 	notice: "· ",
 	alert: "! ",
 };
+
+/**
+ * The one place a line is turned into text, so a streaming update that rewrites
+ * a line keeps the same marker as its first appearance.
+ */
+export function formatLine(role: TranscriptRole, text: string): string {
+	return `${ROLE_PREFIX[role]}${text}`;
+}
+
+/** The colour for a role, so a presenter can restyle an updated line. */
+export function roleColor(role: TranscriptRole): string {
+	return ROLE_COLOR[role];
+}
 
 export interface PawlAppOptions {
 	readonly renderer: CliRenderer;
@@ -57,6 +80,11 @@ export interface PawlApp {
 	setStatus(text: string, role?: TranscriptRole): void;
 	/** Removes every transcript line, for `/clear` and `/new`. */
 	clearTranscript(): void;
+	/**
+	 * Replaces the trailing line's text, for a line that grows as deltas arrive.
+	 * No-op when the transcript is empty.
+	 */
+	updateLast(role: TranscriptRole, text: string): void;
 	/** Puts the cursor in the input, for startup and after a turn. */
 	focusInput(): void;
 }
@@ -123,6 +151,15 @@ export function createPawlApp(options: PawlAppOptions): PawlApp {
 	});
 	root.add(input);
 
+	const append = (role: TranscriptRole, text: string): TextRenderable => {
+		const line = new TextRenderable(renderer, {
+			content: formatLine(role, text),
+			fg: ROLE_COLOR[role],
+		});
+		transcript.add(line);
+		return line;
+	};
+
 	const onSubmit = options.onSubmit;
 	input.on(InputRenderableEvents.ENTER, () => {
 		const text = input.value.trim();
@@ -135,14 +172,7 @@ export function createPawlApp(options: PawlAppOptions): PawlApp {
 		root,
 		transcript,
 		input,
-		append(role, text) {
-			const line = new TextRenderable(renderer, {
-				content: `${ROLE_PREFIX[role]}${text}`,
-				fg: ROLE_COLOR[role],
-			});
-			transcript.add(line);
-			return line;
-		},
+		append,
 		setStatus(text, role = "notice") {
 			status.content = text;
 			status.fg = ROLE_COLOR[role];
@@ -151,6 +181,12 @@ export function createPawlApp(options: PawlAppOptions): PawlApp {
 			for (const child of [...transcript.getChildren()]) {
 				transcript.remove(child);
 			}
+		},
+		updateLast(role, text) {
+			const last = transcript.getChildren().at(-1);
+			if (!(last instanceof TextRenderable)) return;
+			last.content = formatLine(role, text);
+			last.fg = ROLE_COLOR[role];
 		},
 		focusInput() {
 			input.focus();

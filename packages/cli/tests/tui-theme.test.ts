@@ -53,11 +53,15 @@ describe("brand tokens", () => {
 		}
 	});
 
-	test("every semantic role points at a real brand colour", () => {
-		const known = new Set(Object.values(PAWL_COLORS));
+	test("every semantic role is a real hex colour", () => {
 		for (const value of Object.values(THEME)) {
-			expect(known.has(value)).toBe(true);
+			expect(/^#[0-9a-f]{6}$/.test(value)).toBe(true);
 		}
+	});
+
+	test("is the black-and-white pair the client asked for", () => {
+		expect(THEME.background).toBe("#000000");
+		expect(THEME.body).toBe("#ffffff");
 	});
 
 	test("carries the product name and tagline from PRODUCT.md", () => {

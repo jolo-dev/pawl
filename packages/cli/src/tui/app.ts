@@ -1,10 +1,11 @@
 /**
- * The pawl terminal shell.
+ * The pawl terminal shell: two panes under a logo header.
  *
- * Three regions: a logo header, a scrolling transcript, and one input line. When
- * the pre-flight needs a choice it opens a select above the input and closes it
- * again, so a question and its answer stay in the transcript instead of in a
- * widget that scrolls away.
+ * Left: the account's deployed resources, as a resource scan reports them.
+ * Right: the chat transcript and one input line.
+ *
+ * Density guidance from the OpenTUI skill applies: no gaps between adjacent
+ * panels, no unnecessary padding, information-dense over card spacing.
  */
 
 import { existsSync } from "node:fs";
@@ -17,13 +18,10 @@ import {
 	InputRenderableEvents,
 	type RenderContext,
 	ScrollBoxRenderable,
-	SelectRenderable,
-	SelectRenderableEvents,
 	TextRenderable,
 } from "@opentui/core";
-import { PAWL_TAGLINE, PAWL_WORDMARK, THEME } from "./theme";
+import { PAWL_TAGLINE, THEME } from "./theme";
 
-/** How a line is attributed, which decides its colour and marker. */
 export type TranscriptRole =
 	| "user"
 	| "assistant"
@@ -38,8 +36,6 @@ const ROLE_COLOR: Record<TranscriptRole, string> = {
 	reasoning: THEME.muted,
 	tool: THEME.muted,
 	notice: THEME.muted,
-	// Anything asking the user to act, or warning that coverage was partial,
-	// carries the brand's redline accent.
 	alert: THEME.accent,
 };
 
@@ -60,28 +56,14 @@ export function roleColor(role: TranscriptRole): string {
 	return ROLE_COLOR[role];
 }
 
-/**
- * The logo, resolved from the documentation assets.
- *
- * Rendered with the Unicode-block protocol, which is the ASCII conversion: it
- * needs no Kitty or Sixel support, so it works in any terminal. Absent only when
- * the assets are not installed alongside the client, in which case the shell
- * falls back to the wordmark.
- */
 const LOGO_PATH = fileURLToPath(
 	new URL("../../docs/src/assets/pawl-logo-no-text.png", import.meta.url),
 );
 
-export function hasLogo(): boolean {
-	return existsSync(LOGO_PATH);
-}
-
-/** The logo as cells, or undefined when it is unavailable. */
 export function logoSource(): string | undefined {
-	return hasLogo() ? LOGO_PATH : undefined;
+	return existsSync(LOGO_PATH) ? LOGO_PATH : undefined;
 }
 
-/** A select option, mirroring what a widget and the prompter both need. */
 export interface ChoiceOption {
 	readonly value: string;
 	readonly label: string;
@@ -90,10 +72,13 @@ export interface ChoiceOption {
 
 export interface PawlAppOptions {
 	readonly renderer: CliRenderer;
-	/** Called with the trimmed input when the user presses Enter. */
 	readonly onSubmit?: (text: string) => void;
-	/** Shown as the input's placeholder. */
 	readonly placeholder?: string;
+}
+
+export interface ResourceLine {
+	readonly text: string;
+	readonly kind: "service" | "resource" | "empty" | "error";
 }
 
 export interface PawlApp {
@@ -105,18 +90,13 @@ export interface PawlApp {
 	clearTranscript(): void;
 	updateLast(role: TranscriptRole, text: string): void;
 	focusInput(): void;
-	/**
-	 * Opens a select over the input and resolves with the chosen value, or null
-	 * when the user cancelled. The options stay visible until it closes, so the
-	 * question and its answer remain in the transcript.
-	 */
-	promptSelect(options: {
-		readonly message: string;
-		readonly choices: readonly ChoiceOption[];
-		readonly allowBack?: boolean;
-	}): Promise<string | null>;
+	/** Replaces the resources pane, one entry per line. */
+	setResources(lines: readonly ResourceLine[]): void;
+	/** Marks the resources pane as loading or failed. */
+	setResourcesStatus(text: string, failed?: boolean): void;
 }
 
+/** The logo as Unicode blocks, which needs no Kitty or Sixel support. */
 function brandHeader(ctx: RenderContext): BoxRenderable {
 	const header = new BoxRenderable(ctx, {
 		id: "pawl-header",
@@ -126,33 +106,28 @@ function brandHeader(ctx: RenderContext): BoxRenderable {
 		backgroundColor: THEME.background,
 	});
 
-	if (hasLogo()) {
-		const image = new ImageRenderable(ctx, {
-			id: "pawl-logo",
-			source: LOGO_PATH,
-			// Two cells per text row keeps the pawl proportions roughly square.
-			width: 14,
-			height: 7,
-			fit: "fit",
-			// The ASCII conversion: Unicode blocks, so it renders in any terminal
-			// without Kitty or Sixel support.
-			protocol: "blocks",
-			onError: () => {},
-		});
-		header.add(image);
-	}
+	const logo = new ImageRenderable(ctx, {
+		id: "pawl-logo",
+		source: LOGO_PATH,
+		width: 12,
+		height: 6,
+		fit: "fit",
+		protocol: "blocks",
+		onError: () => {},
+	});
+	header.add(logo);
 
 	header.add(
 		new TextRenderable(ctx, {
 			id: "pawl-wordmark",
-			content: PAWL_WORDMARK,
+			content: "pawl",
 			fg: THEME.accent,
 		}),
 	);
 	header.add(
 		new TextRenderable(ctx, {
 			id: "pawl-tagline",
-			content: PAWL_TAGLINE,
+			content: THEME.muted ? PAWL_TAGLINE : PAWL_TAGLINE,
 			fg: THEME.muted,
 		}),
 	);
@@ -172,33 +147,61 @@ export function createPawlApp(options: PawlAppOptions): PawlApp {
 
 	root.add(brandHeader(renderer));
 
+	const body = new BoxRenderable(renderer, {
+		id: "pawl-body",
+		flexDirection: "row",
+		flexGrow: 1,
+		backgroundColor: THEME.background,
+	});
+	root.add(body);
+
+	// Left: deployed resources. Fixed width, so the chat keeps most of the screen.
+	const resources = new ScrollBoxRenderable(renderer, {
+		id: "pawl-resources",
+		width: "38%",
+		backgroundColor: THEME.background,
+		paddingLeft: 1,
+		stickyScroll: true,
+		stickyStart: "top",
+	});
+	body.add(resources);
+
+	// Right: chat, which is the conversation and the input.
+	const chat = new BoxRenderable(renderer, {
+		id: "pawl-chat",
+		flexDirection: "column",
+		flexGrow: 1,
+		backgroundColor: THEME.background,
+		paddingLeft: 1,
+	});
+	body.add(chat);
+
 	const transcript = new ScrollBoxRenderable(renderer, {
 		id: "pawl-transcript",
 		flexGrow: 1,
 		backgroundColor: THEME.background,
-		paddingLeft: 1,
 		stickyScroll: true,
 		stickyStart: "bottom",
 	});
-	root.add(transcript);
+	chat.add(transcript);
 
 	const status = new TextRenderable(renderer, {
 		id: "pawl-status",
 		content: "",
 		fg: THEME.muted,
 	});
-	root.add(status);
+	chat.add(status);
 
 	const input = new InputRenderable(renderer, {
 		id: "pawl-input",
 		placeholder: options.placeholder ?? "Ask about your AWS setup",
-		backgroundColor: THEME.panel,
+		backgroundColor: THEME.background,
 		textColor: THEME.body,
-		focusedBackgroundColor: THEME.panel,
+		focusedBackgroundColor: THEME.background,
 		focusedTextColor: THEME.strong,
 		placeholderColor: THEME.muted,
 	});
-	root.add(input);
+	chat.add(input);
 
 	const setStatus = (text: string, role: TranscriptRole = "notice"): void => {
 		status.content = text;
@@ -244,52 +247,36 @@ export function createPawlApp(options: PawlAppOptions): PawlApp {
 		focusInput() {
 			input.focus();
 		},
-		promptSelect({ message, choices }) {
-			return new Promise<string | null>((resolve) => {
-				append("notice", message);
-
-				const select = new SelectRenderable(renderer, {
-					id: "pawl-select",
-					options: choices.map((choice) => ({
-						name: choice.label,
-						description: choice.description ?? "",
-						value: choice.value,
-					})),
-					backgroundColor: THEME.background,
-					textColor: THEME.body,
-					focusedBackgroundColor: THEME.panel,
-					focusedTextColor: THEME.strong,
-					selectedBackgroundColor: THEME.accent,
-					selectedTextColor: THEME.background,
-					showDescription: false,
-					showSelectionIndicator: true,
-				});
-
-				root.add(select);
-				select.focus();
-				setStatus(message);
-
-				let settled = false;
-				const finish = (value: string | null): void => {
-					if (settled) return;
-					settled = true;
-					root.remove(select);
-					select.destroy();
-					input.focus();
-					resolve(value);
-				};
-
-				select.on(SelectRenderableEvents.ITEM_SELECTED, () => {
-					const selected = select.getSelectedOption();
-					const value =
-						typeof selected?.value === "string" ? selected.value : null;
-					if (value === null) {
-						append("alert", "Nothing selected.");
-						return;
-					}
-					finish(value);
-				});
-			});
+		setResources(lines) {
+			for (const child of [...resources.getChildren()]) {
+				resources.remove(child);
+			}
+			for (const line of lines) {
+				resources.add(
+					new TextRenderable(renderer, {
+						content: line.text,
+						fg:
+							line.kind === "service"
+								? THEME.accent
+								: line.kind === "empty"
+									? THEME.muted
+									: line.kind === "resource"
+										? THEME.body
+										: THEME.accent,
+					}),
+				);
+			}
+		},
+		setResourcesStatus(text, failed = false) {
+			for (const child of [...resources.getChildren()]) {
+				resources.remove(child);
+			}
+			resources.add(
+				new TextRenderable(renderer, {
+					content: text,
+					fg: failed ? THEME.accent : THEME.muted,
+				}),
+			);
 		},
 	};
 }

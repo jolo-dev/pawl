@@ -1,3 +1,4 @@
+import { outro } from "@clack/prompts";
 import { createCliRenderer } from "@opentui/core";
 import {
 	printCodeCommitInitResult,
@@ -7,13 +8,16 @@ import {
 	printCodePipelineInitResult,
 	runCodePipelineInit,
 } from "./src/codepipeline-init";
+import { createHostExec } from "./src/host-exec";
+import { runProjectScan } from "./src/infra/project-scan";
 import { startPawlServer } from "./src/launch";
-import { createPawlApp } from "./src/tui/app";
+import { createPawlApp, type ResourceLine } from "./src/tui/app";
+import { clackBookends, createClackPrompter } from "./src/tui/clack-prompter";
 import { createEveTransport } from "./src/tui/client";
 import { runPreflight } from "./src/tui/preflight";
 import { defaultPreflightDeps } from "./src/tui/preflight-deps";
 import { createPresenter } from "./src/tui/presenter";
-import { createInputQueue, createTuiPrompter } from "./src/tui/prompter";
+import { createInputQueue } from "./src/tui/prompter";
 import { runInteractiveSession } from "./src/tui/session";
 import { THEME } from "./src/tui/theme";
 
@@ -72,22 +76,46 @@ if (argv[0] === "init") {
 /**
  * The agent session.
  *
- * The client owns the terminal from here: `eve dev` runs headless alongside it
- * and is spoken to over the session API. The AWS pre-flight runs inside the
- * transcript rather than above it, so the profile and model a user chose stay in
- * the scrollback with the conversation they belong to.
+ * The pre-flight runs as a plain terminal flow: choosing a profile and a model
+ * is a one-off decision that clack's prompts do well, and the client takes the
+ * terminal after that. The runtime runs headless alongside the client, and the
+ * account's resources are shown next to the conversation.
  */
 const projectDir = process.cwd();
-// The whole screen is charcoal, not the terminal's default: a partial
-// background read as a broken layout.
+const bookends = clackBookends("pawl — your AI agent for AWS infrastructure");
+bookends.begin();
+
+const outcome = await runPreflight(
+	defaultPreflightDeps(),
+	createClackPrompter(),
+);
+
+if (!outcome.ok) {
+	if (!outcome.cancelled) outro(outcome.reason);
+	process.exit(outcome.cancelled ? 0 : 1);
+}
+
+const { result } = outcome;
+outro(
+	`Starting — profile ${result.profile} | region ${result.region} | model ${result.modelName}`,
+);
+
+const server = await startPawlServer({
+	profile: result.profile,
+	region: result.region,
+	modelId: result.modelId,
+	projectDir,
+});
+
 const renderer = await createCliRenderer({
 	exitOnCtrlC: true,
 	backgroundColor: THEME.background,
 });
-const inputQueue = createInputQueue();
+
+const input = createInputQueue();
 const app = createPawlApp({
 	renderer,
-	onSubmit: (text) => inputQueue.submit(text),
+	onSubmit: (text) => input.submit(text),
 });
 renderer.root.add(app.root);
 app.focusInput();
@@ -99,61 +127,63 @@ const presenter = createPresenter({
 	clearTranscript: () => app.clearTranscript(),
 });
 
-let server: Awaited<ReturnType<typeof startPawlServer>> | undefined;
-let stopping = false;
-const shutdown = async (code: number): Promise<void> => {
-	if (stopping) return;
-	stopping = true;
-	await server?.stop();
-	renderer.destroy();
-	// process.exit is the only way out of an awaited top-level module, and it is
-	// what actually releases the terminal.
-	process.exit(code);
-};
+// The resources pane is filled by the client itself, because reading the
+// account does not depend on the agent asking for it.
+app.setResourcesStatus("Scanning the account…");
+void runProjectScan({
+	cwd: projectDir,
+	region: result.region,
+	exec: createHostExec(projectDir),
+}).then(
+	(outcome) => {
+		const lines: ResourceLine[] = [];
+		if (outcome.driftUnavailable) {
+			lines.push({ text: outcome.driftUnavailable, kind: "empty" });
+		}
+		lines.push({
+			text: `${outcome.report.deployedCount} deployed in ${outcome.report.region}`,
+			kind: "service",
+		});
+		for (const entry of outcome.report.entries) {
+			lines.push({
+				text:
+					entry.status === "not-deployed"
+						? `− ${entry.name}`
+						: `• ${entry.name}`,
+				kind: "resource",
+			});
+		}
+		lines.push({
+			text: outcome.suggestionSummary
+				.map((entry) => `${entry.construct} ×${entry.count}`)
+				.join(", "),
+			kind: "empty",
+		});
+		app.setResources(lines);
+	},
+	(error: unknown) => {
+		app.setResourcesStatus(
+			error instanceof Error ? error.message : String(error),
+			true,
+		);
+	},
+);
+
+const transport = createEveTransport({ host: server.url });
+const session = await transport.start(
+	"Greet me in one short sentence, then say you can scan my AWS account. Do not call any tools.",
+);
 
 try {
-	const outcome = await runPreflight(
-		defaultPreflightDeps(),
-		createTuiPrompter({ app, input: inputQueue }),
-	);
-
-	if (!outcome.ok) {
-		// The reason is already in the transcript for a failure the pre-flight
-		// reported; cancellation is silent on purpose.
-		if (!outcome.cancelled) app.append("alert", outcome.reason);
-		await shutdown(outcome.cancelled ? 0 : 1);
-	} else {
-		const { result } = outcome;
-		app.setStatus("Starting the runtime");
-		server = await startPawlServer({
-			profile: result.profile,
-			region: result.region,
-			modelId: result.modelId,
-			projectDir,
-		});
-		app.append(
-			"notice",
-			`profile ${result.profile} | region ${result.region} | model ${result.modelName}`,
-		);
-
-		const transport = createEveTransport({ host: server.url });
-		const session = await transport.start(
-			"Greet me in one short sentence, then say you can scan my AWS account. Do not call any tools.",
-		);
-
-		await runInteractiveSession({
-			session,
-			view: {
-				present: (state) => presenter.present(state),
-				alert: (text) => app.append("alert", text),
-			},
-			input: inputQueue,
-		});
-	}
-} catch (error: unknown) {
-	app.append("alert", error instanceof Error ? error.message : String(error));
-	app.setStatus("Failed", "alert");
+	await runInteractiveSession({
+		session,
+		view: {
+			present: (state) => presenter.present(state),
+			alert: (text) => app.append("alert", text),
+		},
+		input,
+	});
 } finally {
-	await server?.stop();
+	await server.stop();
 	renderer.destroy();
 }

@@ -26,6 +26,24 @@ export const PAWL_COLORS = {
 	codeCharcoal: "#100f0e",
 } as const;
 
+/**
+ * The terminal palette the client asked for: black background, white text.
+ *
+ * The docs palette is the brand's, but a terminal client renders on a user's
+ * own screen with its own contrast expectations, so the client uses a plain
+ * high-contrast pair and keeps the redline as the only accent.
+ */
+export const TERMINAL = {
+	background: "#000000",
+	panel: "#000000",
+	body: "#ffffff",
+	strong: "#ffffff",
+	muted: "#9a9a9a",
+	accent: "#ff2e1c",
+	danger: "#7d1509",
+	code: "#000000",
+} as const;
+
 export type PawlColorName = keyof typeof PAWL_COLORS;
 
 /**
@@ -60,16 +78,6 @@ export const PAWL_TAGLINE = "Proficient AWS Library";
  * approval, a coverage gap — because the brand's whole metaphor is an engineer's
  * markup on a drawing.
  */
-export const THEME = {
-	background: PAWL_COLORS.charcoalPaper,
-	panel: PAWL_COLORS.charcoalRaised,
-	body: PAWL_COLORS.chalkText,
-	strong: PAWL_COLORS.chalkBright,
-	muted: PAWL_COLORS.paperInk,
-	accent: PAWL_COLORS.redlineHot,
-	accentInk: PAWL_COLORS.redlineInk,
-	danger: PAWL_COLORS.redlineDeep,
-	code: PAWL_COLORS.codeCharcoal,
-} as const;
+export const THEME = TERMINAL;
 
 export type ThemeRole = keyof typeof THEME;

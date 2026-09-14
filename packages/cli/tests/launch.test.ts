@@ -4,6 +4,7 @@ import {
 	defaultAppRoot,
 	eveDevCommand,
 	resolveEveBin,
+	resolveEveRuntime,
 } from "../src/launch";
 
 describe("launch", () => {
@@ -22,11 +23,28 @@ describe("launch", () => {
 		expect(env.PATH).toBe("/bin");
 	});
 
-	test("eveDevCommand runs the installed eve binary", () => {
+	test("launches eve with Node, because its server cannot run under Bun", () => {
 		const { command, args } = eveDevCommand();
-		expect(command).toBe(process.execPath);
+
+		// Verified live: under Bun, eve binds and answers on some routes and then
+		// fails its worker init with "[crossws] Using Node.js adapter in an
+		// incompatible environment", so a health check can pass against a runtime
+		// that cannot serve a turn.
+		if (process.versions.bun) {
+			expect(command).not.toBe(process.execPath);
+			expect(command.endsWith("node")).toBe(true);
+		} else {
+			expect(command).toBe(process.execPath);
+		}
 		expect(args[0]).toBe(resolveEveBin());
 		expect(args.slice(1)).toEqual(["dev"]);
+	});
+
+	test("resolveEveRuntime keeps the current runtime when it already is Node", () => {
+		const runtime = resolveEveRuntime();
+
+		expect(runtime.length).toBeGreaterThan(0);
+		if (!process.versions.bun) expect(runtime).toBe(process.execPath);
 	});
 
 	test("resolveEveBin points at an existing file", async () => {

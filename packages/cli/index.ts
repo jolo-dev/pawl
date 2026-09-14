@@ -1,16 +1,4 @@
-import { intro, log, outro, select, spinner, text } from "@clack/prompts";
-import { parseKnownFiles } from "@smithy/core/config";
-import {
-	checkBedrockAccess,
-	checkCredentials,
-	isSSOTokenValid,
-	listProfiles,
-	ssoLogin,
-} from "./src/aws-credentials";
-import {
-	type BedrockModelGroup,
-	listBedrockModelGroups,
-} from "./src/bedrock-models";
+import { createCliRenderer } from "@opentui/core";
 import {
 	printCodeCommitInitResult,
 	runCodeCommitInit,
@@ -19,13 +7,14 @@ import {
 	printCodePipelineInitResult,
 	runCodePipelineInit,
 } from "./src/codepipeline-init";
-import { launchEveDev } from "./src/launch";
-import {
-	installScaffoldDependencies,
-	runPawlInit,
-	writeScaffoldProject,
-} from "./src/scaffold";
-import { parseInitArgs } from "./src/scaffold/cli";
+import { startPawlServer } from "./src/launch";
+import { createPawlApp } from "./src/tui/app";
+import { createEveTransport } from "./src/tui/client";
+import { runPreflight } from "./src/tui/preflight";
+import { defaultPreflightDeps } from "./src/tui/preflight-deps";
+import { createPresenter } from "./src/tui/presenter";
+import { createInputQueue, createTuiPrompter } from "./src/tui/prompter";
+import { runInteractiveSession } from "./src/tui/session";
 
 const argv = process.argv.slice(2);
 
@@ -62,11 +51,11 @@ if (argv[0] === "init" && argv[1] === "codepipeline") {
 }
 
 if (argv[0] === "init") {
+	const { parseInitArgs } = await import("./src/scaffold/cli");
+	const { installScaffoldDependencies, runPawlInit, writeScaffoldProject } =
+		await import("./src/scaffold");
 	const overrides = parseInitArgs(argv);
-	const config = await runPawlInit({
-		cwd: process.cwd(),
-		overrides,
-	});
+	const config = await runPawlInit({ cwd: process.cwd(), overrides });
 	const written = await writeScaffoldProject(config);
 	if (config.installNow) {
 		console.log("Installing dependencies...");
@@ -79,159 +68,81 @@ if (argv[0] === "init") {
 	process.exit(0);
 }
 
-intro(
-	"🐾 pawl — your AI agent for deploying, reviewing & optimizing cloud infrastructure",
-);
-
-// 1. Select AWS profile
-const profiles = await listProfiles();
-const profile = await select({
-	message: "Select an AWS profile",
-	options: profiles.map((p) => ({ value: p, label: p })),
+/**
+ * The agent session.
+ *
+ * The client owns the terminal from here: `eve dev` runs headless alongside it
+ * and is spoken to over the session API. The AWS pre-flight runs inside the
+ * transcript rather than above it, so the profile and model a user chose stay in
+ * the scrollback with the conversation they belong to.
+ */
+const projectDir = process.cwd();
+const renderer = await createCliRenderer({ exitOnCtrlC: false });
+const inputQueue = createInputQueue();
+const app = createPawlApp({
+	renderer,
+	onSubmit: (text) => inputQueue.submit(text),
 });
-if (typeof profile !== "string") process.exit(0);
+renderer.root.add(app.root);
+app.focusInput();
 
-// 2. Check credentials validity
-const spin = spinner();
-spin.start("Checking credentials...");
-
-const allProfiles = await parseKnownFiles({});
-const isSSO = !!allProfiles[profile]?.sso_session;
-let valid = false;
-
-if (isSSO) {
-	valid = await isSSOTokenValid(profile);
-} else {
-	try {
-		await checkCredentials(profile);
-		valid = true;
-	} catch {
-		valid = false;
-	}
-}
-
-if (valid) {
-	spin.stop("Credentials valid ✓");
-} else if (isSSO) {
-	spin.stop("SSO token expired, logging in...");
-	await ssoLogin(profile);
-	log.success("SSO login complete");
-} else {
-	spin.stop("Credentials invalid for non-SSO profile");
-	process.exit(1);
-}
-
-process.env.AWS_PROFILE = profile;
-
-// 3. Select model — provider → model → scope, from the live Bedrock catalog
-const region = await text({
-	message: "AWS region",
-	initialValue: allProfiles[profile]?.region || "us-east-1",
-	validate: (v) => (!v ? "Region is required" : undefined),
+const presenter = createPresenter({
+	append: (role, text) => app.append(role, text),
+	updateLast: (role, text) => app.updateLast(role, text),
+	setStatus: (text, role) => app.setStatus(text, role),
+	clearTranscript: () => app.clearTranscript(),
 });
-if (typeof region !== "string") process.exit(0);
-process.env.AWS_REGION = region;
 
-const catalogSpin = spinner();
-catalogSpin.start("Loading Bedrock models...");
-let groups: BedrockModelGroup[];
+let server: Awaited<ReturnType<typeof startPawlServer>> | undefined;
+const shutdown = async (code: number): Promise<never> => {
+	await server?.stop();
+	renderer.destroy();
+	process.exit(code);
+};
+
 try {
-	groups = await listBedrockModelGroups(profile, region);
-} catch (error: unknown) {
-	catalogSpin.stop("Could not list Bedrock models");
-	log.error(error instanceof Error ? error.message : String(error));
-	process.exit(1);
-}
-if (groups.length === 0) {
-	catalogSpin.stop("No text models available for this profile/region");
-	process.exit(1);
-}
-catalogSpin.stop(`Found ${groups.length} Bedrock models ✓`);
+	const outcome = await runPreflight(
+		defaultPreflightDeps(),
+		createTuiPrompter({ app, input: inputQueue }),
+	);
 
-const BACK = Symbol("back");
-const providers = [...new Set(groups.map((g) => g.provider))].sort();
-
-let provider = "";
-let modelChoice = "";
-let modelId = "";
-
-let step: "provider" | "model" | "scope" = "provider";
-while (true) {
-	if (step === "provider") {
-		const p = await select<string | symbol>({
-			message: "Select provider",
-			options: providers.map((value) => ({
-				value,
-				label: value.charAt(0).toUpperCase() + value.slice(1),
-			})),
-		});
-		if (typeof p !== "string") process.exit(0);
-		provider = p;
-		step = "model";
-	} else if (step === "model") {
-		const providerModels = groups.filter((g) => g.provider === provider);
-		const choice = await select<string | symbol>({
-			message: "Select model",
-			options: [
-				{ value: BACK, label: "← Back" },
-				...providerModels.map((g) => ({ value: g.baseId, label: g.name })),
-			],
-		});
-		if (typeof choice === "symbol" && choice === BACK) {
-			step = "provider";
-			continue;
-		}
-		if (typeof choice !== "string") process.exit(0);
-		modelChoice = choice;
-		step = "scope";
+	if (!outcome.ok) {
+		// The reason is already in the transcript for a failure the pre-flight
+		// reported; cancellation is silent on purpose.
+		if (!outcome.cancelled) app.append("alert", outcome.reason);
+		await shutdown(outcome.cancelled ? 0 : 1);
 	} else {
-		const group = groups.find((g) => g.baseId === modelChoice);
-		if (!group || group.scopes.length === 0) {
-			step = "model";
-			continue;
-		}
-		if (group.scopes.length === 1 && group.scopes[0]) {
-			modelId = group.scopes[0];
-			break;
-		}
-		const scope = await select<string | symbol>({
-			message: "Select inference profile scope",
-			options: [
-				{ value: BACK, label: "← Back" },
-				...group.scopes.map((id) => ({ value: id, label: id })),
-			],
+		const { result } = outcome;
+		app.setStatus("Starting the runtime");
+		server = await startPawlServer({
+			profile: result.profile,
+			region: result.region,
+			modelId: result.modelId,
+			projectDir,
 		});
-		if (typeof scope === "symbol" && scope === BACK) {
-			step = "model";
-			continue;
-		}
-		if (typeof scope !== "string") process.exit(0);
-		modelId = scope;
-		break;
+		app.append(
+			"notice",
+			`profile ${result.profile} | region ${result.region} | model ${result.modelName}`,
+		);
+
+		const transport = createEveTransport({ host: server.url });
+		const session = await transport.start(
+			"Greet me in one short sentence, then say you can scan my AWS account. Do not call any tools.",
+		);
+
+		await runInteractiveSession({
+			session,
+			view: {
+				present: (state) => presenter.present(state),
+				alert: (text) => app.append("alert", text),
+			},
+			input: inputQueue,
+		});
 	}
+} catch (error: unknown) {
+	app.append("alert", error instanceof Error ? error.message : String(error));
+	app.setStatus("Failed", "alert");
+} finally {
+	await server?.stop();
+	renderer.destroy();
 }
-
-// Verify Bedrock access
-const b = spinner();
-b.start("Checking Bedrock access...");
-const hasBedrock = await checkBedrockAccess(profile, region);
-if (hasBedrock) {
-	b.stop("Bedrock access confirmed ✓");
-} else {
-	b.stop("No Bedrock access for this profile/region");
-	process.exit(1);
-}
-
-outro(
-	`Starting eve — profile: ${profile} | region: ${region} | model: ${modelId}`,
-);
-
-// 4. Hand off to the eve terminal UI, pinned to the directory pawl was run from
-process.exit(
-	await launchEveDev({
-		profile,
-		region,
-		modelId,
-		projectDir: process.cwd(),
-	}),
-);

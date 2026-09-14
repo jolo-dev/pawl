@@ -44,6 +44,7 @@ interface Scripted {
 	readonly prompter: PreflightPrompter;
 	readonly asked: string[];
 	readonly statuses: string[];
+	readonly notices: string[];
 }
 
 /**
@@ -53,6 +54,7 @@ interface Scripted {
 function scripted(answers: Record<string, SelectResult | string>): Scripted {
 	const asked: string[] = [];
 	const statuses: string[] = [];
+	const notices: string[] = [];
 	let cursor = 0;
 	const next = (id: string): SelectResult | string => {
 		asked.push(id);
@@ -68,6 +70,7 @@ function scripted(answers: Record<string, SelectResult | string>): Scripted {
 	return {
 		asked,
 		statuses,
+		notices,
 		prompter: {
 			async select(input) {
 				const value = next(input.id);
@@ -83,6 +86,9 @@ function scripted(answers: Record<string, SelectResult | string>): Scripted {
 			},
 			status(message) {
 				statuses.push(message);
+			},
+			notice(message) {
+				notices.push(message);
 			},
 		},
 	};
@@ -161,6 +167,7 @@ describe("runPreflight", () => {
 				return "eu-central-1";
 			},
 			status() {},
+			notice() {},
 		};
 
 		const outcome = await runPreflight(deps(), prompter);
@@ -190,6 +197,33 @@ describe("runPreflight", () => {
 
 		expect(logins).toEqual(["dev"]);
 		expect(outcome.ok).toBe(true);
+	});
+
+	test("puts the SSO login URL in the transcript, not on stdout", async () => {
+		// The client owns the terminal, so a raw console.log would corrupt the
+		// rendered UI and a status line would be replaced before the user could
+		// finish logging in.
+		const { prompter, notices } = scripted({
+			profile: "dev",
+			region: "eu-central-1",
+			provider: "amazon",
+			model: "amazon.nova-2-lite-v1:0",
+		});
+
+		await runPreflight(
+			deps({
+				isSso: async () => true,
+				isSsoTokenValid: async () => false,
+				ssoLogin: async (_profile, report) => {
+					report(
+						"Opening browser for SSO login:\nhttps://example.invalid/verify",
+					);
+				},
+			}),
+			prompter,
+		);
+
+		expect(notices.join("\n")).toContain("https://example.invalid/verify");
 	});
 
 	test("does not log in again when the SSO token is still valid", async () => {

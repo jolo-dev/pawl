@@ -32,7 +32,7 @@ export function defaultPreflightDeps(): PreflightDeps {
 			// not used here.
 			await checkCredentials(profile, region);
 		},
-		ssoLogin,
+		ssoLogin: (profile, report) => ssoLogin(profile, report),
 		listModelGroups: listBedrockModelGroups,
 		checkBedrockAccess: (profile, region) =>
 			checkBedrockAccess(profile, region),

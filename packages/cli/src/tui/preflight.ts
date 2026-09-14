@@ -43,6 +43,12 @@ export interface PreflightPrompter {
 	}): Promise<string | null>;
 	/** Reports work with no input, so a slow AWS call is not a frozen screen. */
 	status(message: string): void;
+	/**
+	 * A line the user may need to re-read, such as an SSO login URL. It goes into
+	 * the transcript rather than the status line, because a status line is
+	 * replaced and a URL that scrolls away cannot be followed.
+	 */
+	notice(message: string): void;
 }
 
 export interface PreflightDeps {
@@ -54,7 +60,10 @@ export interface PreflightDeps {
 		profile: string,
 		region?: string,
 	) => Promise<void>;
-	readonly ssoLogin: (profile: string) => Promise<void>;
+	readonly ssoLogin: (
+		profile: string,
+		report: (message: string) => void,
+	) => Promise<void>;
 	readonly listModelGroups: (
 		profile: string,
 		region: string,
@@ -141,7 +150,10 @@ export async function runPreflight(
 		if (isSso) {
 			if (!(await deps.isSsoTokenValid(profile))) {
 				prompter.status("SSO token expired, opening a browser to log in");
-				await deps.ssoLogin(profile);
+				// The URL goes to the transcript through `notice`, because a user may
+				// need to complete the login in a browser that did not open, and a
+				// status line would have been replaced by then.
+				await deps.ssoLogin(profile, (message) => prompter.notice(message));
 			}
 		} else {
 			await deps.checkCredentials(profile);

@@ -73,7 +73,15 @@ export async function isSSOTokenValid(profile: string): Promise<boolean> {
 	}
 }
 
-export async function ssoLogin(profile: string): Promise<void> {
+export async function ssoLogin(
+	profile: string,
+	/**
+	 * Where progress goes. Defaults to stdout for a plain terminal, but the pawl
+	 * client passes a reporter that writes into its transcript: the client owns
+	 * the screen, and a raw `console.log` would corrupt the rendered UI.
+	 */
+	report: (message: string) => void = console.log,
+): Promise<void> {
 	const profiles = await parseKnownFiles({});
 	const ssoSessionName = profiles[profile]?.sso_session;
 	if (!ssoSessionName)
@@ -100,7 +108,7 @@ export async function ssoLogin(profile: string): Promise<void> {
 		}),
 	);
 
-	console.log(`Opening browser for SSO login:\n${verificationUriComplete}`);
+	report(`Opening browser for SSO login:\n${verificationUriComplete}`);
 	if (verificationUriComplete) {
 		await openInBrowser(verificationUriComplete);
 	}
@@ -150,7 +158,7 @@ export async function ssoLogin(profile: string): Promise<void> {
 		"utf8",
 	);
 
-	console.log(`SSO login successful for profile "${profile}"`);
+	report(`SSO login successful for profile "${profile}"`);
 }
 
 export async function getProfileRegion(

@@ -109,6 +109,10 @@ export function createTuiPrompter(
 			app.setStatus(message);
 		},
 
+		notice(message) {
+			app.append("notice", message);
+		},
+
 		async select(request): Promise<SelectResult> {
 			const allowBack = request.allowBack === true;
 			app.append("notice", request.message);

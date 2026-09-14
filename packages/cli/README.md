@@ -4,22 +4,28 @@ An AI-powered infrastructure agent that generates, reviews, and optimizes AWS in
 
 ## Architecture
 
-pawl CLI is built in two layers:
+pawl CLI is built in three layers:
 
 1. **`PawlHarness`** — Runtime-agnostic core that handles codebase scanning and prompt construction (`src/harness.ts`). Use this to integrate pawl with any agent framework.
 2. **eve agent** — The `agent/` directory is an [eve](https://eve.dev) app: always-on instructions, typed tools, skills, declared subagents, and the HTTP channel.
+3. **pawl client** — The terminal client (`src/tui/`) that owns the screen. It runs the AWS pre-flight in its own transcript, then attaches to the agent over eve's session API.
 
-`index.ts` is the launcher. It resolves an AWS profile, validates credentials (auto-login via SSO if needed), lets you choose a Bedrock model from the live catalog, then hands the terminal over to `eve dev`.
+`index.ts` is the entrypoint. It resolves an AWS profile, validates credentials (opening a browser for SSO if needed), lets you choose a Bedrock model from the live catalog, starts the eve runtime **headless on loopback**, and attaches the client to it. `eve dev`'s own terminal UI is not used: it is not extensible (no command registration, no theme or pane hooks), so pawl renders its own. See `docs/adr/0001-custom-opentui-client.md`.
 
-The launcher starts eve from the pawl package root, because eve locates its application by walking up for `agent/`. The directory you ran pawl from travels in `PAWL_PROJECT_DIR`, and every tool resolves the project through `src/project-dir.ts` — so the agent operates on *your* project, not on the CLI package.
+The runtime starts from the pawl package root, because eve locates its application by walking up for `agent/`. The directory you ran pawl from travels in `PAWL_PROJECT_DIR`, and every tool resolves the project through `src/project-dir.ts` — so the agent operates on *your* project, not on the CLI package.
 
 ### Where things run
 
 Authored eve tools run in the app runtime, not in eve's sandbox, so they can drive `PawlHarness` against your real project directory. The sandbox stays on its default backend and backs eve's built-in `bash`, `read_file`, and `write_file` tools only.
 
+### Two runtime constraints that are easy to trip over
+
+- **eve's server must run under Node, not Bun.** Launched with Bun it binds and answers on some routes, then fails its worker init (`[crossws] Using Node.js adapter in an incompatible environment`). The launcher resolves a real `node` from `PATH` for the runtime; pawl itself still runs under Bun.
+- **Readiness means the health route answers, not merely that something is listening.** The half-started runtime above accepts a connection on `/eve/v1/session` while being unable to serve a turn.
+
 ## Usage
 
-### Interactive terminal (eve TUI)
+### Interactive terminal (pawl client)
 
 ```bash
 bun run index.ts
@@ -28,12 +34,12 @@ bun run index.ts
 The CLI will:
 
 1. Prompt you to select an AWS profile
-2. Validate credentials (auto-login via SSO if needed)
+2. Validate credentials (opening a browser for SSO if needed, with the URL kept in the transcript)
 3. Ask for the AWS region and load the Bedrock model catalog
 4. Let you choose a provider → model → inference-profile scope
-5. Hand the terminal over to `eve dev`
+5. Start the runtime and open the conversation
 
-Once in the eve TUI, ask for what you want in plain language — the agent calls the tools above. `eve dev` also serves `/help`, `/model`, `/reset`, `/compact`, and the rest of the built-in commands.
+Selections are numbered transcript lines rather than a separate widget, so the profile and model you chose stay in the scrollback alongside the conversation.
 
 ### `pawl init`
 
@@ -212,12 +218,39 @@ The agent calls these tools itself — they are typed capabilities, not slash co
 |------|-------------|
 | `plan` | Analyze codebase, generate infrastructure plan |
 | `generate` | Generate CDK code from approved plan (**requires human approval**) |
-| `well_architected` | AWS Well-Architected Framework review |
-| `cost` | Cost optimization analysis |
+| `scan_resources` | Read the AWS account and compare it with this project's synthesized output (read-only) |
+| `deploy_preview` | Show what `cdk deploy` would change (read-only) |
+| `deploy_infra` | Deploy with `cdk deploy` (**requires human approval**) |
+| `well_architected` | AWS Well-Architected Framework review, including the account by default |
+| `cost` | Cost analysis from resource configuration — **no billing data** |
 | `architecture` | Render the plan's Mermaid diagram as ASCII |
 | `init_project` | Scaffold a new pawl project (non-interactive) |
 
-The root agent delegates the heavy lifting to declared subagents: `planner`, `generator`, and `well-architected`.
+The root agent delegates the heavy lifting to declared subagents: `planner`, `generator`, `well-architected`, and `infra-auditor`.
+
+### Analysis is read-only; creation is approval-gated
+
+`scan_resources`, `deploy_preview`, `well_architected`, `cost`, and `architecture` change nothing. Only `generate` and `deploy_infra` produce changes, and both require explicit approval.
+
+Deploying is always two steps: `deploy_preview` produces the `cdk diff`, you agree to that change set, and only then does `deploy_infra` run. It is approval-gated rather than relying on `cdk`'s own prompt, because the tool has no terminal for `cdk` to prompt in.
+
+## Analyzing an account
+
+`scan_resources` reads the deployed resources of one account and region and compares them with the resources this project's CDK code synthesizes. It reports drift in both directions, plus the Pawl construct candidates for resources Pawl does not already manage.
+
+**Coverage is part of the answer.** A scan reports which services it read and which it could not, and `pawl` never describes an account as clean when part of it was not read. Services it cannot read at all are named rather than omitted.
+
+### Permissions
+
+The scan is read-only. `iam/pawl-readonly-policy.json` is the exact grant it needs — 13 read actions across 7 services — and it is **generated from the scanner sources**, so it cannot drift from what the code calls. Run the scanners' tests after adding a scanner and the policy will be shown as out of date.
+
+Drift for CloudFormation-managed resources is mostly not pawl's to compute: `cdk diff` already compares the deployed stack with the local synthesis, and `DetectStackDrift` covers template against actual. Pawl's own matching only covers resources outside CloudFormation, using the physical names and tags its constructs pin.
+
+### What a scan cannot tell you
+
+- Nothing about cost. Pawl does not call the Cost Explorer API, so every figure is derived from resource configuration, never measured spend.
+- Nothing about traffic. A resource appears because it exists, not because it is used.
+- Nothing about history. A scan is a point-in-time read.
 
 ## Built-in Prompts
 
@@ -240,17 +273,36 @@ Located in `agent/skills/`:
 ```bash
 bun test            # unit tests
 bunx eve info       # discovery + diagnostics
-bunx eve dev        # terminal UI (PAWL_PROJECT_DIR defaults to cwd)
+bunx eve dev        # eve's own terminal UI, for working on the agent itself
 bunx eve build      # compile .eve/ and build the host output
 ```
 
+### Live verification
+
+`scripts/verify-live-session.ts` drives the session client against a real eve
+server and a real model turn, then asserts on the state the reducer produced. It
+exists because every event shape the client handles comes from eve's type
+definitions, and a mismatch there degrades to "ignored event" — it fails
+silently by design. It costs real model calls, so run it when the reducer, the
+session driver, or eve itself changes.
+
+```bash
+AWS_PROFILE=<profile> AWS_REGION=<region> bunx eve dev --no-ui --port 2145 &
+bun scripts/verify-live-session.ts http://127.0.0.1:2145
+```
+
+It exits non-zero on failure. It has caught two bugs that a green unit suite
+could not, both times because the tests encoded the same wrong assumption as the
+code: breaking event consumption on `turn.completed` (which is not a boundary,
+so the *next* turn was never read), and launching eve with Bun instead of Node.
+
 ### Model configuration
 
-The agent runs on AWS Bedrock through a direct AI SDK provider (`agent/lib/bedrock.ts`), not the Vercel AI Gateway. The launcher sets these before starting `eve dev`:
+The agent runs on AWS Bedrock through a direct AI SDK provider (`agent/lib/bedrock.ts`), not the Vercel AI Gateway. The pre-flight sets these before starting the runtime:
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `AWS_PROFILE` | — | Profile resolved by the launcher; the provider reads it via the AWS credential chain (profiles, SSO cache, web identity, ECS, IMDS) |
+| `AWS_PROFILE` | — | Profile resolved by the pre-flight; the provider reads it via the AWS credential chain (profiles, SSO cache, web identity, ECS, IMDS) |
 | `AWS_REGION` | `us-east-1` | Region for the Bedrock endpoint |
 | `PAWL_BEDROCK_MODEL` | `eu.amazon.nova-2-lite-v1:0` | Inference-profile id |
 | `PAWL_CONTEXT_WINDOW_TOKENS` | per-model (Nova 2 Lite 1M, Claude 200k) | Override for models pawl does not know |

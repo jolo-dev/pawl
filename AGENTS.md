@@ -11,6 +11,7 @@ pawl (Proficient AWs Library) is a TypeScript monorepo providing opinionated AWS
 - Linting/Formatting: Biome (tabs, double quotes, recommended rules)
 - Validation: Zod (runtime schema validation)
 - Agent framework: eve (Vercel) — `packages/cli/agent`, on AWS Bedrock via `@ai-sdk/amazon-bedrock`
+- Terminal client: OpenTUI — `packages/cli/src/tui`
 - CDK: aws-cdk-lib 2.x with cdk-nag for compliance
 - Lambda: AWS Lambda Powertools (Logger, Tracer, Metrics)
 - Testing: Bun test with Localstack (via Docker/Testcontainers)
@@ -76,6 +77,8 @@ pawl/
 - Tools run in the eve **app runtime**, not the sandbox: resolve the project with `projectDir()`, never `process.cwd()`
 - Authored modules are bundled for eve's Node runtime, so they must not import `bun` or runtime-specific packages, and must keep their import graph light (`@pawl/cdk` is too heavy — see `src/scaffold/types.ts`)
 - `packages/cli` requires Node 24 (`engines.node: 24.x`); the rest of the monorepo stays on 22+
+- **The eve runtime must be launched with Node, never Bun.** Under Bun it binds and answers on some routes and then fails its worker init, so a readiness check can pass against a runtime that cannot serve a turn. `src/launch.ts` resolves a real `node` when pawl itself runs under Bun
+- The pawl client owns the terminal, so nothing on the client path may write to stdout directly — an SSO URL goes into the transcript through the prompter, not `console.log`
 
 ### Tests
 

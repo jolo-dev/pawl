@@ -1,0 +1,67 @@
+import { describe, expect, test } from "bun:test";
+import { join } from "node:path";
+import {
+	DESIGN_TOKEN_NAMES,
+	PAWL_COLORS,
+	PAWL_TAGLINE,
+	PAWL_WORDMARK,
+	THEME,
+} from "../src/tui/theme";
+
+const DESIGN_MD = join(import.meta.dir, "../../../docs/DESIGN.md");
+
+/** Pull the `colors:` block out of the design system's YAML frontmatter. */
+function designColors(frontmatter: string): Record<string, string> {
+	const block = frontmatter.split(/^colors:$/m)[1];
+	if (!block) throw new Error("docs/DESIGN.md has no colors block");
+	const colours: Record<string, string> = {};
+	for (const line of block.split("\n")) {
+		const match = /^\s{2}([a-z-]+):\s*"(#[0-9a-fA-F]{6})"\s*$/.exec(line);
+		if (!match) continue;
+		const [, name, value] = match;
+		if (name && value) colours[name] = value.toLowerCase();
+	}
+	return colours;
+}
+
+describe("brand tokens", () => {
+	test("every token matches docs/DESIGN.md", async () => {
+		const frontmatter =
+			(await Bun.file(DESIGN_MD).text()).split("---")[1] ?? "";
+		const canonical = designColors(frontmatter);
+
+		expect(Object.keys(canonical).length).toBeGreaterThan(0);
+		for (const [name, tokenName] of Object.entries(DESIGN_TOKEN_NAMES)) {
+			const expected = canonical[tokenName];
+			if (expected === undefined) {
+				throw new Error(`docs/DESIGN.md defines no "${tokenName}"`);
+			}
+			// A mismatch means the docs palette moved and the TUI did not.
+			expect(PAWL_COLORS[name as keyof typeof PAWL_COLORS].toLowerCase()).toBe(
+				expected,
+			);
+		}
+	});
+
+	test("does not invent tokens the design system lacks", async () => {
+		const frontmatter =
+			(await Bun.file(DESIGN_MD).text()).split("---")[1] ?? "";
+		const canonical = designColors(frontmatter);
+
+		for (const tokenName of Object.values(DESIGN_TOKEN_NAMES)) {
+			expect(canonical[tokenName]).toBeDefined();
+		}
+	});
+
+	test("every semantic role points at a real brand colour", () => {
+		const known = new Set(Object.values(PAWL_COLORS));
+		for (const value of Object.values(THEME)) {
+			expect(known.has(value)).toBe(true);
+		}
+	});
+
+	test("carries the product name and tagline from PRODUCT.md", () => {
+		expect(PAWL_WORDMARK).toBe("pawl");
+		expect(PAWL_TAGLINE).toBe("Proficient AWS Library");
+	});
+});

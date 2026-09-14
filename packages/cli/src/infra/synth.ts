@@ -11,6 +11,8 @@
  * references in place, and neither can be compared against an account.
  */
 
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import type { ExecFn } from "../harness";
 import type { SynthesizedResource } from "./drift";
 
@@ -117,6 +119,25 @@ export class SynthError extends Error {
 }
 
 /**
+ * Thrown when the directory is not a CDK app at all.
+ *
+ * This is distinct from a failed synthesis: a broken app is the user's bug to
+ * fix, while a missing one just means the account can be read without the
+ * drift comparison. The caller chooses what to do with it.
+ */
+export class NoCdkAppError extends Error {
+	constructor() {
+		super("no CDK app found in this directory");
+		this.name = "NoCdkAppError";
+	}
+}
+
+/** True when the directory looks like a CDK app, or has already been synthesized. */
+export function hasCdkProject(cwd: string): boolean {
+	return existsSync(join(cwd, "cdk.json")) || existsSync(join(cwd, "cdk.out"));
+}
+
+/**
  * Synthesize the project and read every stack's resources.
  *
  * A synthesis failure is thrown, never returned as an empty project: reporting
@@ -127,8 +148,21 @@ export async function loadSynthesizedResources(options: {
 	readonly exec: ExecFn;
 	/** Skip synthesis and read the existing `cdk.out`. */
 	readonly skipSynth?: boolean;
+	/**
+	 * Throw `NoCdkAppError` instead of a synthesis failure when the directory is
+	 * not a CDK app. Callers that can still produce a useful result without the
+	 * code side set this.
+	 */
+	readonly requireCdkApp?: boolean;
 }): Promise<SynthesizedProject> {
 	const { cwd, exec } = options;
+
+	if (!hasCdkProject(cwd)) {
+		if (options.requireCdkApp !== false) {
+			throw new NoCdkAppError();
+		}
+		return { resources: [], stacks: [] };
+	}
 
 	if (!options.skipSynth) {
 		try {

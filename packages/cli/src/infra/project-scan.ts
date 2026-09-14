@@ -20,7 +20,11 @@ import {
 	suggestConstructs,
 	summarizeSuggestions,
 } from "./suggestions";
-import { loadSynthesizedResources } from "./synth";
+import {
+	hasCdkProject,
+	loadSynthesizedResources,
+	NoCdkAppError,
+} from "./synth";
 
 /** Exported so callers can pass the same provider the Bedrock model uses. */
 export type PawlCredentialProvider = ReturnType<typeof fromNodeProviderChain>;
@@ -31,6 +35,11 @@ export interface SuggestionCount {
 }
 
 export interface ProjectScanOutcome {
+	/**
+	 * Set when the drift comparison could not be made because the directory has
+	 * no CDK app. The account scan still ran; only the comparison is missing.
+	 */
+	readonly driftUnavailable?: string | undefined;
 	readonly report: ScanReport;
 	readonly suggestions: readonly Suggestion[];
 	readonly suggestionSummary: readonly SuggestionCount[];
@@ -75,11 +84,29 @@ export async function runProjectScan(
 		credentials,
 	);
 
-	const synthesized = await loadSynthesizedResources({
-		cwd: options.cwd,
-		exec: options.exec,
-		skipSynth: options.skipSynth,
-	});
+	// A directory with no CDK app still gets a full account scan: reading the
+	// account and suggesting Pawl constructs does not depend on the code side.
+	// Only the drift comparison is unavailable, and that is reported rather than
+	// allowed to fail the whole scan.
+	let synthesized: Awaited<ReturnType<typeof loadSynthesizedResources>>;
+	try {
+		synthesized = await loadSynthesizedResources({
+			cwd: options.cwd,
+			exec: options.exec,
+			skipSynth: options.skipSynth,
+		});
+	} catch (error: unknown) {
+		if (error instanceof NoCdkAppError) {
+			synthesized = { resources: [], stacks: [] };
+		} else {
+			throw error;
+		}
+	}
+
+	const driftUnavailable =
+		synthesized.resources.length === 0 && !hasCdkProject(options.cwd)
+			? "no CDK app in this directory, so nothing to compare the account against"
+			: undefined;
 
 	const factories = options.scannerFactories ?? PAWL_SCANNER_FACTORIES;
 	const scanners = factories.map((factory) =>
@@ -99,6 +126,7 @@ export async function runProjectScan(
 	const cap = options.maxEntries ?? 200;
 
 	return {
+		driftUnavailable,
 		report: buildScanReport({
 			accountId,
 			region: options.region,

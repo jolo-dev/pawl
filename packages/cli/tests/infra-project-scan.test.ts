@@ -1,13 +1,27 @@
 import { describe, expect, test } from "bun:test";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { ExecFn } from "../src/harness";
 import { runProjectScan } from "../src/infra/project-scan";
 import type { ResourceScanner, ScannerFactory } from "../src/infra/scan";
 import { SynthError } from "../src/infra/synth";
 
-const CWD = "/project";
+/**
+ * A real directory with a real cdk.json, because `hasCdkProject` checks the
+ * filesystem rather than trusting the caller.
+ */
+function makeProjectDir(): string {
+	const cwd = mkdtempSync(join(tmpdir(), "pawl-scan-"));
+	writeFileSync(
+		join(cwd, "cdk.json"),
+		JSON.stringify({ app: "npx tsx app.ts" }),
+	);
+	return cwd;
+}
 
-const SYNTH_FILES: Record<string, string> = {
-	[`${CWD}/cdk.out/manifest.json`]: JSON.stringify({
+const cdkOut = (cwd: string): Record<string, string> => ({
+	[`${cwd}/cdk.out/manifest.json`]: JSON.stringify({
 		artifacts: {
 			PawlStack: {
 				type: "aws:cloudformation:stack",
@@ -19,7 +33,7 @@ const SYNTH_FILES: Record<string, string> = {
 			someAsset: { type: "cdk:asset-manifest" },
 		},
 	}),
-	[`${CWD}/cdk.out/PawlStack.template.json`]: JSON.stringify({
+	[`${cwd}/cdk.out/PawlStack.template.json`]: JSON.stringify({
 		Resources: {
 			MyFunction1A2B: {
 				Type: "AWS::Lambda::Function",
@@ -27,7 +41,7 @@ const SYNTH_FILES: Record<string, string> = {
 			},
 		},
 	}),
-};
+});
 
 const fakeExec =
 	(files: Record<string, string>): ExecFn =>
@@ -68,10 +82,13 @@ const denier: ScannerFactory = (): ResourceScanner => ({
 	},
 });
 
+const CWD = makeProjectDir();
+const files = cdkOut(CWD);
+
 const base = {
 	cwd: CWD,
 	region: "eu-central-1",
-	exec: fakeExec(SYNTH_FILES),
+	exec: fakeExec(files),
 	scannerFactories: [lambdaScanner, denier],
 	resolveAccountId: async () => "123456789012",
 } as const;

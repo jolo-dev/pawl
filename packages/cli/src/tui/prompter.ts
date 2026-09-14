@@ -48,6 +48,12 @@ export function createInputQueue(): InputQueue {
 	};
 }
 
+/**
+ * Value carried by the widget's back entry, mapped back to {@link BACK} by the
+ * prompter. Distinct enough that no real option id is expected to collide.
+ */
+const BACK_VALUE = "\u0000back";
+
 /** Turns a typed answer into one of the offered values, or explains why not. */
 export function resolveSelection(
 	answer: string,
@@ -97,6 +103,17 @@ export interface TranscriptSink {
 export interface TuiPrompterOptions {
 	readonly app: TranscriptSink;
 	readonly input: InputQueue;
+	/**
+	 * Opens a select for a choice. Omitted when the caller has no widget, in
+	 * which case selections fall back to numbered transcript lines.
+	 */
+	readonly promptSelect?: (request: {
+		readonly message: string;
+		readonly choices: readonly {
+			readonly value: string;
+			readonly label: string;
+		}[];
+	}) => Promise<string | null>;
 }
 
 export function createTuiPrompter(
@@ -115,6 +132,28 @@ export function createTuiPrompter(
 
 		async select(request): Promise<SelectResult> {
 			const allowBack = request.allowBack === true;
+
+			// A widget select is preferred when the caller provides one: arrow keys
+			// and a highlighted row beat reading a numbered list. Back is offered as
+			// a choice, because a select has no cancel path of its own.
+			if (options.promptSelect) {
+				const choices = request.options.map((option) => ({
+					value: option.value,
+					label: option.label,
+				}));
+				if (allowBack) {
+					choices.push({ value: BACK_VALUE, label: "← Back" });
+				}
+				const chosen = await options.promptSelect({
+					message: request.message,
+					choices,
+				});
+				if (chosen === null) return null;
+				if (allowBack && chosen === BACK_VALUE) return BACK;
+				return chosen;
+			}
+
+			const allowBackFallback = allowBack;
 			app.append("notice", request.message);
 			for (const [index, option] of request.options.entries()) {
 				app.append("notice", `  ${index + 1}) ${option.label}`);
@@ -125,7 +164,7 @@ export function createTuiPrompter(
 				const resolution = resolveSelection(
 					await input.next(),
 					request.options,
-					allowBack,
+					allowBackFallback,
 				);
 				if (resolution.kind === "value") return resolution.value;
 				if (resolution.kind === "back") return BACK;

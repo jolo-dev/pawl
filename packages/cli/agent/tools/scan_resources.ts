@@ -35,11 +35,11 @@ export const scanResourcesInputSchema = z.object({
  */
 export default defineTool({
 	description:
-		"Scan the AWS account for deployed resources and compare them with this project's synthesized CDK output. Returns drift (resources declared but not deployed, resources created outside the code, and resources carrying Pawl provenance that no synthesized resource matches) together with the coverage the scan achieved, plus candidate Pawl constructs for resources Pawl does not already manage. Analysis only: this tool changes nothing. A partial scan is reported with its gaps, so absence of drift is only meaningful when coverage is complete.",
+		"Scan the AWS account for deployed resources, and compare them with this project's synthesized CDK output when the project has one. Returns the deployed resources, the coverage the scan achieved, drift, and candidate Pawl constructs for resources Pawl does not already manage. Analysis only: this tool changes nothing. If the directory has no CDK app the scan still runs and reports `driftUnavailable`, so you get the account inventory without a drift comparison. A partial scan is reported with its gaps, so absence of drift is only meaningful when coverage is complete.",
 	inputSchema: scanResourcesInputSchema,
 	async execute({ services, skipSynth, maxEntries }) {
 		const cwd = projectDir();
-		return runProjectScan({
+		const outcome = await runProjectScan({
 			cwd,
 			region: process.env.AWS_REGION ?? "us-east-1",
 			exec: createHostExec(cwd),
@@ -47,5 +47,12 @@ export default defineTool({
 			skipSynth,
 			maxEntries,
 		});
+		// Surfaced on its own so the model cannot read an account scan as if it
+		// were also a drift report: without a CDK app there is nothing to compare
+		// the account against.
+		return {
+			...outcome,
+			driftUnavailable: outcome.driftUnavailable ?? undefined,
+		};
 	},
 });

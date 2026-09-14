@@ -15,6 +15,7 @@ import { defaultPreflightDeps } from "./src/tui/preflight-deps";
 import { createPresenter } from "./src/tui/presenter";
 import { createInputQueue, createTuiPrompter } from "./src/tui/prompter";
 import { runInteractiveSession } from "./src/tui/session";
+import { THEME } from "./src/tui/theme";
 
 const argv = process.argv.slice(2);
 
@@ -77,7 +78,12 @@ if (argv[0] === "init") {
  * the scrollback with the conversation they belong to.
  */
 const projectDir = process.cwd();
-const renderer = await createCliRenderer({ exitOnCtrlC: false });
+// The whole screen is charcoal, not the terminal's default: a partial
+// background read as a broken layout.
+const renderer = await createCliRenderer({
+	exitOnCtrlC: true,
+	backgroundColor: THEME.background,
+});
 const inputQueue = createInputQueue();
 const app = createPawlApp({
 	renderer,
@@ -94,9 +100,14 @@ const presenter = createPresenter({
 });
 
 let server: Awaited<ReturnType<typeof startPawlServer>> | undefined;
-const shutdown = async (code: number): Promise<never> => {
+let stopping = false;
+const shutdown = async (code: number): Promise<void> => {
+	if (stopping) return;
+	stopping = true;
 	await server?.stop();
 	renderer.destroy();
+	// process.exit is the only way out of an awaited top-level module, and it is
+	// what actually releases the terminal.
 	process.exit(code);
 };
 

@@ -318,12 +318,13 @@ Covered: `dynamodb`, `sqs`, `apigateway` (v2), `apigateway-v1`, `s3`, `eventbrid
 
 ---
 
-## Task 13: Preflight inside the TUI
+## Task 13: Preflight inside the TUI — DONE, minus retiring clack
 
-**Files:** modify `index.ts`, create `src/tui/preflight.ts`, `tests/tui-preflight.test.ts`
+Split into: `src/tui/preflight.ts` (the control flow — profile, credentials, region, model, access — with every AWS call and prompt injected), `src/tui/prompter.ts` (the transcript-backed prompter and its answer parsing), and `src/tui/app.ts` (rendering). `src/aws-credentials.ts` and `src/bedrock-models.ts` are untouched, so their tests still cover the logic.
 
-- [ ] **Step 1: Write the failing test** for the pure preflight state machine (profile → credentials → region → model → bedrock access), driven by injected prompt functions so no TTY is needed.
-- [ ] **Step 2–4: Implement** the state machine, render it in OpenTUI, and keep `src/aws-credentials.ts` and `src/bedrock-models.ts` untouched so their tests keep covering the logic. Retire `@clack/prompts` from `index.ts`. Commit `feat(cli): absorb the AWS preflight into the pawl TUI`.
+**Sequencing correction: `@clack/prompts` is NOT retired yet.** The plan had it happening here, but `index.ts` cannot hand the terminal to the TUI until the TUI can drive a session — and that is the event reducer in Task 14. Removing clack now would leave no working launcher. Retiring it belongs at the end of Task 14, when the TUI can run a turn.
+
+**Design note:** selections are numbered transcript lines rather than a widget, because Q2 fixed the shape as one pane and this keeps the pre-flight in the scrollback with the rest of the session. The prompter declares its own narrow `TranscriptSink` port instead of reusing `PawlApp`, so a caller (or a test) is not forced to manufacture a renderable from `append`.
 
 ---
 

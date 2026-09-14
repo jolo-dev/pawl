@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { createTestRenderer } from "@opentui/core/testing";
 import { createPawlApp, type PawlApp } from "../src/tui/app";
+import { createInputQueue, createTuiPrompter } from "../src/tui/prompter";
 import { PAWL_TAGLINE, PAWL_WORDMARK } from "../src/tui/theme";
 
 /**
@@ -93,6 +94,53 @@ describe("pawl terminal shell", () => {
 
 		expect(frame()).not.toContain("something earlier");
 		expect(mounted.transcript.getChildren()).toHaveLength(0);
+	});
+});
+
+describe("the pre-flight inside the shell", () => {
+	test("draws the options and accepts a numbered answer", async () => {
+		const queue = createInputQueue();
+		const { setup: mounted, app: mountedApp } = await mount({
+			onSubmit: (text) => queue.submit(text),
+		});
+		const prompter = createTuiPrompter({
+			app: mountedApp,
+			input: queue,
+		});
+
+		const selection = prompter.select({
+			id: "profile",
+			message: "Select an AWS profile",
+			options: [
+				{ value: "dev", label: "dev" },
+				{ value: "prod", label: "prod" },
+			],
+		});
+		await mounted.renderOnce();
+
+		// The prompt is a transcript line, so it survives in scrollback alongside
+		// the rest of the session.
+		expect(frame()).toContain("Select an AWS profile");
+		expect(frame()).toContain("1) dev");
+		expect(frame()).toContain("2) prod");
+
+		mountedApp.input.value = "2";
+		mountedApp.input.submit();
+
+		expect(await selection).toBe("prod");
+	});
+
+	test("shows progress on the status line while AWS calls run", async () => {
+		const queue = createInputQueue();
+		const { setup: mounted, app: mountedApp } = await mount({
+			onSubmit: (text) => queue.submit(text),
+		});
+		const prompter = createTuiPrompter({ app: mountedApp, input: queue });
+
+		prompter.status("Checking credentials");
+		await mounted.renderOnce();
+
+		expect(frame()).toContain("Checking credentials");
 	});
 });
 

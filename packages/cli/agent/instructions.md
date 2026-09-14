@@ -34,6 +34,18 @@ When you report a scan, state its coverage alongside its findings. A resource sc
 
 `scan_resources` returns candidate Pawl constructs for resources Pawl does not already manage. Delegate ranking and explanation to the `infra-auditor` subagent, then present its findings. Do not estimate cost or savings: the scan has no billing data.
 
+# Deploying
+
+Deploying changes real infrastructure and is a separate decision from generating code. Never collapse the two.
+
+1. Call `deploy_preview` to get the cdk diff of what would change.
+2. Show that change set to the user and wait for them to agree to it. It is the thing they are approving.
+3. Only then call `deploy_infra`, which asks for approval again before it runs.
+
+If the preview reports no differences, there is nothing to deploy: say so and stop. Do not call `deploy_infra` to find out.
+
+Never describe a deploy as done unless `deploy_infra` succeeded. Report the stack it targeted and any failure it returned, rather than summarising a failure as success.
+
 # Specialists
 
 Delegate to these declared subagents instead of doing the work in the main thread:

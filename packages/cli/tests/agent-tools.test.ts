@@ -1,6 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import architectureTool from "../agent/tools/architecture";
 import costTool, { costInputSchema } from "../agent/tools/cost";
+import deployInfraTool, {
+	deployInfraInputSchema,
+} from "../agent/tools/deploy_infra";
+import deployPreviewTool, {
+	deployPreviewInputSchema,
+} from "../agent/tools/deploy_preview";
 import generateTool from "../agent/tools/generate";
 import initProjectTool, {
 	initProjectInputSchema,
@@ -26,6 +32,8 @@ describe("pawl workflow tools", () => {
 			architectureTool,
 			initProjectTool,
 			scanResourcesTool,
+			deployPreviewTool,
+			deployInfraTool,
 		]) {
 			expect(tool.description.length).toBeGreaterThan(0);
 			expect(tool.inputSchema).toBeDefined();
@@ -123,6 +131,32 @@ describe("scan_resources", () => {
 
 	test("states that it is read-only, so the model cannot mistake it for a mutation", () => {
 		expect(scanResourcesTool.description).toContain("changes nothing");
+	});
+});
+
+describe("deploy tools", () => {
+	test("the deploy tool is gated on human approval", () => {
+		expect(deployInfraTool.approval).toBeDefined();
+	});
+
+	test("the preview is described as read-only and as the thing to approve", () => {
+		expect(deployPreviewTool.description).toContain("changes nothing");
+		expect(deployPreviewTool.description).toContain("before deploy_infra");
+	});
+
+	test("the deploy tool says it changes real infrastructure", () => {
+		expect(deployInfraTool.description).toContain(
+			"changes real infrastructure",
+		);
+		expect(deployInfraTool.description).toContain("deploy_preview first");
+	});
+
+	test("both accept an optional stack and reject a non-string one", () => {
+		for (const schema of [deployPreviewInputSchema, deployInfraInputSchema]) {
+			expect(schema.safeParse({}).success).toBe(true);
+			expect(schema.safeParse({ stack: "PawlStack" }).success).toBe(true);
+			expect(schema.safeParse({ stack: 42 }).success).toBe(false);
+		}
 	});
 });
 

@@ -141,6 +141,28 @@ describe("classifyDrift", () => {
 		expect(entries.filter((e) => e.status === "foreign")).toHaveLength(1);
 	});
 
+	test("attaches provenance to a matched entry, not only to unmatched ones", () => {
+		const entries = classifyDrift({
+			synthesized: [synth({ physicalName: "platform-dev-myapi-lambda" })],
+			deployed: [deployed({ physicalName: "platform-dev-myapi-lambda" })],
+		});
+
+		// Consumers ask "is this already pawl's?" and must get the same answer
+		// whether or not the resource happened to match a synthesized counterpart.
+		expect(entries[0]?.status).toBe("matched");
+		expect(entries[0]?.provenance?.constructId).toBe("myapi");
+	});
+
+	test("leaves provenance unset for a matched resource with a hand-made name", () => {
+		const entries = classifyDrift({
+			synthesized: [synth({ physicalName: "hand-made-function" })],
+			deployed: [deployed({ physicalName: "hand-made-function" })],
+		});
+
+		expect(entries[0]?.status).toBe("matched");
+		expect(entries[0]?.provenance).toBeUndefined();
+	});
+
 	test("explains why each entry landed where it did", () => {
 		const entries = classifyDrift({
 			synthesized: [synth({ physicalName: "platform-dev-myapi-lambda" })],

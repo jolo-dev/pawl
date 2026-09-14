@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import architectureTool from "../agent/tools/architecture";
-import costTool from "../agent/tools/cost";
+import costTool, { costInputSchema } from "../agent/tools/cost";
 import generateTool from "../agent/tools/generate";
 import initProjectTool, {
 	initProjectInputSchema,
@@ -9,7 +9,9 @@ import planTool from "../agent/tools/plan";
 import scanResourcesTool, {
 	scanResourcesInputSchema,
 } from "../agent/tools/scan_resources";
-import wellArchitectedTool from "../agent/tools/well_architected";
+import wellArchitectedTool, {
+	wellArchitectedInputSchema,
+} from "../agent/tools/well_architected";
 
 /** Tools never touch their context in these tests; the binding is a stub. */
 const ctx = {} as never;
@@ -53,12 +55,17 @@ describe("pawl workflow tools", () => {
 	});
 
 	test("well_architected returns the Well-Architected review prompt", async () => {
-		const result = await wellArchitectedTool.execute({}, ctx);
+		// scanAccount: false keeps a unit test off the network; the account path
+		// is covered through `collectReviewScanContext` instead.
+		const result = await wellArchitectedTool.execute(
+			{ scanAccount: false },
+			ctx,
+		);
 		expect(String(result)).toContain("Well-Architected");
 	});
 
 	test("cost returns the cost-optimization prompt", async () => {
-		const result = await costTool.execute({}, ctx);
+		const result = await costTool.execute({ scanAccount: false }, ctx);
 		expect(String(result)).toContain("cost optimization");
 	});
 
@@ -66,6 +73,32 @@ describe("pawl workflow tools", () => {
 		const result = await architectureTool.execute({}, ctx);
 		expect(String(result)).toMatch(/plan\.md|No Mermaid diagram/);
 	});
+});
+
+test("both reviews can consult the account, and both default to doing so", () => {
+	for (const schema of [wellArchitectedInputSchema, costInputSchema]) {
+		expect(schema.safeParse({}).success).toBe(true);
+		expect(schema.safeParse({ scanAccount: false }).success).toBe(true);
+		expect(schema.safeParse({ scanAccount: "yes" }).success).toBe(false);
+	}
+});
+
+test("cost states that it has no billing data", async () => {
+	const result = await costTool.execute({ scanAccount: false }, ctx);
+	const text = String(result);
+
+	expect(text).toContain("No billing data was retrieved");
+	expect(text).toContain("never measured spend");
+});
+
+test("a review that skipped the account says so instead of omitting it", async () => {
+	const result = await wellArchitectedTool.execute({ scanAccount: false }, ctx);
+
+	expect(String(result)).toContain("No account scan was requested");
+});
+
+test("cost describes itself as configuration-derived, not measured", () => {
+	expect(costTool.description).toContain("not measured spend");
 });
 
 describe("scan_resources", () => {

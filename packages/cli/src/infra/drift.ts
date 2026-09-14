@@ -74,8 +74,8 @@ export interface DriftProvenance {
 
 export function toDriftProvenance(
 	provenance: PawlProvenance | ReturnType<typeof parsePawlTagProvenance>,
-): DriftProvenance | null {
-	if (!provenance) return null;
+): DriftProvenance | undefined {
+	if (!provenance) return undefined;
 	if ("constructId" in provenance) {
 		return {
 			source: "name",
@@ -128,6 +128,15 @@ export function classifyDrift(input: DriftInput): DriftEntry[] {
 	const consumed = new Set<SynthesizedResource>();
 
 	for (const resource of input.deployed) {
+		// Provenance is derived from the deployed resource itself and attached to
+		// every entry that has a deployed side, matched included. Consumers rely on
+		// it as "is this already pawl's?", which must not depend on how the pair
+		// happened to be classified.
+		const provenance = toDriftProvenance(
+			parsePawlName(resource.physicalName) ??
+				parsePawlTagProvenance(resource.tags),
+		);
+
 		const byLogicalId =
 			resource.stackName && resource.logicalId
 				? synthByLogicalId.get(stackKey(resource.stackName, resource.logicalId))
@@ -139,6 +148,7 @@ export function classifyDrift(input: DriftInput): DriftEntry[] {
 				synthesized: byLogicalId,
 				deployed: resource,
 				basis: "logical-id",
+				provenance,
 				reason: `${resource.physicalName} is ${byLogicalId.logicalId} in ${byLogicalId.stackName}.`,
 			});
 			continue;
@@ -152,15 +162,12 @@ export function classifyDrift(input: DriftInput): DriftEntry[] {
 				synthesized: byPhysicalName,
 				deployed: resource,
 				basis: "physical-name",
+				provenance,
 				reason: `${resource.physicalName} matches the name ${byPhysicalName.logicalId} pins.`,
 			});
 			continue;
 		}
 
-		const rawProvenance =
-			parsePawlName(resource.physicalName) ??
-			parsePawlTagProvenance(resource.tags);
-		const provenance = toDriftProvenance(rawProvenance);
 		if (provenance) {
 			entries.push({
 				status: "foreign",

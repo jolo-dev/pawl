@@ -1,24 +1,8 @@
-import { GetCallerIdentityCommand, STSClient } from "@aws-sdk/client-sts";
-import { fromNodeProviderChain } from "@aws-sdk/credential-providers";
 import { defineTool } from "eve/tools";
 import { z } from "zod";
 import { createHostExec } from "../../src/host-exec";
-import { classifyDrift } from "../../src/infra/drift";
-import { buildScanReport } from "../../src/infra/report";
-import {
-	buildScanners,
-	DEFERRED_SERVICES,
-	runScanners,
-} from "../../src/infra/scan";
-import {
-	suggestConstructs,
-	summarizeSuggestions,
-} from "../../src/infra/suggestions";
-import { loadSynthesizedResources } from "../../src/infra/synth";
+import { runProjectScan } from "../../src/infra/project-scan";
 import { projectDir } from "../../src/project-dir";
-
-/** Fallback cap on list-shaped output; matches `buildScanReport`. */
-const DEFAULT_CAP = 200;
 
 export const scanResourcesInputSchema = z.object({
 	services: z
@@ -46,9 +30,8 @@ export const scanResourcesInputSchema = z.object({
  * Read the account and compare it with the project's synthesized output.
  *
  * Two failures are deliberately loud rather than degraded: a broken `cdk synth`
- * and an unreadable caller identity both abort, because either one silently
- * turned into an empty comparison would report "no drift" when the truth is
- * "no data".
+ * and an unreadable caller identity both throw, because either silently turned
+ * into an empty comparison would report "no drift" when the truth is "no data".
  */
 export default defineTool({
 	description:
@@ -56,51 +39,13 @@ export default defineTool({
 	inputSchema: scanResourcesInputSchema,
 	async execute({ services, skipSynth, maxEntries }) {
 		const cwd = projectDir();
-		const exec = createHostExec(cwd);
-		const region = process.env.AWS_REGION ?? "us-east-1";
-		const credentials = fromNodeProviderChain();
-
-		const synthesized = await loadSynthesizedResources({
+		return runProjectScan({
 			cwd,
-			exec,
+			region: process.env.AWS_REGION ?? "us-east-1",
+			exec: createHostExec(cwd),
+			services,
 			skipSynth,
+			maxEntries,
 		});
-
-		const sts = new STSClient({ region, credentials });
-		const identity = await sts.send(new GetCallerIdentityCommand({}));
-		const accountId = identity.Account ?? "unknown";
-
-		const all = buildScanners({ accountId, region, credentials });
-		const scanners = services?.length
-			? all.filter((scanner) => services.includes(scanner.service))
-			: all;
-
-		const scan = await runScanners(scanners);
-		const entries = classifyDrift({
-			synthesized: synthesized.resources,
-			deployed: scan.resources,
-		});
-
-		// Candidates plus the facts to rank them; the model judges fit and effort.
-		const suggestions = suggestConstructs(entries);
-		const cap = maxEntries ?? DEFAULT_CAP;
-
-		return {
-			...buildScanReport({
-				accountId,
-				region,
-				synthesizedCount: synthesized.resources.length,
-				deployedCount: scan.resources.length,
-				coverage: scan.coverage,
-				entries,
-				maxEntries,
-			}),
-			stacks: synthesized.stacks,
-			suggestions: suggestions.slice(0, cap),
-			suggestionSummary: summarizeSuggestions(suggestions),
-			suggestionsTruncated: Math.max(0, suggestions.length - cap),
-			/** Named so a gap is never mistaken for an absence of resources. */
-			notScanned: DEFERRED_SERVICES,
-		};
 	},
 });

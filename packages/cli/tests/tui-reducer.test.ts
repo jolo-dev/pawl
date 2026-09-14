@@ -246,6 +246,35 @@ describe("human input", () => {
 	});
 });
 
+describe("session-level outcomes", () => {
+	test("records a session failure so the user sees why send will fail", () => {
+		const state = reduceAll([
+			event({ type: "message.appended", data: { messageDelta: "starting" } }),
+			event({
+				type: "session.failed",
+				data: { code: "SESSION_LIMIT", message: "limit reached" },
+			}),
+		]);
+
+		expect(state.failure).toEqual({
+			code: "SESSION_LIMIT",
+			message: "limit reached",
+		});
+		expect(state.busy).toBe(false);
+		expect(text(state)).toContain("assistant:starting");
+	});
+
+	test("reports a completed session", () => {
+		const state = reduceEvent(
+			INITIAL_TUI_STATE,
+			event({ type: "session.completed", data: {} }),
+		);
+
+		expect(state.status).toBe("Session ended");
+		expect(state.busy).toBe(false);
+	});
+});
+
 describe("resilience", () => {
 	test("ignores an unknown event type rather than breaking the client", () => {
 		const before = reduceAll([

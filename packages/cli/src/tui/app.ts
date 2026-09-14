@@ -155,22 +155,35 @@ export function createPawlApp(options: PawlAppOptions): PawlApp {
 	});
 	root.add(body);
 
-	// Left: deployed resources. Fixed width, so the chat keeps most of the screen.
-	const resources = new ScrollBoxRenderable(renderer, {
+	// Left: deployed resources. Bordered and titled, so each pane reads as its
+	// own region rather than as two halves of one screen.
+	const resources = new BoxRenderable(renderer, {
 		id: "pawl-resources",
+		title: "Cloudformation Stacks",
+		titleColor: THEME.accent,
+		titleAlignment: "left",
+		border: true,
+		borderStyle: "single",
+		borderColor: THEME.muted,
 		width: "38%",
+		height: "100%",
 		backgroundColor: THEME.background,
 		paddingLeft: 1,
-		stickyScroll: true,
-		stickyStart: "top",
 	});
 	body.add(resources);
 
 	// Right: chat, which is the conversation and the input.
 	const chat = new BoxRenderable(renderer, {
 		id: "pawl-chat",
+		title: "Chat with your Cloud",
+		titleColor: THEME.accent,
+		titleAlignment: "left",
+		border: true,
+		borderStyle: "single",
+		borderColor: THEME.accent,
 		flexDirection: "column",
 		flexGrow: 1,
+		height: "100%",
 		backgroundColor: THEME.background,
 		paddingLeft: 1,
 	});
@@ -180,8 +193,6 @@ export function createPawlApp(options: PawlAppOptions): PawlApp {
 		id: "pawl-transcript",
 		flexGrow: 1,
 		backgroundColor: THEME.background,
-		stickyScroll: true,
-		stickyStart: "bottom",
 	});
 	chat.add(transcript);
 

@@ -13,6 +13,7 @@
  */
 
 import {
+	ClientError,
 	type InputResponse,
 	isCurrentTurnBoundaryEvent,
 	type MessageStreamEvent,
@@ -120,7 +121,12 @@ export async function runInteractiveSession(
 		const text = (await input.next()).trim();
 		if (text.length === 0) continue;
 
-		const action = routeInput(text, state);
+		let action: InputAction;
+		try {
+			action = routeInput(text, state);
+		} catch {
+			continue;
+		}
 		if (action.kind === "unresolved") {
 			// Saying so matters: silence here reads as a lost answer, and the user's
 			// next attempt may be to approve something else.
@@ -131,7 +137,15 @@ export async function runInteractiveSession(
 		}
 
 		if (action.kind === "respond") {
-			await session.respond(action.responses);
+			try {
+				await session.respond(action.responses);
+			} catch (error: unknown) {
+				if (error instanceof ClientError && error.status === 409) {
+					view.alert("This session has ended. Start pawl again for a new one.");
+					return state;
+				}
+				view.alert(error instanceof Error ? error.message : String(error));
+			}
 		} else {
 			// Echoed locally for immediate feedback and kept in state, because the
 			// transcript IS the conversation history. The reducer ignores
@@ -145,7 +159,23 @@ export async function runInteractiveSession(
 				],
 			};
 			view.present(state);
-			await session.send(action.text);
+			try {
+				await session.send(action.text);
+			} catch (error: unknown) {
+				// A 409 means the session reached a terminal state server-side —
+				// most often `session.failed` — so the conversation cannot go on.
+				// Report it and stop rather than crash or spin on a dead session.
+				const message = error instanceof Error ? error.message : String(error);
+				const terminal =
+					error instanceof ClientError &&
+					(error.status === 409 || error.code === "session_not_active");
+				view.alert(
+					terminal
+						? "This session has ended and cannot accept messages. Start pawl again for a new one."
+						: message,
+				);
+				if (terminal) return state;
+			}
 		}
 	}
 

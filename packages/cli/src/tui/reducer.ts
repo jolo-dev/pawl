@@ -197,6 +197,26 @@ export function reduceEvent(
 		case "session.waiting":
 			return { ...state, busy: false, status: "Waiting" };
 
+		case "session.failed":
+			// The session cannot continue, which is why a client must show it: the
+			// next `send` will be rejected, and without this the user would see a
+			// crash with no explanation.
+			return {
+				...state,
+				busy: false,
+				lines: closeOpen(state.lines),
+				failure: { code: event.data.code, message: event.data.message },
+				status: event.data.code,
+			};
+
+		case "session.completed":
+			return {
+				...state,
+				busy: false,
+				lines: closeOpen(state.lines),
+				status: "Session ended",
+			};
+
 		default:
 			return state;
 	}

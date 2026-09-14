@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import {
+	ClientError,
 	type InputRequest,
+	type InputResponse,
 	isCurrentTurnBoundaryEvent,
 	type MessageStreamEvent,
 } from "eve/client";
@@ -312,6 +314,48 @@ describe("runInteractiveSession", () => {
 		// Nothing is sent, and the user is told why rather than left guessing.
 		expect(sent).toEqual([]);
 		expect(alerts.join(" ")).toContain("number or an option id");
+	});
+
+	test("stops on a dead session instead of crashing or spinning", async () => {
+		const turns: MessageStreamEvent[][] = [
+			[event("session.waiting", {})],
+			[event("session.waiting", {})],
+			[event("session.waiting", {})],
+		];
+		let turnsRead = 0;
+		const session: PawlSession = {
+			id: "wrun_fixture",
+			async send() {
+				// The server rejected the send with 409: the session is over.
+				throw new ClientError(409, '{"code":"session_not_active"}');
+			},
+			async respond(_responses: readonly InputResponse[]): Promise<void> {
+				return;
+			},
+			async cancel(): Promise<void> {},
+			events() {
+				const scripted = turns[Math.min(turnsRead, turns.length - 1)] ?? [];
+				turnsRead++;
+				return (async function* generate() {
+					for (const item of scripted) yield item;
+				})();
+			},
+		};
+		const { view: sessionView, alerts } = view();
+		const input = createInputQueue();
+		input.submit("anything");
+
+		const state = await runInteractiveSession({
+			session,
+			view: sessionView,
+			input,
+			maxTurns: 3,
+		});
+
+		expect(alerts.some((line) => line.includes("This session has ended"))).toBe(
+			true,
+		);
+		expect(state.lines.some((line) => line.role === "user")).toBe(true);
 	});
 
 	test("keeps the echoed message in the transcript that is presented", async () => {

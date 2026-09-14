@@ -39,13 +39,50 @@ test("instructions carry the AWS scope guard and the two-phase workflow", async 
 });
 
 test("each declared subagent has a description and an agent config", async () => {
-	for (const id of ["planner", "generator", "well-architected"]) {
+	for (const id of [
+		"planner",
+		"generator",
+		"well-architected",
+		"infra-auditor",
+	]) {
 		const source = await Bun.file(
 			path.join(agentDir, "subagents", id, "agent.ts"),
 		).text();
 		expect(source).toContain("description:");
 		expect(source).toContain("defineAgent");
 	}
+});
+
+test("the infra auditor is told never to imply completeness", async () => {
+	const instructions = await Bun.file(
+		path.join(agentDir, "subagents", "infra-auditor", "instructions.md"),
+	).text();
+
+	// The scan's whole safety story rests on a partial read never being
+	// summarised as a clean account, so the instruction is asserted, not assumed.
+	expect(instructions).toContain("coverageWarning");
+	expect(instructions).toContain("incomplete");
+	expect(instructions).toContain("Never describe the account as clean");
+});
+
+test("the infra auditor does not depend on a skill it cannot see", async () => {
+	const instructions = await Bun.file(
+		path.join(agentDir, "subagents", "infra-auditor", "instructions.md"),
+	).text();
+
+	// eve scopes skills per agent and subagents get none, so referencing one
+	// here would silently do nothing. It must be self-contained.
+	expect(instructions).not.toContain("load_skill");
+	expect(instructions).not.toContain("pawl-constructs");
+});
+
+test("the infra auditor is barred from claims the scan cannot support", async () => {
+	const instructions = await Bun.file(
+		path.join(agentDir, "subagents", "infra-auditor", "instructions.md"),
+	).text();
+
+	expect(instructions).toContain("Do not estimate cost");
+	expect(instructions).toContain("Do not recommend deleting");
 });
 
 test("the authored surface imports no removed dependency", async () => {

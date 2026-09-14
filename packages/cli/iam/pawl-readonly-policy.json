@@ -1,0 +1,25 @@
+{
+	"Version": "2012-10-17",
+	"Statement": [
+		{
+			"Sid": "PawlReadOnlyResourceScan",
+			"Effect": "Allow",
+			"Action": [
+				"apigateway:GET",
+				"dynamodb:DescribeTable",
+				"dynamodb:ListTables",
+				"dynamodb:ListTagsOfResource",
+				"events:ListEventBuses",
+				"events:ListTagsForResource",
+				"lambda:ListFunctions",
+				"lambda:ListTags",
+				"s3:GetBucketTagging",
+				"s3:ListAllMyBuckets",
+				"sqs:GetQueueAttributes",
+				"sqs:ListQueueTags",
+				"sqs:ListQueues"
+			],
+			"Resource": "*"
+		}
+	]
+}

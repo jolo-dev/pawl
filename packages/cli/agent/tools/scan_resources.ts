@@ -10,8 +10,15 @@ import {
 	DEFERRED_SERVICES,
 	runScanners,
 } from "../../src/infra/scan";
+import {
+	suggestConstructs,
+	summarizeSuggestions,
+} from "../../src/infra/suggestions";
 import { loadSynthesizedResources } from "../../src/infra/synth";
 import { projectDir } from "../../src/project-dir";
+
+/** Fallback cap on list-shaped output; matches `buildScanReport`. */
+const DEFAULT_CAP = 200;
 
 export const scanResourcesInputSchema = z.object({
 	services: z
@@ -45,7 +52,7 @@ export const scanResourcesInputSchema = z.object({
  */
 export default defineTool({
 	description:
-		"Scan the AWS account for deployed resources and compare them with this project's synthesized CDK output. Returns drift (resources declared but not deployed, resources created outside the code, and resources carrying Pawl provenance that no synthesized resource matches) together with the coverage the scan achieved. Analysis only: this tool changes nothing. A partial scan is reported with its gaps, so absence of drift is only meaningful when coverage is complete.",
+		"Scan the AWS account for deployed resources and compare them with this project's synthesized CDK output. Returns drift (resources declared but not deployed, resources created outside the code, and resources carrying Pawl provenance that no synthesized resource matches) together with the coverage the scan achieved, plus candidate Pawl constructs for resources Pawl does not already manage. Analysis only: this tool changes nothing. A partial scan is reported with its gaps, so absence of drift is only meaningful when coverage is complete.",
 	inputSchema: scanResourcesInputSchema,
 	async execute({ services, skipSynth, maxEntries }) {
 		const cwd = projectDir();
@@ -74,6 +81,10 @@ export default defineTool({
 			deployed: scan.resources,
 		});
 
+		// Candidates plus the facts to rank them; the model judges fit and effort.
+		const suggestions = suggestConstructs(entries);
+		const cap = maxEntries ?? DEFAULT_CAP;
+
 		return {
 			...buildScanReport({
 				accountId,
@@ -85,6 +96,9 @@ export default defineTool({
 				maxEntries,
 			}),
 			stacks: synthesized.stacks,
+			suggestions: suggestions.slice(0, cap),
+			suggestionSummary: summarizeSuggestions(suggestions),
+			suggestionsTruncated: Math.max(0, suggestions.length - cap),
 			/** Named so a gap is never mistaken for an absence of resources. */
 			notScanned: DEFERRED_SERVICES,
 		};

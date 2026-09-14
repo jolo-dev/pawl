@@ -88,7 +88,8 @@ export const PAWL_NAME_SUFFIXES: Record<string, PawlNameSuffix> = {
 	},
 	"-appsync-event-api": {
 		construct: "Websocket",
-		resourceKind: "AWS::AppSync::GraphQLApi",
+		// `Websocket` builds an AppSync `EventApi`, not a GraphQL API.
+		resourceKind: "AWS::AppSync::Api",
 	},
 	"-agentcore": {
 		construct: "AgentCore",

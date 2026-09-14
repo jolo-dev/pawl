@@ -58,32 +58,6 @@ export interface SessionView {
 	alert(text: string): void;
 }
 
-/**
- * Turn-terminal events.
- *
- * eve's `isCurrentTurnBoundaryEvent` recognises only *session*-level outcomes
- * (`session.completed`, `session.failed`, `session.waiting`) — `turn.completed`
- * is not a boundary by its definition. In practice every turn ends with
- * `session.waiting`, so eve's predicate is enough on the normal path. It is not
- * enough on the path where a turn ends and the session does not park, because
- * the stream follows the durable tail and the client would wait forever.
- *
- * So a turn-terminal event also ends consumption. The cost is that a
- * `session.waiting` arriving immediately afterwards may not be rendered; the
- * alternative is a client that can hang with no way out.
- */
-const TURN_TERMINAL_TYPES: ReadonlySet<string> = new Set([
-	"turn.completed",
-	"turn.failed",
-	"turn.cancelled",
-]);
-
-export function isTurnEnd(event: MessageStreamEvent): boolean {
-	return (
-		isCurrentTurnBoundaryEvent(event) || TURN_TERMINAL_TYPES.has(event.type)
-	);
-}
-
 export interface SessionDriverOptions {
 	readonly session: PawlSession;
 	readonly view: SessionView;
@@ -100,8 +74,16 @@ export interface SessionDriverOptions {
  * Consume the session's stream, presenting every event, until the turn reaches
  * a boundary.
  *
- * Breaking out of `events()` abandons that iterator, and the session handle
- * keeps its cursor, so the next turn resumes from where this one stopped.
+ * Breaking out of `events()` abandons that iterator and the handle keeps its
+ * cursor, so the next turn resumes from where this one stopped.
+ *
+ * **Only eve's boundary ends the loop.** An earlier version also broke on
+ * `turn.completed`, on the theory that a turn could end without the session
+ * parking and hang the client. A live run showed the theory was wrong and the
+ * workaround harmful: the stream emits `turn.completed` and *then*
+ * `session.waiting`, so breaking early leaves that boundary queued, and the next
+ * turn's `consumeTurn` breaks on it immediately without ever reading the new
+ * turn's events. The client appears to do nothing after its first message.
  */
 export async function consumeTurn(
 	session: PawlSession,
@@ -112,7 +94,7 @@ export async function consumeTurn(
 	for await (const event of session.events()) {
 		current = reduceEvent(current, event as MessageStreamEvent);
 		view.present(current);
-		if (isTurnEnd(event as MessageStreamEvent)) break;
+		if (isCurrentTurnBoundaryEvent(event)) break;
 	}
 	return current;
 }

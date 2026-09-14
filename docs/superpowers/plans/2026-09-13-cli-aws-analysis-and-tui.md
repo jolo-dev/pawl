@@ -328,12 +328,17 @@ Split into: `src/tui/preflight.ts` (the control flow — profile, credentials, r
 
 ---
 
-## Task 14: Approvals, questions, and streaming in the TUI
+## Task 14: Approvals, questions, and streaming — core DONE, launcher outstanding
 
-**Files:** extend `src/tui/`, `tests/tui-events.test.ts`
+Built: `src/tui/reducer.ts` (pure event reducer), `src/tui/presenter.ts` (sends only the difference), `src/tui/session.ts` (`routeInput`, `consumeTurn`, `runInteractiveSession`), plus `reasoning`/`tool` roles and `updateLast` in the shell.
 
-- [ ] **Step 1: Write the failing test** for the pure event reducer: `message.delta` accumulates text; `action.input`/`action.result` render as tool calls; an approval request produces a renderable prompt; answering it produces the `inputResponses` payload `Client` expects; `turn.failed` surfaces the error code without losing the transcript.
-- [ ] **Step 2–4: Implement**, render streaming text, tool calls, approvals, and questions; verify end-to-end against a local `eve dev --no-ui` with a real Bedrock turn; commit `feat(cli): render streaming, tool calls and approvals`.
+**Live-verified** against a real `eve dev --no-ui` and a real Bedrock turn, via `scripts/verify-live-session.ts` — a repeatable harness that exits non-zero on failure. Run it whenever the reducer, the driver, or eve changes; it is the only check that compares the client against the runtime rather than against eve's type definitions.
+
+It caught a bug the unit suite could not, because the unit tests encoded the same wrong assumption as the code: `isCurrentTurnBoundaryEvent` is **session-level only** (`turn.completed` is not a boundary), and an earlier "defensive" break on turn terminals left `session.waiting` queued — so the *next* turn's consumption broke immediately on that stale boundary and never read the new events. The client would appear to do nothing after its first message. **Break only on eve's boundary.**
+
+Also verified live: `message.appended` deltas, `reasoning.appended` (content arrives redacted), `input.requested` carrying a question with selectable options, and `input.resolved` after answering with a number.
+
+**Outstanding: `index.ts` is not yet rewired onto the client, and `@clack/prompts` is not retired.** The launcher must start the server headless, wait for health, run the preflight in the TUI, and open a session.
 
 ---
 

@@ -148,14 +148,22 @@ function fakeSession(options: FakeSessionOptions): {
 	};
 }
 
-function view(): { view: SessionView; lines: string[]; alerts: string[] } {
+function view(): {
+	view: SessionView;
+	lines: string[];
+	alerts: string[];
+	presents: string[];
+} {
 	const lines: string[] = [];
 	const alerts: string[] = [];
+	const presents: string[] = [];
 	return {
 		lines,
 		alerts,
+		presents,
 		view: {
 			present(state) {
+				presents.push(state.status);
 				lines.push(...state.lines.map((line) => `${line.role}:${line.text}`));
 			},
 			alert(text) {
@@ -188,18 +196,21 @@ describe("consumeTurn", () => {
 		expect(lines.join("\n")).not.toContain("two");
 	});
 
-	test("ends on a turn terminal, because eve's predicate is session-level only", async () => {
-		// eve's isCurrentTurnBoundaryEvent returns false for turn.completed, so a
-		// turn that ends without the session parking would otherwise hang the
-		// client on a stream that follows the durable tail forever.
+	test("keeps consuming past turn.completed, because that is not a boundary", async () => {
+		// A live run showed the stream emits turn.completed and *then*
+		// session.waiting. Breaking on the first leaves that boundary queued, and
+		// the next consumeTurn breaks on it immediately without reading the new
+		// turn's events, so the client does nothing after its first message.
 		const { session } = fakeSession({
-			turns: [[event("turn.completed", {})]],
+			turns: [[event("turn.completed", {}), event("session.waiting", {})]],
 		});
-		const { view: sessionView } = view();
+		const { view: sessionView, presents } = view();
 
 		const state = await consumeTurn(session, sessionView, INITIAL_TUI_STATE);
 
-		expect(state.busy).toBe(false);
+		// Both events were consumed: stopping at turn.completed would present once.
+		expect(presents).toHaveLength(2);
+		expect(state.status).toBe("Waiting");
 	});
 
 	test("accumulates state across the events it consumes", async () => {

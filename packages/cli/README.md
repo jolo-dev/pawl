@@ -305,7 +305,7 @@ The agent runs on AWS Bedrock through a direct AI SDK provider (`agent/lib/bedro
 | `AWS_PROFILE` | — | Profile resolved by the pre-flight; the provider reads it via the AWS credential chain (profiles, SSO cache, web identity, ECS, IMDS) |
 | `AWS_REGION` | `us-east-1` | Region for the Bedrock endpoint |
 | `PAWL_BEDROCK_MODEL` | `eu.amazon.nova-2-lite-v1:0` | Inference-profile id |
-| `PAWL_CONTEXT_WINDOW_TOKENS` | per-model (Nova 2 Lite 1M, Claude 200k) | Override for models pawl does not know |
+| `PAWL_CONTEXT_WINDOW_TOKENS` | per-model, from a curated catalog (Nova 2 Lite 128k) | Override for models pawl does not know |
 
 Set `PAWL_BEDROCK_MODEL` (and `PAWL_CONTEXT_WINDOW_TOKENS` if the model is unknown to pawl) to run a different model without the launcher. Note that `eve`'s `/model` command cannot edit a provider-authored model — change it here or via the launcher.
 

@@ -4,6 +4,7 @@ import {
 	ListInferenceProfilesCommand,
 } from "@aws-sdk/client-bedrock";
 import { fromIni } from "@aws-sdk/credential-providers";
+import { BEDROCK_CHAT_CATALOG } from "./bedrock-catalog";
 
 /** Minimal shape the picker needs from a Bedrock foundation model. */
 export interface FoundationModelLike {
@@ -75,7 +76,19 @@ export function contextWindowForModel(
 		const parsed = Number(explicit);
 		if (Number.isFinite(parsed) && parsed > 0) return parsed;
 	}
+	// pi-ai's catalog is the source of truth for a known id: a public model list
+	// reports Nova 2 Lite as 1M, but pi-ai's verified value is 128k, and an
+	// over-estimate is the dangerous direction (eve compacts at 90% of this).
+	const exact = BEDROCK_CHAT_CATALOG[modelId];
+	if (exact) return exact.contextWindow;
+
+	// A bare id may share a base with only prefixed variants.
 	const { baseId } = splitScope(modelId);
+	const byBase = Object.entries(BEDROCK_CHAT_CATALOG).find(
+		([id]) => splitScope(id).baseId === baseId,
+	)?.[1];
+	if (byBase) return byBase.contextWindow;
+
 	return CONTEXT_WINDOWS[baseId] ?? CONTEXT_WINDOW_FALLBACK;
 }
 
@@ -99,9 +112,27 @@ export function splitScope(modelId: string): {
  * Text-output filtering matches what the launcher previously took from pi-ai's
  * `amazon-bedrock` catalog.
  */
+export function orderScopes(
+	scopes: readonly string[],
+	region: string,
+): string[] {
+	const matches = (scope: string): string => {
+		const { scope: prefix } = splitScope(scope);
+		if (prefix === null) return "1";
+		if (region.startsWith(`${prefix}-`)) return "0";
+		if (prefix === "global") return "2";
+		return "3";
+	};
+	return [...scopes].sort(
+		(a, b) => matches(a).localeCompare(matches(b)) || a.localeCompare(b),
+	);
+}
+
 export function groupBedrockModels(
 	models: FoundationModelLike[],
 	profiles: InferenceProfileLike[],
+	catalog: Record<string, { name: string }> = BEDROCK_CHAT_CATALOG,
+	region = "",
 ): BedrockModelGroup[] {
 	const scopesByBase = new Map<string, string[]>();
 	for (const profile of profiles) {
@@ -117,15 +148,22 @@ export function groupBedrockModels(
 	for (const model of models) {
 		const baseId = model.modelId;
 		if (!baseId) continue;
-		const outputs = model.outputModalities ?? [];
-		if (!outputs.includes("TEXT")) continue;
+
+		// Restricted to the curated catalog, which is how pi-coding-agent picks
+		// models. Bedrock's ListFoundationModels reports rerankers and
+		// video-understanding models with a TEXT output modality, and those
+		// cannot serve a conversation — a raw dump offers them as chat options.
+		const curated = catalog[baseId];
+		if (!curated) continue;
+
 		const provider = baseId.split(".")[0] ?? "unknown";
 		const scopes = scopesByBase.get(baseId);
 		groups.push({
 			baseId,
 			provider,
-			name: model.modelName ?? baseId,
-			scopes: scopes && scopes.length > 0 ? scopes : [baseId],
+			name: curated.name,
+			scopes:
+				scopes && scopes.length > 0 ? orderScopes(scopes, region) : [baseId],
 		});
 	}
 	return groups.sort((a, b) => a.baseId.localeCompare(b.baseId));
@@ -175,5 +213,7 @@ export async function listBedrockModelGroups(
 	return groupBedrockModels(
 		models.modelSummaries ?? [],
 		profiles.inferenceProfileSummaries ?? [],
+		BEDROCK_CHAT_CATALOG,
+		region,
 	);
 }

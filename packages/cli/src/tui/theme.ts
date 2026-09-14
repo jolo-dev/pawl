@@ -40,6 +40,7 @@ export const TERMINAL = {
 	strong: "#ffffff",
 	muted: "#9a9a9a",
 	accent: "#ff2e1c",
+	box: "#ed5757",
 	danger: "#7d1509",
 	code: "#000000",
 } as const;

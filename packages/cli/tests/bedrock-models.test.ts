@@ -12,16 +12,23 @@ describe("DEFAULT_BEDROCK_MODEL_ID", () => {
 });
 
 describe("contextWindowForModel", () => {
-	test("reports Nova 2 Lite's 1M window", () => {
-		expect(contextWindowForModel("eu.amazon.nova-2-lite-v1:0")).toBe(1_000_000);
+	test("reports Nova 2 Lite's 128k window, per pi-ai's verified value", () => {
+		// A public model list reports 1M. pi-ai — the team that actually drives
+		// these models — says 128k, and an over-estimate is the dangerous
+		// direction: eve compacts at 90% of this, so a wrong high number lets
+		// requests overflow the model.
+		expect(contextWindowForModel("eu.amazon.nova-2-lite-v1:0")).toBe(128_000);
 		expect(contextWindowForModel("global.amazon.nova-2-lite-v1:0")).toBe(
-			1_000_000,
+			128_000,
 		);
 	});
 
-	test("reports Claude's 200k window regardless of profile prefix", () => {
+	test("reports Claude Sonnet 4.6's 1M window regardless of profile prefix", () => {
 		expect(contextWindowForModel("us.anthropic.claude-sonnet-4-6")).toBe(
-			200_000,
+			1_000_000,
+		);
+		expect(contextWindowForModel("eu.anthropic.claude-sonnet-4-6")).toBe(
+			1_000_000,
 		);
 	});
 
@@ -37,10 +44,10 @@ describe("contextWindowForModel", () => {
 
 	test("ignores a blank or nonsense override", () => {
 		expect(contextWindowForModel("eu.amazon.nova-2-lite-v1:0", "  ")).toBe(
-			1_000_000,
+			128_000,
 		);
 		expect(contextWindowForModel("eu.amazon.nova-2-lite-v1:0", "abc")).toBe(
-			1_000_000,
+			128_000,
 		);
 	});
 });
@@ -114,14 +121,53 @@ describe("groupBedrockModels", () => {
 		expect(groups.map((g) => g.baseId)).toEqual(["anthropic.claude-opus-4-8"]);
 	});
 
-	test("ignores malformed catalog entries", () => {
+	test("drops ids that are not curated chat models", () => {
+		// Bedrock reports rerankers and video models with a TEXT output modality,
+		// but they cannot serve a conversation. This is the bug a raw dump had.
 		const groups = groupBedrockModels(
-			[{ modelName: "No id" }, { modelId: "x.y", outputModalities: ["TEXT"] }],
-			[{}, { inferenceProfileId: "eu.x.y" }],
+			[
+				{ modelId: "amazon.rerank-v1:0", outputModalities: ["TEXT"] },
+				{ modelId: "twelvelabs.pegasus-1-2-v1:0", outputModalities: ["TEXT"] },
+				{ modelId: "anthropic.claude-sonnet-4-6", outputModalities: ["TEXT"] },
+			],
+			[],
 		);
 
-		expect(groups.map((g) => g.baseId)).toEqual(["x.y"]);
-		expect(groups[0]?.name).toBe("x.y");
-		expect(groups[0]?.scopes).toEqual(["eu.x.y"]);
+		expect(groups.map((g) => g.baseId)).toEqual([
+			"anthropic.claude-sonnet-4-6",
+		]);
+	});
+
+	test("orders scopes so the region's own profile is offered first", () => {
+		const groups = groupBedrockModels(
+			[
+				{
+					modelId: "amazon.nova-2-lite-v1:0",
+					outputModalities: ["TEXT"],
+				},
+			],
+			[
+				{ inferenceProfileId: "global.amazon.nova-2-lite-v1:0" },
+				{ inferenceProfileId: "eu.amazon.nova-2-lite-v1:0" },
+			],
+			undefined,
+			"eu-central-1",
+		);
+
+		// Being listed does not mean the account can invoke it: a regional profile
+		// is far more likely to be enabled than a global one, so it goes first.
+		expect(groups[0]?.scopes).toEqual([
+			"eu.amazon.nova-2-lite-v1:0",
+			"global.amazon.nova-2-lite-v1:0",
+		]);
+	});
+
+	test("takes names and context windows from the catalog", () => {
+		const groups = groupBedrockModels(
+			[{ modelId: "amazon.nova-2-lite-v1:0", outputModalities: ["TEXT"] }],
+			[],
+		);
+
+		expect(groups[0]?.name).toBe("Nova 2 Lite");
 	});
 });

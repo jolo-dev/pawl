@@ -364,5 +364,6 @@ Plus one **live** end-to-end check, because no mock proves the scan works agains
 | Per-service `List` APIs need many small grants | Task 11 generates the policy from the scanner sources, so it cannot drift |
 | `cdk synth` can be slow or fail on a broken app | Treat synth failure as a first-class error the user sees, never as "no drift" |
 | OpenTUI on Node needs `--experimental-ffi` | Run the client under Bun, which is already pawl's runtime |
+| Seven AWS clients inlined into the authored bundle | **Measured, then fixed.** Bundling them grew `index.mjs` from 4.43 MB to 12.1 MB. `agent.ts` now lists them in `build.externalDependencies`, so eve traces them into `.output/server/node_modules` instead: the entry chunk is back to 4.47 MB (972 kB gzip). Re-measure after adding scanners. |
 | Scan output is large enough to flood the root context | The `infra-auditor` subagent consumes it; Task 6 keeps the raw tool output bounded |
 | Cost advice without Cost Explorer is guesswork | Task 9 makes `cost` state that explicitly |

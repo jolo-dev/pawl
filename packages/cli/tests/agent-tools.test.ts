@@ -6,6 +6,9 @@ import initProjectTool, {
 	initProjectInputSchema,
 } from "../agent/tools/init_project";
 import planTool from "../agent/tools/plan";
+import scanResourcesTool, {
+	scanResourcesInputSchema,
+} from "../agent/tools/scan_resources";
 import wellArchitectedTool from "../agent/tools/well_architected";
 
 /** Tools never touch their context in these tests; the binding is a stub. */
@@ -20,6 +23,7 @@ describe("pawl workflow tools", () => {
 			costTool,
 			architectureTool,
 			initProjectTool,
+			scanResourcesTool,
 		]) {
 			expect(tool.description.length).toBeGreaterThan(0);
 			expect(tool.inputSchema).toBeDefined();
@@ -61,6 +65,31 @@ describe("pawl workflow tools", () => {
 	test("architecture explains when there is no plan to render", async () => {
 		const result = await architectureTool.execute({}, ctx);
 		expect(String(result)).toMatch(/plan\.md|No Mermaid diagram/);
+	});
+});
+
+describe("scan_resources", () => {
+	test("scans everything when no service filter is given", () => {
+		expect(scanResourcesInputSchema.safeParse({}).success).toBe(true);
+	});
+
+	test("accepts a service filter and a skipSynth flag", () => {
+		const result = scanResourcesInputSchema.safeParse({
+			services: ["lambda", "s3"],
+			skipSynth: true,
+			maxEntries: 50,
+		});
+		expect(result.success).toBe(true);
+	});
+
+	test("rejects a non-positive entry cap", () => {
+		expect(scanResourcesInputSchema.safeParse({ maxEntries: 0 }).success).toBe(
+			false,
+		);
+	});
+
+	test("states that it is read-only, so the model cannot mistake it for a mutation", () => {
+		expect(scanResourcesTool.description).toContain("changes nothing");
 	});
 });
 

@@ -11,14 +11,15 @@ import {
 import { createHostExec } from "./src/host-exec";
 import { runProjectScan } from "./src/infra/project-scan";
 import { startPawlServer } from "./src/launch";
+import { createProjectSettingsStore } from "./src/settings";
 import { createPawlApp, type ResourceLine } from "./src/tui/app";
 import { clackBookends, createClackPrompter } from "./src/tui/clack-prompter";
 import { createEveTransport } from "./src/tui/client";
-import { runPreflight } from "./src/tui/preflight";
 import { defaultPreflightDeps } from "./src/tui/preflight-deps";
 import { createPresenter } from "./src/tui/presenter";
 import { createInputQueue } from "./src/tui/prompter";
 import { runInteractiveSession } from "./src/tui/session";
+import { runStartup } from "./src/tui/startup";
 import { THEME } from "./src/tui/theme";
 
 const argv = process.argv.slice(2);
@@ -85,10 +86,11 @@ const projectDir = process.cwd();
 const bookends = clackBookends("pawl — your AI agent for AWS infrastructure");
 bookends.begin();
 
-const outcome = await runPreflight(
-	defaultPreflightDeps(),
-	createClackPrompter(),
-);
+const outcome = await runStartup({
+	store: createProjectSettingsStore(projectDir),
+	deps: defaultPreflightDeps(),
+	prompter: createClackPrompter(),
+});
 
 if (!outcome.ok) {
 	if (!outcome.cancelled) outro(outcome.reason);

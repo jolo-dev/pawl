@@ -13,7 +13,9 @@ import { BACK, type PreflightPrompter } from "./preflight";
 /** An option that navigates back one step. */
 const BACK_VALUE = "__back__";
 
-export function createClackPrompter(): PreflightPrompter {
+export function createClackPrompter(
+	selectPrompt: typeof select<string> = select<string>,
+): PreflightPrompter {
 	return {
 		status(message) {
 			// clack's spinner needs an owner per message, so a status is a spinner
@@ -38,9 +40,10 @@ export function createClackPrompter(): PreflightPrompter {
 			}
 
 			for (;;) {
-				const chosen = await select<string>({
+				const chosen = await selectPrompt({
 					message: request.message,
 					options: choices,
+					initialValue: request.initialValue,
 				});
 				if (typeof chosen !== "string") return null;
 				if (request.allowBack && chosen === BACK_VALUE) return BACK;

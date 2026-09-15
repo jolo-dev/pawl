@@ -15,6 +15,11 @@
  */
 
 import type { BedrockModelGroup } from "../bedrock-models";
+import {
+	loadAuthenticatedModels,
+	loadProfiles,
+	validateModelSelection,
+} from "./preflight-validation";
 
 /** Returned by `select` when the user asks to go back one step. */
 export const BACK = Symbol("back");
@@ -32,6 +37,7 @@ export interface PreflightPrompter {
 		readonly id: string;
 		readonly message: string;
 		readonly options: readonly SelectOption[];
+		readonly initialValue?: string | undefined;
 		readonly allowBack?: boolean;
 	}): Promise<SelectResult>;
 	/** The entered text, or null when cancelled. */
@@ -97,12 +103,13 @@ function describeError(error: unknown): string {
 }
 
 /**
- * Walk profile -> credentials -> region -> model -> access, returning the
+ * Walk profile -> region -> credentials -> model -> access, returning the
  * configuration the runtime needs or the reason it could not be resolved.
  */
 export async function runPreflight(
 	deps: PreflightDeps,
 	prompter: PreflightPrompter,
+	{ defaults }: { defaults?: PreflightSuccess } = {},
 ): Promise<PreflightOutcome> {
 	const cancelled = (reason = "Cancelled."): PreflightOutcome => ({
 		ok: false,
@@ -115,90 +122,74 @@ export async function runPreflight(
 		cancelled: false,
 	});
 
-	prompter.status("Loading AWS profiles");
-	let profiles: string[];
-	try {
-		profiles = await deps.listProfiles();
-	} catch (error: unknown) {
-		return failed(`Could not read AWS profiles: ${describeError(error)}`);
-	}
-	if (profiles.length === 0) {
-		return failed(
-			"No AWS profiles found. Run `aws configure sso` or `aws configure` first.",
-		);
-	}
+	const loadedProfiles = await loadProfiles(deps, prompter);
+	if (!loadedProfiles.ok) return loadedProfiles;
+	const profiles = loadedProfiles.value;
 
 	const profileChoice = await prompter.select({
 		id: "profile",
 		message: "Select an AWS profile",
 		options: profiles.map((profile) => ({ value: profile, label: profile })),
+		initialValue:
+			defaults && profiles.includes(defaults.profile)
+				? defaults.profile
+				: undefined,
 	});
 	if (profileChoice === null || profileChoice === BACK) return cancelled();
 	const profile = profileChoice;
 
-	prompter.status("Checking credentials");
-	let isSso: boolean;
-	try {
-		isSso = await deps.isSso(profile);
-	} catch (error: unknown) {
+	if (!profiles.includes(profile)) {
 		return failed(
-			`Could not read the profile's configuration: ${describeError(error)}`,
+			`AWS profile "${profile}" is not available. Choose an existing profile.`,
 		);
 	}
 
+	let suggestedRegion: string;
 	try {
-		if (isSso) {
-			if (!(await deps.isSsoTokenValid(profile))) {
-				prompter.status("SSO token expired, opening a browser to log in");
-				// The URL goes to the transcript through `notice`, because a user may
-				// need to complete the login in a browser that did not open, and a
-				// status line would have been replaced by then.
-				await deps.ssoLogin(profile, (message) => prompter.notice(message));
-			}
-		} else {
-			await deps.checkCredentials(profile);
-		}
+		suggestedRegion = (await deps.profileRegion(profile)) ?? DEFAULT_REGION;
 	} catch (error: unknown) {
 		return failed(
-			isSso
-				? `SSO login failed: ${describeError(error)}`
-				: `Credentials are not valid for profile "${profile}": ${describeError(error)}`,
+			`Could not read the region for profile "${profile}": ${describeError(error)}`,
 		);
 	}
-
-	const suggestedRegion = (await deps.profileRegion(profile)) ?? DEFAULT_REGION;
 	const region = await prompter.text({
 		id: "region",
 		message: "AWS region",
-		initialValue: suggestedRegion,
+		initialValue:
+			profile === defaults?.profile ? defaults.region : suggestedRegion,
 		validate: (value) =>
 			value.trim().length > 0 ? undefined : "Region is required",
 	});
 	if (region === null) return cancelled();
 	const chosenRegion = region.trim();
 
-	prompter.status(`Loading Bedrock models in ${chosenRegion}`);
-	let groups: BedrockModelGroup[];
-	try {
-		groups = await deps.listModelGroups(profile, chosenRegion);
-	} catch (error: unknown) {
-		return failed(`Could not list Bedrock models: ${describeError(error)}`);
-	}
-	if (groups.length === 0) {
-		return failed(`No text models are available in ${chosenRegion}.`);
-	}
+	const loadedGroups = await loadAuthenticatedModels(
+		deps,
+		prompter,
+		profile,
+		chosenRegion,
+	);
+	if (!loadedGroups.ok) return loadedGroups;
+	const groups = loadedGroups.value;
+	const defaultGroup = defaults
+		? groups.find((item) => item.scopes.includes(defaults.modelId))
+		: undefined;
 
 	const providers = [...new Set(groups.map((group) => group.provider))].sort();
-	let selected: { modelId: string; modelName: string } | null = null;
+	let selectedModelId: string | null = null;
 	let step: "provider" | "model" | "scope" = "provider";
 	let provider = "";
 	let group: BedrockModelGroup | undefined;
 
-	while (selected === null) {
+	while (selectedModelId === null) {
 		if (step === "provider") {
 			const choice = await prompter.select({
 				id: "provider",
 				message: "Select provider",
+				initialValue:
+					defaultGroup && providers.includes(defaultGroup.provider)
+						? defaultGroup.provider
+						: undefined,
 				options: providers.map((value) => ({
 					value,
 					label: value.charAt(0).toUpperCase() + value.slice(1),
@@ -216,6 +207,9 @@ export async function runPreflight(
 			const choice = await prompter.select({
 				id: "model",
 				message: "Select model",
+				initialValue: candidates.find(
+					(item) => item.baseId === defaultGroup?.baseId,
+				)?.baseId,
 				allowBack: true,
 				options: candidates.map((item) => ({
 					value: item.baseId,
@@ -242,12 +236,16 @@ export async function runPreflight(
 			continue;
 		}
 		if (scopes.length === 1) {
-			selected = { modelId: scopes[0] ?? "", modelName: group?.name ?? "" };
+			selectedModelId = scopes[0] ?? "";
 			break;
 		}
 		const choice = await prompter.select({
 			id: "scope",
 			message: "Select inference profile scope",
+			initialValue:
+				defaults && scopes.includes(defaults.modelId)
+					? defaults.modelId
+					: undefined,
 			allowBack: true,
 			options: scopes.map((scope) => ({ value: scope, label: scope })),
 		});
@@ -256,29 +254,20 @@ export async function runPreflight(
 			step = "model";
 			continue;
 		}
-		selected = { modelId: choice, modelName: group?.name ?? "" };
+		if (!scopes.includes(choice)) {
+			return failed(
+				`Model scope "${choice}" is not available for the selected model. Choose an offered scope.`,
+			);
+		}
+		selectedModelId = choice;
 	}
 
-	prompter.status("Checking Bedrock access");
-	let hasAccess: boolean;
-	try {
-		hasAccess = await deps.checkBedrockAccess(profile, chosenRegion);
-	} catch (error: unknown) {
-		return failed(`Could not check Bedrock access: ${describeError(error)}`);
-	}
-	if (!hasAccess) {
-		return failed(
-			`No Bedrock access for profile "${profile}" in ${chosenRegion}.`,
-		);
-	}
-
-	return {
-		ok: true,
-		result: {
-			profile,
-			region: chosenRegion,
-			modelId: selected.modelId,
-			modelName: selected.modelName,
-		},
-	};
+	return validateModelSelection(
+		deps,
+		prompter,
+		profile,
+		chosenRegion,
+		selectedModelId,
+		groups,
+	);
 }

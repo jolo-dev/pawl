@@ -8,7 +8,7 @@ pawl CLI is built in three layers:
 
 1. **`PawlHarness`** — Runtime-agnostic core that handles codebase scanning and prompt construction (`src/harness.ts`). Use this to integrate pawl with any agent framework.
 2. **eve agent** — The `agent/` directory is an [eve](https://eve.dev) app: always-on instructions, typed tools, skills, declared subagents, and the HTTP channel.
-3. **pawl client** — The terminal client (`src/tui/`) that owns the screen. It runs the AWS pre-flight in its own transcript, then attaches to the agent over eve's session API.
+3. **pawl client** — The terminal client (`src/tui/`) that owns the screen. Startup uses Clack prompts before OpenTUI takes over, then attaches to the agent over eve's session API.
 
 `index.ts` is the entrypoint. It resolves an AWS profile, validates credentials (opening a browser for SSO if needed), lets you choose a Bedrock model from the live catalog, starts the eve runtime **headless on loopback**, and attaches the client to it. `eve dev`'s own terminal UI is not used: it is not extensible (no command registration, no theme or pane hooks), so pawl renders its own. See `docs/adr/0001-custom-opentui-client.md`.
 
@@ -31,15 +31,39 @@ Authored eve tools run in the app runtime, not in eve's sandbox, so they can dri
 bun run index.ts
 ```
 
-The CLI will:
+On first launch, Clack prompts you to:
 
-1. Prompt you to select an AWS profile
-2. Validate credentials (opening a browser for SSO if needed, with the URL kept in the transcript)
-3. Ask for the AWS region and load the Bedrock model catalog
-4. Let you choose a provider → model → inference-profile scope
-5. Start the runtime and open the conversation
+1. Select an AWS profile and region
+2. Validate credentials (opening a browser for SSO if needed, with the URL shown in the terminal)
+3. Choose a provider → model → inference-profile scope from the live Bedrock catalog
 
-Selections are numbered transcript lines rather than a separate widget, so the profile and model you chose stay in the scrollback alongside the conversation.
+After successful validation, pawl saves your choices, starts the runtime and opens the OpenTUI conversation. Startup prompts finish before OpenTUI takes over. `pawl init` subcommands are unchanged.
+
+### Project-local startup settings
+
+Choices are saved in `.pawl/settings.json` in the directory where you launch pawl; settings are not searched for in parent or home directories. Each project has its own selection. The versioned file contains only non-secret startup fields:
+
+```json
+{
+  "version": 1,
+  "profile": "dev",
+  "region": "eu-central-1",
+  "modelId": "eu.amazon.nova-2-lite-v1:0",
+  "modelName": "Nova 2 Lite"
+}
+```
+
+No credentials, SSO tokens, access keys or runtime sessions are stored. `modelName` is a display cache; the exact `modelId` determines the selected model/inference-profile scope.
+
+On subsequent launches, an overview shows the saved profile, region, model name and exact ID. Press Enter for **Continue**, the default, or choose **Change settings** to open the wizard with still-available choices preselected. Cancel exits without starting the runtime or changing saved settings.
+
+Both Continue and the wizard check the current profile, refresh SSO when needed, validate resolved credentials for the selected region, refresh the model catalog and check Bedrock access. A valid SSO token does not skip credential validation. The exact saved scope must still be available; pawl never silently substitutes another scope or account. These startup checks do not invoke a model and do not guarantee that every later model invocation is authorized.
+
+Invalid/unreadable settings or failed validation produce an explanation and offer explicit reconfiguration or cancellation. The old file stays intact until a replacement validates. Delete `.pawl/settings.json` to reset startup choices. Symlinked settings paths are refused; replace them with project-local files/directories before saving.
+
+Successful saves use an atomic replacement. If saving or Git-ignore setup fails, pawl warns that the selection could not be saved and continues with the validated settings **for this session only**. The previous settings are preserved where possible.
+
+Before saving, pawl creates or extends `.pawl/.gitignore` with `/settings.json` and `/.settings-*.tmp`, preserving existing rules and other content such as `.pawl/plan.md`. It does not change your root `.gitignore` or Git index. Ignore rules **do not untrack files you already committed**; review and untrack such files yourself if needed. pawl never runs `git rm` automatically.
 
 ### `pawl init`
 

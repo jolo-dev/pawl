@@ -76,6 +76,40 @@ const modes = {
 		});
 		setInterval(() => {}, 60_000);
 	},
+	"spawn-resistant": ([jsonPath]) => {
+		// Default SIGTERM handling for the parent (exits during the graceful
+		// window) plus a SIGTERM-resistant grandchild that stays in the owned
+		// process group: the forced step must still cover the survivor.
+		const grandchild = spawn(
+			process.execPath,
+			[__filename, "trap", jsonPath, "grandchild"],
+			{ stdio: "ignore" },
+		);
+		grandchild.unref();
+		writeJson(jsonPath, {
+			pid: process.pid,
+			grandchild: grandchild.pid,
+		});
+		setInterval(() => {}, 60_000);
+	},
+	"trap-exit": ([jsonPath]) => {
+		// Handles SIGTERM and exits successfully on it (graceful completion of
+		// a cancelled child).
+		process.on("SIGTERM", () => {
+			process.exit(0);
+		});
+		writeJson(jsonPath, { pid: process.pid });
+		setInterval(() => {}, 60_000);
+	},
+	"hold-briefly": ([jsonPath]) => {
+		// Default SIGTERM handling; self-exits after ~2 s so a test can abort
+		// while it is alive without leaking a child when kills are unavailable.
+		writeJson(jsonPath, { pid: process.pid });
+		setTimeout(() => {
+			process.exit(0);
+		}, 2_000);
+		setInterval(() => {}, 60_000);
+	},
 };
 
 const handler = modes[mode];

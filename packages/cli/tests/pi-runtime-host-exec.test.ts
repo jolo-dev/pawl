@@ -13,11 +13,13 @@ import {
 	type ExecutionContextDependencies,
 } from "../src/pi-runtime/execution-context";
 import {
+	type ControlledExecResult,
 	captureMarker,
 	createControlledExec,
 } from "../src/pi-runtime/host-exec";
 import {
 	createRuntimePolicy,
+	HOST_GRACEFUL_CLEANUP_MS,
 	PolicyExhaustedError,
 } from "../src/pi-runtime/policy";
 
@@ -139,6 +141,28 @@ const fixtureArgs = (mode: string, ...rest: string[]) => [
 	mode,
 	...rest,
 ];
+
+/** Observes uncaught exceptions during a bounded window instead of crashing. */
+function captureUncaught() {
+	const errors: unknown[] = [];
+	const handler = (error: unknown) => {
+		errors.push(error);
+	};
+	process.on("uncaughtException", handler);
+	return {
+		errors,
+		detach: () => {
+			process.off("uncaughtException", handler);
+		},
+	};
+}
+
+const failAllKills =
+	(): ((pid: number, signal: NodeJS.Signals) => void) => () => {
+		throw Object.assign(new Error("operation not permitted"), {
+			code: "EPERM",
+		});
+	};
 
 const pollutedAmbient = () => ({
 	...process.env,
@@ -287,6 +311,126 @@ describe("createControlledExec", () => {
 		const { pid, grandchild } = await readRecord(record);
 		await assertNotAlive(pid, "SIGTERM-resistant child");
 		await assertNotAlive(grandchild, "SIGTERM-resistant grandchild");
+	}, 15_000);
+
+	test("kills a resistant grandchild when the graceful parent exits during the graceful window", async () => {
+		const exec = createControlledExec(
+			await contextFixture().create(),
+			policy(),
+		);
+		const controller = new AbortController();
+		const record = join(scratch(), "record.json");
+		const pending = exec
+			.run({
+				command: process.execPath,
+				args: fixtureArgs("spawn-resistant", record),
+				signal: controller.signal,
+			})
+			.catch((value: unknown) => value);
+		await readRecord(record);
+		controller.abort(new Error("fixture cancellation"));
+		const outcome = await pending;
+		expect((outcome as Error).message).toBe("fixture cancellation");
+		const { pid, grandchild } = await readRecord(record);
+		await assertNotAlive(pid, "SIGTERM-graceful parent");
+		await assertNotAlive(
+			grandchild,
+			"resistant grandchild after the parent exited",
+		);
+	}, 15_000);
+
+	test("a failing graceful group signal settles fail-closed instead of crashing the host", async () => {
+		const exec = createControlledExec(
+			await contextFixture().create(),
+			policy(),
+			{ signalProcess: failAllKills() },
+		);
+		const controller = new AbortController();
+		const record = join(scratch(), "record.json");
+		const uncaught = captureUncaught();
+		try {
+			const pending = exec
+				.run({
+					command: process.execPath,
+					args: fixtureArgs("hold-briefly", record),
+					signal: controller.signal,
+				})
+				.catch((value: unknown) => value);
+			await readRecord(record);
+			controller.abort(new Error("fixture cancellation"));
+			const outcome = await pending;
+			expect((outcome as Error).message).toBe("fixture cancellation");
+			expect(uncaught.errors).toEqual([]);
+		} finally {
+			uncaught.detach();
+		}
+	}, 15_000);
+
+	test("a failing forced group signal settles fail-closed instead of crashing the host", async () => {
+		const exec = createControlledExec(
+			await contextFixture().create(),
+			policy(),
+			{
+				signalProcess: (pid, signal) => {
+					if (signal === "SIGKILL")
+						throw Object.assign(new Error("operation not permitted"), {
+							code: "EPERM",
+						});
+					process.kill(pid, signal);
+				},
+			},
+		);
+		const controller = new AbortController();
+		const record = join(scratch(), "record.json");
+		const uncaught = captureUncaught();
+		try {
+			const pending = exec
+				.run({
+					command: process.execPath,
+					args: fixtureArgs("hold", record),
+					signal: controller.signal,
+				})
+				.catch((value: unknown) => value);
+			await readRecord(record);
+			controller.abort(new Error("fixture cancellation"));
+			const outcome = await pending;
+			expect((outcome as Error).message).toBe("fixture cancellation");
+			// Keep the injected-failure window open across the whole graceful
+			// window so the forced-step timer callback runs while kills fail.
+			await Bun.sleep(HOST_GRACEFUL_CLEANUP_MS + 300);
+			expect(uncaught.errors).toEqual([]);
+		} finally {
+			uncaught.detach();
+		}
+	}, 15_000);
+
+	test("attaches the settled outcome when a cancelled child had already completed", async () => {
+		const exec = createControlledExec(
+			await contextFixture().create(),
+			policy(),
+		);
+		const controller = new AbortController();
+		const record = join(scratch(), "record.json");
+		const pending = exec
+			.run({
+				command: process.execPath,
+				args: fixtureArgs("trap-exit", record),
+				signal: controller.signal,
+			})
+			.catch((value: unknown) => value);
+		await readRecord(record);
+		controller.abort(new Error("fixture cancellation"));
+		const outcome = await pending;
+		expect((outcome as Error).message).toBe("fixture cancellation");
+		// A completed side effect must never be reported as a bare cancel.
+		const settled = (outcome as { settledOutcome?: ControlledExecResult })
+			.settledOutcome;
+		expect(settled?.exitCode).toBe(0);
+		expect(settled?.stdout).toBe("");
+		expect(settled?.stderr).toBe("");
+		expect(settled?.stdoutTruncated).toBe(false);
+		const { pid } = await readRecord(record);
+		await assertNotAlive(pid, "trap-exit child");
 	}, 15_000);
 
 	test("rejects with the stored policy rejection when the shared budget exhausts mid-run", async () => {

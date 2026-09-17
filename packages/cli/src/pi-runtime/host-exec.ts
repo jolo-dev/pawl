@@ -27,6 +27,13 @@ import {
  * process groups outside the owned group are ever signalled. Cleanup failures
  * and uncertain outcomes (for example a submitted AWS operation that local
  * cancellation cannot undo) propagate; results are never retried.
+ *
+ * Layered outcome contract: when cancellation or a deadline terminates a run,
+ * a child that had already completed by itself is not reported as a bare
+ * cancellation — its settled result (exit code and captured output) is
+ * attached to the rejection as `settledOutcome`. This attachment records the
+ * completed local side effect; it never claims rollback, replay or an undone
+ * AWS operation, and fuller outcome recording belongs to the tool layer.
  */
 
 export class ControlledExecError extends Error {
@@ -64,7 +71,11 @@ export interface ControlledExecRequest {
 export interface ControlledExecResult {
 	readonly command: string;
 	readonly args: readonly string[];
-	readonly exitCode: number;
+	/**
+	 * `null` when the group was terminated by a signal and the child never
+	 * completed on its own; a number means the child exited by itself.
+	 */
+	readonly exitCode: number | null;
 	readonly stdout: string;
 	readonly stderr: string;
 	readonly stdoutTruncated: boolean;
@@ -74,6 +85,11 @@ export interface ControlledExecResult {
 export interface ControlledExecDependencies {
 	/** Platform override for fail-closed tests; defaults to `process.platform`. */
 	readonly platform?: NodeJS.Platform;
+	/**
+	 * Kill seam for the owned process group (defaults to `process.kill`); used
+	 * only with the spawned child's own negative PID, never arbitrary PIDs.
+	 */
+	readonly signalProcess?: (pid: number, signal: NodeJS.Signals) => void;
 }
 
 export interface ControlledExec {
@@ -168,6 +184,13 @@ export function createControlledExec(
 			`Controlled subprocess execution with owned process-group cleanup is not proven on ${platform}; failing closed instead of using a weaker path`,
 		);
 	}
+	const signalProcess: NonNullable<
+		ControlledExecDependencies["signalProcess"]
+	> =
+		dependencies.signalProcess ??
+		((pid: number, signal: NodeJS.Signals) => {
+			process.kill(pid, signal);
+		});
 
 	async function run(
 		request: ControlledExecRequest,
@@ -205,7 +228,24 @@ export function createControlledExec(
 		} catch (error) {
 			// Cancellation rejects before settlement: hold the caller until the
 			// owned process group has actually settled, then surface the reason.
-			if (running) await running.then(undefined, () => {});
+			// A child that completed by itself before termination was not
+			// "cancelled": its settled outcome is attached to the rejection so the
+			// caller can record the completed side effect. Local cancellation
+			// never claims rollback, replay or an undone AWS operation; outcome
+			// recording beyond this attachment belongs to the tool layer.
+			if (running) {
+				const settledOutcome = (await running.then(
+					(value) => value as ControlledExecResult | undefined,
+					() => undefined,
+				)) as ControlledExecResult | undefined;
+				if (
+					settledOutcome &&
+					settledOutcome.exitCode !== null &&
+					error instanceof Error
+				) {
+					Object.assign(error, { settledOutcome });
+				}
+			}
 			throw error;
 		}
 	}
@@ -231,7 +271,7 @@ export function createControlledExec(
 			const pid = proc.pid;
 			if (pid === undefined) return false;
 			try {
-				process.kill(-pid, name);
+				signalProcess(-pid, name);
 				return true;
 			} catch (error) {
 				if ((error as NodeJS.ErrnoException).code === "ESRCH") return false;
@@ -242,25 +282,58 @@ export function createControlledExec(
 		return new Promise<ControlledExecResult>((resolve, reject) => {
 			let settled = false;
 			let graceTimer: NodeJS.Timeout | undefined;
+			let reapTimer: NodeJS.Timeout | undefined;
 			let terminated = false;
 
 			const settle = (conclude: () => void) => {
 				if (settled) return;
 				settled = true;
-				if (graceTimer) clearTimeout(graceTimer);
+				if (terminated) {
+					// The direct child may honor SIGTERM and exit while a resistant
+					// group member survives; the pending SIGKILL must stay armed so
+					// the rest of the owned group still settles within the window.
+					if (reapTimer) clearTimeout(reapTimer);
+				} else if (graceTimer) {
+					clearTimeout(graceTimer);
+				}
 				child.signal.removeEventListener("abort", onAbort);
 				conclude();
 			};
 
+			const failClosed = (message: string) => {
+				proc.stdout?.destroy();
+				proc.stderr?.destroy();
+				settle(() => reject(new ControlledExecError(message)));
+			};
+
+			const killFailure = (step: string, error: unknown): string =>
+				`Signalling the owned process group failed during ${step} (${
+					error instanceof Error ? error.message : String(error)
+				}); local termination is not proven, pipes are released and any submitted AWS operation has an uncertain outcome`;
+
 			const beginTermination = () => {
 				if (terminated) return;
 				terminated = true;
-				signalGroup("SIGTERM");
+				try {
+					signalGroup("SIGTERM");
+				} catch (error) {
+					// A failed kill inside an abort listener or timer would otherwise
+					// crash the host; settle fail-closed with the uncertain outcome.
+					failClosed(killFailure("graceful termination", error));
+					return;
+				}
 				graceTimer = setTimeout(() => {
-					if (signalGroup("SIGKILL")) {
+					let forced: boolean;
+					try {
+						forced = signalGroup("SIGKILL");
+					} catch (error) {
+						failClosed(killFailure("forced termination", error));
+						return;
+					}
+					if (forced) {
 						// Bounded reaping: allow the group one final window to release
 						// the pipes, then settle fail-closed with an uncertain outcome.
-						setTimeout(() => {
+						reapTimer = setTimeout(() => {
 							proc.stdout?.destroy();
 							proc.stderr?.destroy();
 							settle(() =>
@@ -288,19 +361,19 @@ export function createControlledExec(
 			});
 			proc.once("close", (code, exitSignal) => {
 				settle(() => {
-					const result: ControlledExecResult = {
-						command,
-						args: [...args],
-						exitCode: code ?? 0,
-						stdout: stdout.finish(),
-						stderr: stderr.finish(),
-						stdoutTruncated: stdout.truncated,
-						stderrTruncated: stderr.truncated,
-					};
 					if (child.signal.aborted || terminated) {
 						// Cancellation dominates; the caller already observes the abort
-						// reason, so settle the inner promise for cleanup ordering.
-						resolve(result);
+						// reason, so settle the inner promise for cleanup ordering and
+						// carry the raw exit code (null when killed, not completed).
+						resolve({
+							command,
+							args: [...args],
+							exitCode: code,
+							stdout: stdout.finish(),
+							stderr: stderr.finish(),
+							stdoutTruncated: stdout.truncated,
+							stderrTruncated: stderr.truncated,
+						});
 						return;
 					}
 					if (code === null) {
@@ -320,7 +393,15 @@ export function createControlledExec(
 						);
 						return;
 					}
-					resolve(result);
+					resolve({
+						command,
+						args: [...args],
+						exitCode: code,
+						stdout: stdout.finish(),
+						stderr: stderr.finish(),
+						stdoutTruncated: stdout.truncated,
+						stderrTruncated: stderr.truncated,
+					});
 				});
 			});
 		});

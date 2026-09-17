@@ -188,7 +188,7 @@ describe("createExecutionContext", () => {
 		expect(f.factoryOptions).toEqual([
 			{
 				profile: "selected",
-				clientConfig: { region: REGION, ignoreConfiguredEndpointUrls: true },
+				clientConfig: { ignoreConfiguredEndpointUrls: true },
 				ignoreCache: true,
 			},
 		]);
@@ -243,7 +243,7 @@ describe("createExecutionContext", () => {
 		expect(checked).toBe(await context.sdkConfig().credentials());
 		expect(context.identity.accountId).toBe(ACCOUNT);
 		expect(requests).toBe(1);
-		expect(f.resolves).toBe(2);
+		expect(f.resolves).toBe(1);
 	});
 
 	test("passes the exact immutable STS-checked snapshot to an SDK operation", async () => {
@@ -298,7 +298,7 @@ describe("createExecutionContext", () => {
 		const context = await f.create();
 		f.setCredentials(credentials("refreshed"));
 		f.setIdentity(caller("SelectedRole", "session-2"));
-		const snapshot = await context.checkedCredentials();
+		const snapshot = await context.refreshCredentials();
 		expect(snapshot.accessKeyId).toBe("refreshed");
 		expect(f.checks[1]).toBe(snapshot);
 		expect(context.signal.aborted).toBe(false);
@@ -318,7 +318,7 @@ describe("createExecutionContext", () => {
 			if (field === "expiration") next.expiration = new Date(NOW + 7_200_000);
 			else next[field] = "rotated";
 			f.setCredentials(next);
-			await context.checkedCredentials();
+			await context.refreshCredentials();
 			expect(f.checks).toHaveLength(2);
 		});
 	}
@@ -334,7 +334,7 @@ describe("createExecutionContext", () => {
 			const context = await f.create();
 			f.setCredentials(credentials("changed"));
 			f.setIdentity(identity);
-			await expect(context.checkedCredentials()).rejects.toThrow();
+			await expect(context.refreshCredentials()).rejects.toThrow();
 			expect(context.signal.aborted).toBe(true);
 			f.setIdentity(caller());
 			f.setCredentials(credentials());
@@ -378,7 +378,7 @@ describe("createExecutionContext", () => {
 			},
 			destroy() {},
 		});
-		await expect(context.checkedCredentials()).rejects.toThrow();
+		await expect(context.refreshCredentials()).rejects.toThrow();
 		f.dependencies.identityClient = original;
 		await context.checkedCredentials();
 		expect(f.checks).toHaveLength(2);
@@ -399,7 +399,7 @@ describe("createExecutionContext", () => {
 		const context = await f.create();
 		f.setCredentials(credentials("next"));
 		const snapshots = await Promise.all(
-			Array.from({ length: 5 }, () => context.checkedCredentials()),
+			Array.from({ length: 5 }, () => context.refreshCredentials()),
 		);
 		expect(f.checks).toHaveLength(2);
 		for (const snapshot of snapshots) expect(f.checks[1]).toBe(snapshot);
@@ -407,9 +407,9 @@ describe("createExecutionContext", () => {
 
 	test("cancellation destroys a pending STS client and never returns its late identity", async () => {
 		const f = fixture();
-		const context = await f.create();
-		f.setCredentials(credentials("next"));
 		const operation = new AbortController();
+		const context = await f.create(operation.signal);
+		f.setCredentials(credentials("next"));
 		let destroyed = false;
 		f.dependencies.identityClient = () => ({
 			async identify(signal) {
@@ -422,7 +422,7 @@ describe("createExecutionContext", () => {
 			},
 		});
 		await expect(
-			context.checkedCredentials(operation.signal),
+			context.refreshCredentials(operation.signal),
 		).rejects.toThrow();
 		expect(destroyed).toBe(true);
 	});
@@ -604,30 +604,25 @@ describe("checked child environment", () => {
 	test("refreshes insufficient lifetime once before invoking child", async () => {
 		const f = fixture();
 		const context = await f.create();
-		let resolutions = 0;
 		f.setCredentials(credentials("short", NOW + 60_999));
+		await context.refreshCredentials();
+		const resolutions = f.resolves;
 		// A selected profile provider can return fresh credentials on its next resolution.
-		const original = f.dependencies.identityClient;
-		f.dependencies.identityClient = (config) => {
-			if (config.credentials.accessKeyId === "short") {
-				resolutions++;
-				f.setCredentials(credentials("long"));
-			}
-			return original(config);
-		};
+		f.setCredentials(credentials("long"));
 		await context.withChildEnvironment(
 			{ timeoutMs: 1000, args: [] },
 			async ({ env }) => {
 				expect(env.AWS_ACCESS_KEY_ID).toBe("long");
 			},
 		);
-		expect(resolutions).toBe(1);
+		expect(f.resolves - resolutions).toBe(1);
 	});
 
 	test("refuses insufficient lifetime when refresh cannot cover timeout plus 60 seconds", async () => {
 		const f = fixture();
 		const context = await f.create();
 		f.setCredentials(credentials("short", NOW + 60_999));
+		await context.refreshCredentials();
 		let invoked = false;
 		await expect(
 			context.withChildEnvironment({ timeoutMs: 1000, args: [] }, async () => {
@@ -734,6 +729,7 @@ describe("checked project scan adapter", () => {
 						async scan() {
 							f.setCredentials(credentials("new"));
 							f.setIdentity(caller("OtherRole"));
+							await context.refreshCredentials();
 							await provider();
 							return [];
 						},

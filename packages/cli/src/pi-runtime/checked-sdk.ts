@@ -1,10 +1,14 @@
 import type { HttpHandlerOptions } from "@smithy/core/protocols";
-import type { CredentialSnapshot } from "./execution-context";
+import type { CredentialLease, CredentialSnapshot } from "./execution-context";
 
 export interface SdkExecutionContext {
 	readonly region: string;
 	readonly signal: AbortSignal;
 	checkedCredentials(signal?: AbortSignal): Promise<CredentialSnapshot>;
+	credentialLease(
+		snapshot: CredentialSnapshot,
+		signal?: AbortSignal,
+	): CredentialLease;
 	/** Scan scopes must not turn a security refusal into optional-tag coverage. */
 	onCredentialRefusal?(error: unknown): void;
 }
@@ -13,15 +17,6 @@ export interface CheckedSdkConfiguration {
 	readonly credentials: () => Promise<CredentialSnapshot>;
 	readonly ignoreConfiguredEndpointUrls: true;
 }
-export class CredentialSnapshotChangedError extends Error {
-	constructor() {
-		super(
-			"Credentials rotated after signing; this command was refused. Start a new explicit operation.",
-		);
-		this.name = "CredentialSnapshotChangedError";
-	}
-}
-
 type LegacySignal = Exclude<
 	HttpHandlerOptions["abortSignal"],
 	AbortSignal | undefined
@@ -96,6 +91,9 @@ export function createCheckedSdkExecutor<C extends { destroy(): void }>(
 			...(operationSignal ? [operationSignal] : []),
 		]);
 		let client: C | undefined;
+		let lease: CredentialLease | undefined;
+		const leaseAborted = () =>
+			context.onCredentialRefusal?.(lease?.signal.reason);
 		try {
 			signal.throwIfAborted();
 			const check = async () => {
@@ -108,26 +106,36 @@ export function createCheckedSdkExecutor<C extends { destroy(): void }>(
 			};
 			const snapshot = await check();
 			signal.throwIfAborted();
+			try {
+				lease = context.credentialLease(snapshot, signal);
+			} catch (error) {
+				context.onCredentialRefusal?.(error);
+				throw error;
+			}
+			const commandLease = lease;
+			commandLease.signal.addEventListener("abort", leaseAborted, {
+				once: true,
+			});
 			client = factory({
 				region: context.region,
 				credentials: async () => snapshot,
 				ignoreConfiguredEndpointUrls: true,
 			});
 			installGuard(client, async () => {
-				signal.throwIfAborted();
-				const current = await check();
-				signal.throwIfAborted();
-				if (current !== snapshot) {
-					const error = new CredentialSnapshotChangedError();
+				try {
+					commandLease.validate();
+				} catch (error) {
 					context.onCredentialRefusal?.(error);
 					throw error;
 				}
 			});
-			const result = await operation(client, signal);
-			signal.throwIfAborted();
+			const result = await operation(client, commandLease.signal);
+			commandLease.validate();
 			return result;
 		} finally {
 			removeListener();
+			lease?.signal.removeEventListener("abort", leaseAborted);
+			lease?.dispose();
 			client?.destroy();
 		}
 	};

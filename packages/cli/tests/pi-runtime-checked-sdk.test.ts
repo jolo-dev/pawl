@@ -188,6 +188,7 @@ test("a later explicit send signs with refreshed selected credentials", async ()
 	});
 	await client.send(new GetCallerIdentityCommand({}));
 	f.rotate();
+	await f.context.refreshCredentials();
 	await client.send(new GetCallerIdentityCommand({}));
 	expect(authorizations[0]).toContain("Credential=selected-key/");
 	expect(authorizations[1]).toContain("Credential=rotated-key/");
@@ -206,6 +207,8 @@ for (const change of ["changeRole", "expire"] as const) {
 		});
 		await client.send(new GetCallerIdentityCommand({}));
 		f[change]();
+		if (change === "changeRole")
+			await expect(f.context.refreshCredentials()).rejects.toThrow();
 		await expect(
 			client.send(new GetCallerIdentityCommand({})),
 		).rejects.toThrow();
@@ -269,6 +272,7 @@ for (const change of ["changeRole", "expire"] as const) {
 					async handle() {
 						requests++;
 						f[change]();
+						if (change === "changeRole") await f.context.refreshCredentials();
 						return jsonResponse({
 							Functions: [],
 							NextMarker: requests === 1 ? "page-2" : undefined,
@@ -322,12 +326,18 @@ for (const change of [
 			let requests = 0;
 			let destroyed = 0;
 			let signed = 0;
-			const mutate = () =>
-				change === "abort" ? f.controller.abort() : f[change]();
+			const mutate = async () => {
+				if (change === "abort") {
+					f.controller.abort();
+					return;
+				}
+				f[change]();
+				if (change !== "expire") await f.context.refreshCredentials();
+			};
 			const handler = {
 				async handle() {
 					requests++;
-					mutate();
+					await mutate();
 					const error = new Error("fixture timeout");
 					error.name = "TimeoutError";
 					throw error;
@@ -349,7 +359,7 @@ for (const change of [
 										"Credential=selected-key/",
 									);
 									signed++;
-									mutate();
+									await mutate();
 									return next(args);
 								},
 								{
@@ -451,6 +461,7 @@ test("fresh actual signers use changed secrets even when the access key is uncha
 	});
 	await client.send(new GetCallerIdentityCommand({}));
 	f.rotateSecret();
+	await f.context.refreshCredentials();
 	secret = "new-secret-same-key";
 	await client.send(new GetCallerIdentityCommand({}));
 	expect(requests).toBe(2);
@@ -706,10 +717,15 @@ test("cancelled commands queued behind credential checking never construct or di
 	const started = new Promise<void>((resolve) => {
 		ready = resolve;
 	});
+	let release: () => void = () => {};
+	const gate = new Promise<void>((resolve) => {
+		release = resolve;
+	});
 	f.pauseResolution(() => {
 		ready();
-		return new Promise(() => {});
+		return gate;
 	});
+	const refreshing = f.context.refreshCredentials();
 	const client = sts(
 		f.context,
 		{
@@ -733,6 +749,8 @@ test("cancelled commands queued behind credential checking never construct or di
 	]);
 	expect(requests).toBe(0);
 	f.pauseResolution();
+	release();
+	await refreshing;
 	await sts(f.context, {
 		async handle() {
 			requests++;
@@ -818,7 +836,7 @@ test("parallel real Lambda tag calls stop on identity invalidation, including in
 	try {
 		await within(started, "all tags started");
 		f.changeRole();
-		const invalidated = Promise.allSettled([f.context.checkedCredentials()]);
+		const invalidated = Promise.allSettled([f.context.refreshCredentials()]);
 		await within(invalidated, "identity invalidation");
 		expect((await invalidated)[0]?.status).toBe("rejected");
 		const countAtInvalidation = requests;

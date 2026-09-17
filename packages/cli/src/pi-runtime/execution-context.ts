@@ -40,6 +40,15 @@ export interface CredentialSnapshot {
 	readonly expiration?: Date | undefined;
 }
 
+const CREDENTIAL_REUSE_MS = 5 * 60_000;
+
+/** A non-resolving, command-local lease over one published credential generation. */
+export interface CredentialLease {
+	readonly signal: AbortSignal;
+	validate(): void;
+	dispose(): void;
+}
+
 export interface ExecutionIdentity {
 	readonly accountId: string;
 	readonly partition: string;
@@ -50,7 +59,7 @@ export interface ExecutionIdentity {
 export interface ExecutionContextDependencies {
 	credentialsFromIni(options: {
 		profile: string;
-		clientConfig: { region: string; ignoreConfiguredEndpointUrls: true };
+		clientConfig: { ignoreConfiguredEndpointUrls: true };
 		ignoreCache: true;
 	}): () => Promise<CredentialSnapshot>;
 	identityClient(config: { region: string; credentials: CredentialSnapshot }): {
@@ -252,12 +261,20 @@ export async function createExecutionContext(
 	signal.throwIfAborted();
 	const resolveCredentials = dependencies.credentialsFromIni({
 		profile,
-		clientConfig: { region, ignoreConfiguredEndpointUrls: true },
+		// Authentication regions belong to the selected profile (not the workload).
+		clientConfig: { ignoreConfiguredEndpointUrls: true },
 		ignoreCache: true,
 	});
 	let identity: ExecutionIdentity | undefined;
-	let cached: { fingerprint: string; snapshot: CredentialSnapshot } | undefined;
-	let tail: Promise<unknown> = Promise.resolve();
+	let cached:
+		| {
+				fingerprint: string;
+				snapshot: CredentialSnapshot;
+				validUntil: number;
+				retirement: AbortController;
+		  }
+		| undefined;
+	let refreshing: Promise<CredentialSnapshot> | undefined;
 	const operationSignal = (requested?: AbortSignal) =>
 		requested ? AbortSignal.any([signal, requested]) : signal;
 	const assertFresh = (snapshot: CredentialSnapshot) => {
@@ -271,60 +288,139 @@ export async function createExecutionContext(
 		}
 	};
 
-	async function checkedCredentials(
+	async function acquireGeneration(): Promise<CredentialSnapshot> {
+		signal.throwIfAborted();
+		const snapshot = snapshotOf(await abortable(resolveCredentials(), signal));
+		signal.throwIfAborted();
+		assertFresh(snapshot);
+		const client = dependencies.identityClient({
+			region,
+			credentials: snapshot,
+		});
+		let response: unknown;
+		try {
+			response = await abortable(client.identify(signal), signal);
+		} finally {
+			client.destroy();
+		}
+		signal.throwIfAborted();
+		assertFresh(snapshot);
+		try {
+			const next = normalizeIdentity(response);
+			if (
+				identity &&
+				(identity.accountId !== next.accountId ||
+					identity.partition !== next.partition ||
+					identity.principalArn !== next.principalArn)
+			) {
+				throw new ExecutionContextError(
+					"AWS identity changed; this execution context is invalid and a new session is required",
+				);
+			}
+			identity = next;
+		} catch (error) {
+			invalidation.abort(error);
+			throw error;
+		}
+		cached = {
+			fingerprint: fingerprint(snapshot),
+			snapshot,
+			validUntil: Math.min(
+				dependencies.now() + CREDENTIAL_REUSE_MS,
+				snapshot.expiration?.getTime() ?? Infinity,
+			),
+			retirement: new AbortController(),
+		};
+		return snapshot;
+	}
+
+	/** Retire first; failed refresh never falls back. One refresh is shared by
+	 * concurrent callers. Cancelling one waiter does not cancel other waiters. */
+	async function refreshCredentials(
 		requested?: AbortSignal,
 	): Promise<CredentialSnapshot> {
 		const currentSignal = operationSignal(requested);
 		currentSignal.throwIfAborted();
-		// Serialize validation so two concurrent first/refresh calls cannot bind
-		// different identities or resurrect a cache after invalidation.
-		const work = tail.then(async () => {
-			currentSignal.throwIfAborted();
-			const snapshot = snapshotOf(
-				await abortable(resolveCredentials(), currentSignal),
+		if (!refreshing) {
+			const retired = cached;
+			cached = undefined;
+			const work = Promise.resolve().then(acquireGeneration);
+			refreshing = work;
+			void work.then(
+				() => {
+					refreshing = undefined;
+				},
+				() => {
+					refreshing = undefined;
+				},
 			);
-			currentSignal.throwIfAborted();
-			assertFresh(snapshot);
-			const key = fingerprint(snapshot);
-			if (cached?.fingerprint === key) return cached.snapshot;
-			const client = dependencies.identityClient({
-				region,
-				credentials: snapshot,
-			});
-			let response: unknown;
-			try {
-				response = await abortable(
-					client.identify(currentSignal),
-					currentSignal,
-				);
-			} finally {
-				client.destroy();
-			}
-			currentSignal.throwIfAborted();
-			assertFresh(snapshot);
-			try {
-				const next = normalizeIdentity(response);
-				if (
-					identity &&
-					(identity.accountId !== next.accountId ||
-						identity.partition !== next.partition ||
-						identity.principalArn !== next.principalArn)
-				) {
-					throw new ExecutionContextError(
-						"AWS identity changed; this execution context is invalid and a new session is required",
-					);
-				}
-				identity = next;
-			} catch (error) {
-				cached = undefined;
-				invalidation.abort(error);
-				throw error;
-			}
-			cached = { fingerprint: key, snapshot };
-			return snapshot;
-		});
-		tail = work.catch(() => undefined);
-		return abortable(work, currentSignal);
+			retired?.retirement.abort(
+				new ExecutionContextError("Credential generation retired for refresh"),
+			);
+		}
+		return abortable(refreshing, currentSignal);
+	}
+
+	/** Acquisition is demand-driven, with five-minute maximum local reuse even
+	 * for static credentials. No background authentication or automatic replay. */
+	async function checkedCredentials(
+		requested?: AbortSignal,
+	): Promise<CredentialSnapshot> {
+		operationSignal(requested).throwIfAborted();
+		if (cached && dependencies.now() < cached.validUntil)
+			return cached.snapshot;
+		return refreshCredentials(requested);
+	}
+
+	function activeGeneration(snapshot: CredentialSnapshot) {
+		signal.throwIfAborted();
+		if (
+			!cached ||
+			cached.snapshot !== snapshot ||
+			cached.fingerprint !== fingerprint(snapshot)
+		) {
+			throw new ExecutionContextError(
+				"Credential snapshot is not the active generation",
+			);
+		}
+		assertFresh(snapshot);
+		return cached;
+	}
+
+	function credentialLease(
+		snapshot: CredentialSnapshot,
+		requested?: AbortSignal,
+	): CredentialLease {
+		const generation = activeGeneration(snapshot);
+		const deadline = new AbortController();
+		const leaseSignal = AbortSignal.any([
+			operationSignal(requested),
+			generation.retirement.signal,
+			deadline.signal,
+		]);
+		const expired = () =>
+			deadline.abort(
+				new ExecutionContextError(
+					"Credential lease expired; start a new explicit operation",
+				),
+			);
+		const validate = () => {
+			if (dependencies.now() >= generation.validUntil) expired();
+			leaseSignal.throwIfAborted();
+			activeGeneration(snapshot);
+		};
+		validate();
+		// This timer only cancels local use. It never authenticates or replays.
+		const timer = setTimeout(
+			expired,
+			Math.max(0, generation.validUntil - dependencies.now()),
+		);
+		const dispose = () => {
+			clearTimeout(timer);
+			leaseSignal.removeEventListener("abort", dispose);
+		};
+		leaseSignal.addEventListener("abort", dispose, { once: true });
+		return Object.freeze({ signal: leaseSignal, validate, dispose });
 	}
 
 	await checkedCredentials();
@@ -376,12 +472,18 @@ export async function createExecutionContext(
 						child.timeoutMs + 60_000
 					: value.sessionToken === undefined;
 			if (!enoughLifetime(snapshot))
-				snapshot = await checkedCredentials(currentSignal);
+				snapshot = await refreshCredentials(currentSignal);
 			if (!enoughLifetime(snapshot))
 				throw new ExecutionContextError(
 					"Credential lifetime cannot cover the bounded child timeout plus 60 seconds",
 				);
-			currentSignal.throwIfAborted();
+			// A child has its own validated timeout rather than the SDK lease ceiling,
+			// but an explicit/demand-driven refresh still retires its generation.
+			const childSignal = AbortSignal.any([
+				currentSignal,
+				activeGeneration(snapshot).retirement.signal,
+			]);
+			childSignal.throwIfAborted();
 			const env: NodeJS.ProcessEnv = {};
 			for (const [key, value] of Object.entries(child.env ?? process.env)) {
 				if (
@@ -430,10 +532,10 @@ export async function createExecutionContext(
 				CDK_DEFAULT_ACCOUNT: boundIdentity.accountId,
 				CDK_DEFAULT_REGION: region,
 			});
-			currentSignal.throwIfAborted();
+			childSignal.throwIfAborted();
 			return await abortable(
-				operation({ env: Object.freeze(env), signal: currentSignal }),
-				currentSignal,
+				operation({ env: Object.freeze(env), signal: childSignal }),
+				childSignal,
 			);
 		} finally {
 			clearTimeout(timer);
@@ -475,6 +577,7 @@ export async function createExecutionContext(
 							region,
 							signal: currentSignal,
 							checkedCredentials,
+							credentialLease,
 							onCredentialRefusal: (error) => refusal.abort(error),
 						},
 						currentSignal,
@@ -496,6 +599,8 @@ export async function createExecutionContext(
 		identity: boundIdentity,
 		signal,
 		checkedCredentials,
+		refreshCredentials,
+		credentialLease,
 		sdkConfig,
 		withChildEnvironment,
 		scanProject,

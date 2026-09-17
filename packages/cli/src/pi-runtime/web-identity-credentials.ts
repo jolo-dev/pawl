@@ -37,6 +37,8 @@ export function createWebIdentityRoleAssumer(
 		const client = new STSClient({
 			profile,
 			ignoreConfiguredEndpointUrls: true,
+			// Ambient signing preferences must not re-enter profile resolution.
+			authSchemePreference: ["noAuth"],
 			...(requestHandler ? { requestHandler } : {}),
 		});
 		try {

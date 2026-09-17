@@ -1,6 +1,6 @@
 // Offline child: every non-intercepted route is a bounded synthetic loopback responder.
 import assert from "node:assert/strict";
-import { writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { ListFunctionsCommand } from "@aws-sdk/client-lambda";
 import { fromIni } from "@aws-sdk/credential-providers";
@@ -69,7 +69,7 @@ try {
 	else if (!scenario.startsWith("shared"))
 		process.env.AWS_ENDPOINT_URL = endpoint;
 	if (scenario === "global-env") process.env.AWS_REGION = authRegion;
-	if (scenario === "global-no-ambient") {
+	if (scenario === "global-no-ambient" || scenario.includes("-auth-")) {
 		assert.equal(process.env.AWS_ACCESS_KEY_ID, undefined);
 		assert.equal(process.env.AWS_SECRET_ACCESS_KEY, undefined);
 		// Trap any accidental metadata fallback on loopback; no real metadata access.
@@ -106,6 +106,41 @@ try {
 	assert.equal(discardedHandlerCalls, 0);
 	assert.equal(unexpected, 0);
 	loopbackRequests = 0;
+	// Conflicts apply only to protected acquisition, never the positive control
+	// or downstream clients whose authentication policy is a separate concern.
+	const authPreference = scenario.includes("-auth-")
+		? scenario.endsWith("-first")
+			? "sigv4a, sigv4, noAuth"
+			: "sigv4a"
+		: undefined;
+	const configPath = join(home, "config");
+	const originalConfig = readFileSync(configPath, "utf8");
+	if (authPreference) {
+		if (scenario.includes("-auth-env-")) {
+			process.env.AWS_AUTH_SCHEME_PREFERENCE = authPreference;
+		} else {
+			writeFileSync(
+				configPath,
+				originalConfig.replace(
+					"[profile selected]\n",
+					`[profile selected]\nauth_scheme_preference = ${authPreference}\n`,
+				),
+			);
+		}
+	}
+	const assertAuthConflict = () => {
+		if (!authPreference) return;
+		if (scenario.includes("-auth-env-")) {
+			assert.equal(process.env.AWS_AUTH_SCHEME_PREFERENCE, authPreference);
+		} else {
+			assert.equal(process.env.AWS_AUTH_SCHEME_PREFERENCE, undefined);
+			assert.ok(
+				readFileSync(configPath, "utf8").includes(
+					`auth_scheme_preference = ${authPreference}\n`,
+				),
+			);
+		}
+	};
 	const endpoints: string[] = [];
 	let destroyed = 0;
 	let onDestroyed: () => void = () => {};
@@ -129,11 +164,20 @@ try {
 					const provider = fromIni(options);
 					return async () => {
 						acquisitions++;
-						return provider();
+						assertAuthConflict();
+						try {
+							return await provider();
+						} finally {
+							if (authPreference) {
+								delete process.env.AWS_AUTH_SCHEME_PREFERENCE;
+								writeFileSync(configPath, originalConfig);
+							}
+						}
 					};
 				},
 				webIdentityRequestHandler: {
 					async handle(request: HttpRequest, options?: HttpHandlerOptions) {
+						assertAuthConflict();
 						endpoints.push(request.hostname);
 						assert.equal(request.hostname, `sts.${authRegion}.amazonaws.com`);
 						assert.equal(request.headers.authorization, undefined); // anonymous operation: no recursive signing provider
@@ -169,11 +213,14 @@ try {
 						};
 					},
 					destroy() {
+						assertAuthConflict();
 						destroyed++;
 						onDestroyed();
 					},
 				},
 				identityClient(config) {
+					assert.equal(process.env.AWS_AUTH_SCHEME_PREFERENCE, undefined);
+					assert.equal(readFileSync(configPath, "utf8"), originalConfig);
 					identities++;
 					assert.equal(config.region, workRegion);
 					return createStsIdentityClient(config, {
@@ -242,6 +289,20 @@ try {
 	} finally {
 		clearTimeout(cleanupTimer);
 	}
+	if (caught && authPreference) {
+		console.error(
+			JSON.stringify({
+				phase: "protected-acquisition",
+				endpoints,
+				loopbackRequests,
+				unexpected,
+				acquisitions,
+				identities,
+				destroyed,
+				error: caught instanceof Error ? caught.message : "unknown",
+			}),
+		);
+	}
 	assert.equal(unexpected, 0);
 	assert.equal(acquisitions, 1);
 	assert.equal(destroyed, 1);
@@ -285,6 +346,9 @@ try {
 			endpoints,
 			destroyed,
 			acquisitions,
+			...(authPreference
+				? { authPreference, authPreferenceScope: "acquisition-only" }
+				: {}),
 			offline: true,
 		}),
 	);

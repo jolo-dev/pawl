@@ -25,10 +25,11 @@ export class WebIdentityCredentialError extends Error {
 }
 
 /** fromIni drops clientConfig on its token-file branch. Supply an actual isolated
- * STS operation instead. Native auth-region resolution uses AWS_REGION/profile;
- * absent both, refuse rather than invent the default helper's us-east-1 fallback. */
+ * STS operation pinned to the checked execution context's selected region,
+ * without environment/profile/default/metadata region discovery. */
 export function createWebIdentityRoleAssumer(
 	profile: string,
+	region: string,
 	signal: AbortSignal,
 	requestHandler?: STSClientConfig["requestHandler"],
 ): WebIdentityRoleAssumer {
@@ -36,6 +37,7 @@ export function createWebIdentityRoleAssumer(
 		signal.throwIfAborted();
 		const client = new STSClient({
 			profile,
+			region,
 			ignoreConfiguredEndpointUrls: true,
 			// Ambient signing preferences must not re-enter profile resolution.
 			authSchemePreference: ["noAuth"],

@@ -10,6 +10,7 @@ for (const scenario of [
 	"global-env",
 	"global-no-ambient",
 	"global-missing-region",
+	"global-metadata-region",
 	"global-malformed",
 	"global-error",
 	"global-cancel",
@@ -36,7 +37,9 @@ for (const scenario of [
 						AWS_CONFIG_FILE: join(home, "config"),
 						AWS_SHARED_CREDENTIALS_FILE: join(home, "credentials"),
 						AWS_PROFILE: "wrong",
-						AWS_EC2_METADATA_DISABLED: "true",
+						...(scenario === "global-metadata-region"
+							? {}
+							: { AWS_EC2_METADATA_DISABLED: "true" }),
 						...(scenario === "global-no-ambient" || scenario.includes("-auth-")
 							? {}
 							: {
@@ -60,6 +63,8 @@ for (const scenario of [
 				scenario,
 				positiveControlDisclosures: 1,
 				protectedDisclosures: 0,
+				protectedMetadataRequests: 0,
+				metadataControlRequests: scenario === "global-metadata-region" ? 2 : 0,
 				destroyed: 1,
 				acquisitions: 1,
 				offline: true,

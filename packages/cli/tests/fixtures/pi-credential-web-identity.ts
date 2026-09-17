@@ -3,6 +3,10 @@ import assert from "node:assert/strict";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { ListFunctionsCommand } from "@aws-sdk/client-lambda";
+import {
+	AssumeRoleWithWebIdentityCommand,
+	STSClient,
+} from "@aws-sdk/client-sts";
 import { fromIni } from "@aws-sdk/credential-providers";
 import {
 	type HttpHandlerOptions,
@@ -30,7 +34,10 @@ const role = `arn:aws:iam::${account}:role/WebFixture`;
 const token = "synthetic-web-identity-token";
 const workRegion = "eu-central-1";
 const profileRegion = "us-west-2";
-const authRegion = scenario === "global-env" ? "ap-southeast-2" : profileRegion;
+const authRegion = workRegion;
+const metadataRegion = "sa-east-1";
+const missingProfileRegion =
+	scenario === "global-missing-region" || scenario === "global-metadata-region";
 const expiration = new Date(Date.now() + 3_600_000).toISOString();
 const xml = (malformed = false) =>
 	`<AssumeRoleWithWebIdentityResponse xmlns="https://sts.amazonaws.com/doc/2011-06-15/"><AssumeRoleWithWebIdentityResult><Credentials><AccessKeyId>web-fixture-key</AccessKeyId>${malformed ? "" : "<SecretAccessKey>web-fixture-secret</SecretAccessKey>"}<SessionToken>web-fixture-session</SessionToken><Expiration>${expiration}</Expiration></Credentials><AssumedRoleUser><Arn>arn:aws:sts::${account}:assumed-role/WebFixture/session</Arn><AssumedRoleId>fixture</AssumedRoleId></AssumedRoleUser></AssumeRoleWithWebIdentityResult><ResponseMetadata><RequestId>fixture</RequestId></ResponseMetadata></AssumeRoleWithWebIdentityResponse>`;
@@ -42,13 +49,40 @@ function checkBody(body: string) {
 	assert.equal(params.get("RoleSessionName"), "profile-session");
 }
 let loopbackRequests = 0;
+let metadataRequests = 0;
+let metadataControlRequests = 0;
 let unexpected = 0;
 const server = Bun.serve({
 	hostname: "127.0.0.1",
 	port: 0,
 	async fetch(request) {
 		try {
-			assert.equal(new URL(request.url).pathname, "/");
+			const path = new URL(request.url).pathname;
+			if (
+				scenario === "global-metadata-region" &&
+				path === "/latest/api/token"
+			) {
+				assert.equal(request.method, "PUT");
+				assert.equal(
+					request.headers.get("x-aws-ec2-metadata-token-ttl-seconds"),
+					"21600",
+				);
+				metadataRequests++;
+				return new Response("synthetic-imds-token");
+			}
+			if (
+				scenario === "global-metadata-region" &&
+				path === "/latest/meta-data/placement/region"
+			) {
+				assert.equal(request.method, "GET");
+				assert.equal(
+					request.headers.get("x-aws-ec2-metadata-token"),
+					"synthetic-imds-token",
+				);
+				metadataRequests++;
+				return new Response(metadataRegion);
+			}
+			assert.equal(path, "/");
 			assert.equal(request.method, "POST");
 			assert.equal(request.headers.get("authorization"), null);
 			checkBody(await request.text());
@@ -68,7 +102,16 @@ try {
 		process.env.AWS_ENDPOINT_URL_STS = endpoint;
 	else if (!scenario.startsWith("shared"))
 		process.env.AWS_ENDPOINT_URL = endpoint;
-	if (scenario === "global-env") process.env.AWS_REGION = authRegion;
+	if (scenario === "global-env") {
+		process.env.AWS_REGION = "ap-southeast-2";
+		process.env.AWS_DEFAULT_REGION = "ca-central-1";
+	}
+	if (scenario === "global-metadata-region") {
+		assert.equal(process.env.AWS_EC2_METADATA_DISABLED, undefined);
+		assert.equal(process.env.AWS_REGION, undefined);
+		assert.equal(process.env.AWS_DEFAULT_REGION, undefined);
+		process.env.AWS_EC2_METADATA_SERVICE_ENDPOINT = endpoint;
+	}
 	if (scenario === "global-no-ambient" || scenario.includes("-auth-")) {
 		assert.equal(process.env.AWS_ACCESS_KEY_ID, undefined);
 		assert.equal(process.env.AWS_SECRET_ACCESS_KEY, undefined);
@@ -83,7 +126,7 @@ try {
 	writeFileSync(join(home, "credentials"), "", { mode: 0o600 });
 	writeFileSync(
 		join(home, "config"),
-		`[profile selected]\nrole_arn = ${role}\nweb_identity_token_file = ${join(home, "token")}\nrole_session_name = profile-session\n${scenario === "global-missing-region" ? "" : `region = ${profileRegion}\n`}${profileEndpoint}\n[profile wrong]\nregion = us-east-2\n${profileEndpoint}\n[default]\nregion = us-east-2\n${profileEndpoint}\n[services local]\nsts =\n  endpoint_url = ${endpoint}\n`,
+		`[profile selected]\nrole_arn = ${role}\nweb_identity_token_file = ${join(home, "token")}\nrole_session_name = profile-session\n${missingProfileRegion ? "" : `region = ${profileRegion}\n`}${profileEndpoint}\n[profile wrong]\nregion = us-east-2\n${profileEndpoint}\n[default]\nregion = us-east-2\n${profileEndpoint}\n[services local]\nsts =\n  endpoint_url = ${endpoint}\n`,
 		{ mode: 0o600 },
 	);
 	let discardedHandlerCalls = 0;
@@ -105,6 +148,49 @@ try {
 	assert.equal(loopbackRequests, 1);
 	assert.equal(discardedHandlerCalls, 0);
 	assert.equal(unexpected, 0);
+	assert.equal(metadataRequests, 0);
+	if (scenario === "global-metadata-region") {
+		// Actual SDK positive control: without an explicit region, the bounded
+		// fake IMDS supplies its conflicting region. Never contacts real IMDS.
+		let controlTransports = 0;
+		const control = new STSClient({
+			profile: "selected",
+			ignoreConfiguredEndpointUrls: true,
+			authSchemePreference: ["noAuth"],
+			requestHandler: {
+				async handle(request: HttpRequest) {
+					controlTransports++;
+					assert.equal(request.hostname, `sts.${metadataRegion}.amazonaws.com`);
+					assert.equal(request.headers.authorization, undefined);
+					if (typeof request.body !== "string")
+						throw new Error("unexpected control body");
+					checkBody(request.body);
+					return {
+						response: new HttpResponse({
+							statusCode: 200,
+							headers: { "content-type": "text/xml" },
+							body: new TextEncoder().encode(xml()),
+						}),
+					};
+				},
+			},
+		});
+		try {
+			await control.send(
+				new AssumeRoleWithWebIdentityCommand({
+					RoleArn: role,
+					RoleSessionName: "profile-session",
+					WebIdentityToken: token,
+				}),
+			);
+		} finally {
+			control.destroy();
+		}
+		assert.equal(controlTransports, 1);
+		assert.equal(metadataRequests, 2);
+		metadataControlRequests = metadataRequests;
+		metadataRequests = 0;
+	}
 	loopbackRequests = 0;
 	// Conflicts apply only to protected acquisition, never the positive control
 	// or downstream clients whose authentication policy is a separate concern.
@@ -304,31 +390,26 @@ try {
 		);
 	}
 	assert.equal(unexpected, 0);
+	assert.equal(
+		metadataRequests,
+		0,
+		"protected path must not discover its region through metadata",
+	);
 	assert.equal(acquisitions, 1);
 	assert.equal(destroyed, 1);
 	if (
-		[
-			"global-missing-region",
-			"global-malformed",
-			"global-error",
-			"global-cancel",
-		].includes(scenario)
+		["global-malformed", "global-error", "global-cancel"].includes(scenario)
 	) {
 		assert.ok(caught instanceof Error);
 		assert.equal(identities, 0);
 		const pattern =
-			scenario === "global-missing-region"
-				? /region/i
-				: scenario === "global-malformed"
-					? /invalid.*credentials/i
-					: scenario === "global-error"
-						? /transport refused/i
-						: /cancelled/i;
+			scenario === "global-malformed"
+				? /invalid.*credentials/i
+				: scenario === "global-error"
+					? /transport refused/i
+					: /cancelled/i;
 		assert.match(caught.message, pattern);
-		assert.equal(
-			endpoints.length,
-			scenario === "global-missing-region" ? 0 : 1,
-		);
+		assert.equal(endpoints.length, 1);
 	} else {
 		assert.equal(caught, undefined);
 		assert.equal(identities, 1);
@@ -343,6 +424,8 @@ try {
 			scenario,
 			positiveControlDisclosures: 1,
 			protectedDisclosures: loopbackRequests,
+			protectedMetadataRequests: metadataRequests,
+			metadataControlRequests,
 			endpoints,
 			destroyed,
 			acquisitions,

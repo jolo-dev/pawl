@@ -265,11 +265,12 @@ export async function createExecutionContext(
 	signal.throwIfAborted();
 	const resolveCredentials = dependencies.credentialsFromIni({
 		profile,
-		// Authentication regions belong to the selected profile (not the workload).
+		// Preserve ordinary profile/SSO regions; pin web identity explicitly below.
 		clientConfig: { ignoreConfiguredEndpointUrls: true },
 		ignoreCache: true,
 		roleAssumerWithWebIdentity: createWebIdentityRoleAssumer(
 			profile,
+			region,
 			signal,
 			dependencies.webIdentityRequestHandler,
 		),

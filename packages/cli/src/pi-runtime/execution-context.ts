@@ -24,6 +24,7 @@ import {
 	createCheckedScannerFactories,
 	type ProofScanRequestHandler,
 } from "./checked-scanners";
+import { createWebIdentityRoleAssumer } from "./web-identity-credentials";
 
 export class ExecutionContextError extends Error {
 	constructor(message: string) {
@@ -61,7 +62,10 @@ export interface ExecutionContextDependencies {
 		profile: string;
 		clientConfig: { ignoreConfiguredEndpointUrls: true };
 		ignoreCache: true;
+		roleAssumerWithWebIdentity: ReturnType<typeof createWebIdentityRoleAssumer>;
 	}): () => Promise<CredentialSnapshot>;
+	/** Offline fixture seam; never an endpoint override. */
+	webIdentityRequestHandler?: STSClientConfig["requestHandler"];
 	identityClient(config: { region: string; credentials: CredentialSnapshot }): {
 		identify(signal: AbortSignal): Promise<{ Account?: string; Arn?: string }>;
 		destroy(): void;
@@ -264,6 +268,11 @@ export async function createExecutionContext(
 		// Authentication regions belong to the selected profile (not the workload).
 		clientConfig: { ignoreConfiguredEndpointUrls: true },
 		ignoreCache: true,
+		roleAssumerWithWebIdentity: createWebIdentityRoleAssumer(
+			profile,
+			signal,
+			dependencies.webIdentityRequestHandler,
+		),
 	});
 	let identity: ExecutionIdentity | undefined;
 	let cached:

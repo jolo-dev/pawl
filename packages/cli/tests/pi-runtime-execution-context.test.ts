@@ -190,6 +190,7 @@ describe("createExecutionContext", () => {
 				profile: "selected",
 				clientConfig: { ignoreConfiguredEndpointUrls: true },
 				ignoreCache: true,
+				roleAssumerWithWebIdentity: expect.any(Function),
 			},
 		]);
 		expect(context.identity).toEqual({

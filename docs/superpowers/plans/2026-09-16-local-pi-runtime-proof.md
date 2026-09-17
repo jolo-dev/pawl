@@ -26,7 +26,7 @@
 
 Planning checkout: `/Users/jolo/Development/pawl`, local `main`, `1fba562802c7bb338ed3f9799dc8360c881fe38d`. Recheck at execution start. Existing dirty UI/model/pulse changes, package/lockfile `microsandbox` change and untracked local configuration are not part of this stage. Do not reset, stage, copy or commit them.
 
-All command blocks below run from the **feature worktree root**, unless explicitly marked otherwise. Prefix shell commands with `rtk`; use `rtk proxy` when raw output/exit semantics matter. Typecheck the CLI with `rtk proxy bun --cwd packages/cli run typecheck`, not a nonexistent root TypeScript project. Record stdout **and stderr**, plus exit codes; never interpret `|| true` as a passing check.
+All command blocks below run from the **feature worktree root**, unless explicitly marked otherwise. Prefix shell commands with `rtk`; use `rtk proxy` when raw output/exit semantics matter. Typecheck the CLI with `rtk proxy bun run --cwd packages/cli typecheck`, not a nonexistent root TypeScript project. Record stdout **and stderr**, plus exit codes; never interpret `|| true` as a passing check.
 
 ### File map and execution order
 
@@ -68,7 +68,7 @@ rtk proxy bun install --frozen-lockfile
 rtk proxy bun test packages/cli/tests > /tmp/pawl-pi-proof-clean-cli.log 2>&1
 rtk proxy bun test > /tmp/pawl-pi-proof-clean-root.log 2>&1
 rtk proxy bun lint > /tmp/pawl-pi-proof-clean-lint.log 2>&1
-rtk proxy bun --cwd packages/cli run typecheck > /tmp/pawl-pi-proof-clean-tsc.log 2>&1
+rtk proxy bun run --cwd packages/cli typecheck > /tmp/pawl-pi-proof-clean-tsc.log 2>&1
 rtk git status --short
 ```
 
@@ -343,7 +343,7 @@ Report only redacted identity metadata/model IDs/request-shape assertions and pa
 rtk proxy bun test packages/cli/tests > /tmp/pawl-pi-proof-final-cli.log 2>&1
 rtk proxy bun test > /tmp/pawl-pi-proof-final-root.log 2>&1
 rtk proxy bun lint > /tmp/pawl-pi-proof-final-lint.log 2>&1
-rtk proxy bun --cwd packages/cli run typecheck > /tmp/pawl-pi-proof-final-tsc.log 2>&1
+rtk proxy bun run --cwd packages/cli typecheck > /tmp/pawl-pi-proof-final-tsc.log 2>&1
 rtk git diff --check main...HEAD
 rtk git diff --check
 ```

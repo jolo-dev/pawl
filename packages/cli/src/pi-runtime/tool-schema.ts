@@ -41,6 +41,17 @@ function checkSchema(schema: z.core.$ZodType): void {
 			(check instanceof z.core.$ZodCheckMinLength ||
 				check instanceof z.core.$ZodCheckMaxLength ||
 				check instanceof z.core.$ZodCheckLengthEquals);
+		if (
+			nativeLength &&
+			!(
+				check instanceof z.core.$ZodCheckMinLength &&
+				(check._zod.def.minimum === 0 || check._zod.def.minimum === 1)
+			)
+		) {
+			throw new UnsupportedToolSchemaError(
+				"string length uses different Unicode units (Zod UTF-16 code units, Pi grapheme clusters); use unbounded strings or min(0)/min(1)",
+			);
+		}
 		const supported =
 			nativeLength ||
 			(schema instanceof z.ZodNumber &&
@@ -49,7 +60,7 @@ function checkSchema(schema: z.core.$ZodType): void {
 				constraint.check === "number_format" &&
 				"format" in constraint &&
 				constraint.format === "safeint");
-		// Zod installs `when` on native length checks. Public custom overrides
+		// Zod installs `when` on native minimum-length checks. Public custom overrides
 		// cannot be distinguished: they are outside this trusted, fixed registry's
 		// authoring contract. Pi still validates the advertised length constraint.
 		if (!supported || (constraint.when && !nativeLength)) {

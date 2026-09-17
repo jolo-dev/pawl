@@ -15,7 +15,11 @@ import { deployPreviewInputSchema } from "../agent/tools/deploy_preview";
 import { initProjectInputSchema } from "../agent/tools/init_project";
 import { scanResourcesInputSchema } from "../agent/tools/scan_resources";
 import { wellArchitectedInputSchema } from "../agent/tools/well_architected";
-import { definePawlTool, toolParameters } from "../src/pi-runtime/tool-schema";
+import {
+	definePawlTool,
+	toolParameters,
+	UnsupportedToolSchemaError,
+} from "../src/pi-runtime/tool-schema";
 
 const schema = z.object({
 	name: z.string().min(1).describe("Required project name"),
@@ -150,32 +154,76 @@ describe("Pi/Zod tool schema bridge", () => {
 		expect(preflight).toEqual([]);
 	});
 
+	test("rejects min(2) at registration because Zod accepts a single non-BMP emoji", () => {
+		const incompatible = z.object({ value: z.string().min(2) });
+		expect(incompatible.parse({ value: "😀" })).toEqual({ value: "😀" });
+		expect(() => toolParameters(incompatible)).toThrow(
+			UnsupportedToolSchemaError,
+		);
+		expect(() => recordingTool(incompatible)).toThrow(
+			/Unicode.*UTF-16.*grapheme.*min\(0\).*min\(1\)/,
+		);
+	});
+
 	test.each([
-		{ value: "ab", exact: "xy", valid: true },
-		{ value: "abcd", exact: "xy", valid: true },
-		{ value: "a", exact: "xy", valid: false },
-		{ value: "abcde", exact: "xy", valid: false },
-		{ value: "ab", exact: "x", valid: false },
-		{ value: "ab", exact: "xyz", valid: false },
-	])("preserves native min/max/exact-length constraints: %j", async ({
-		valid,
-		...raw
+		{ name: "min(-1)", value: z.string().min(-1) },
+		{ name: "min(0.5)", value: z.string().min(0.5) },
+		{ name: "min(3)", value: z.string().min(3) },
+		{ name: "max(0)", value: z.string().max(0) },
+		{ name: "max(1)", value: z.string().max(1) },
+		{ name: "max(2)", value: z.string().max(2) },
+		{ name: "length(0)", value: z.string().length(0) },
+		{ name: "length(1)", value: z.string().length(1) },
+		{ name: "length(2)", value: z.string().length(2) },
+	])("rejects unsupported string constraint $name before advertising it", ({
+		value,
 	}) => {
-		const bounded = z.object({
-			value: z.string().min(2).max(4),
-			exact: z.string().length(2),
-		});
-		const { tool, executed } = recordingTool(bounded);
+		const incompatible = z.object({ value });
+		expect(() => toolParameters(incompatible)).toThrow(
+			UnsupportedToolSchemaError,
+		);
+		expect(() => recordingTool(incompatible)).toThrow(
+			/Unicode.*UTF-16.*grapheme.*min\(0\).*min\(1\)/,
+		);
+	});
+
+	const unicodeInputs = ["😀", "e\u0301", "👩‍💻", "東京", "é", ""];
+	test.each(
+		unicodeInputs,
+	)("min(1) preserves Unicode input without normalization: %j", async (value) => {
+		const nonempty = z.object({ value: z.string().min(1) });
+		const raw = { value };
+		const valid = value !== "";
+		expect(nonempty.safeParse(raw).success).toBe(valid);
+		const { tool, executed } = recordingTool(nonempty);
 		expect(tool.parameters).toMatchObject({
-			properties: {
-				value: { type: "string", minLength: 2, maxLength: 4 },
-				exact: { type: "string", minLength: 2, maxLength: 2 },
-			},
+			properties: { value: { type: "string", minLength: 1 } },
 		});
 		const { result, preflight } = await runTool(tool, raw);
 		expect(result?.isError).toBe(!valid);
-		expect(executed).toEqual(valid ? [bounded.parse(raw)] : []);
+		expect(executed).toEqual(valid ? [raw] : []);
 		expect(preflight).toEqual(executed);
+	});
+
+	test.each([
+		{ name: "unbounded", value: z.string() },
+		{ name: "min(0)", value: z.string().min(0) },
+	])("$name strings accept Unicode and empty input unchanged", async ({
+		value,
+	}) => {
+		const inputSchema = z.object({ value });
+		const { tool, executed } = recordingTool(inputSchema);
+		expect(tool.parameters).toEqual(
+			z.toJSONSchema(inputSchema, { io: "input" }),
+		);
+		for (const value of unicodeInputs) {
+			const raw = { value };
+			expect(inputSchema.parse(raw)).toEqual(raw);
+			const { result, preflight } = await runTool(tool, raw);
+			expect(result?.isError).toBe(false);
+			expect(preflight).toEqual([raw]);
+		}
+		expect(executed).toEqual(unicodeInputs.map((value) => ({ value })));
 	});
 
 	test("a permissive custom native predicate cannot bypass Pi's advertised constraint", async () => {
@@ -185,7 +233,7 @@ describe("Pi/Zod tool schema bridge", () => {
 			value: z.string().check(
 				new z.core.$ZodCheckMinLength({
 					check: "min_length",
-					minimum: 2,
+					minimum: 1,
 					when: () => false,
 				}),
 			),
@@ -359,7 +407,7 @@ describe("Pi/Zod tool schema bridge", () => {
 				z.string().transform((value) => value),
 			),
 		}),
-		z.object({ value: z.string().min(2).default("") }),
+		z.object({ value: z.string().min(1).default("") }),
 		z.object({
 			value: z.object({ name: z.string() }).default(nonCanonicalDefault),
 		}),

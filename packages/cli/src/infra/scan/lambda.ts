@@ -23,7 +23,7 @@ const TAG_CONCURRENCY = 10;
 const RESOURCE_KIND = "AWS::Lambda::Function";
 
 async function readTags(
-	client: LambdaClient,
+	client: Pick<LambdaClient, "send">,
 	arn: string | undefined,
 ): Promise<Record<string, string | undefined>> {
 	if (!arn) return {};
@@ -36,7 +36,9 @@ async function readTags(
 	}
 }
 
-export function createLambdaScanner(client: LambdaClient): ResourceScanner {
+export function createLambdaScanner(
+	client: Pick<LambdaClient, "send">,
+): ResourceScanner {
 	return {
 		service: "lambda",
 		async scan(): Promise<DeployedResource[]> {

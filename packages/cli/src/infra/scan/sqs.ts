@@ -29,7 +29,9 @@ function queueNameFromUrl(url: string): string {
 	return segment ?? url;
 }
 
-export function createSqsScanner(client: SQSClient): ResourceScanner {
+export function createSqsScanner(
+	client: Pick<SQSClient, "send">,
+): ResourceScanner {
 	return {
 		service: "sqs",
 		async scan(): Promise<DeployedResource[]> {

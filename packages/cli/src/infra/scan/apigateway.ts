@@ -35,7 +35,7 @@ const v1Arn = (region: string, restApiId: string): string =>
 	`arn:aws:apigateway:${region}::/restapis/${restApiId}`;
 
 export function createApiGatewayScanner(
-	client: ApiGatewayV2Client,
+	client: Pick<ApiGatewayV2Client, "send">,
 	region: string,
 ): ResourceScanner {
 	return {
@@ -77,7 +77,7 @@ export function createApiGatewayScanner(
 }
 
 export function createApiGatewayV1Scanner(
-	client: RestApiClient,
+	client: Pick<RestApiClient, "send">,
 	region: string,
 ): ResourceScanner {
 	return {

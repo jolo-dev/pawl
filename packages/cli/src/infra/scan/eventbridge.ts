@@ -20,7 +20,7 @@ const TAG_CONCURRENCY = 10;
 const RESOURCE_KIND = "AWS::Events::EventBus";
 
 export function createEventBridgeScanner(
-	client: EventBridgeClient,
+	client: Pick<EventBridgeClient, "send">,
 ): ResourceScanner {
 	return {
 		service: "eventbridge",

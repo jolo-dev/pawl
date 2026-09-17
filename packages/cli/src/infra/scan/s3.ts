@@ -23,7 +23,9 @@ import type { ResourceScanner, ScannerFactory } from "./types";
 const TAG_CONCURRENCY = 10;
 const RESOURCE_KIND = "AWS::S3::Bucket";
 
-export function createS3Scanner(client: S3Client): ResourceScanner {
+export function createS3Scanner(
+	client: Pick<S3Client, "send">,
+): ResourceScanner {
 	return {
 		service: "s3",
 		async scan(): Promise<DeployedResource[]> {

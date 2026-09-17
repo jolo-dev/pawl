@@ -20,7 +20,7 @@ const TAG_CONCURRENCY = 10;
 const RESOURCE_KIND = "AWS::DynamoDB::Table";
 
 async function readTags(
-	client: DynamoDBClient,
+	client: Pick<DynamoDBClient, "send">,
 	arn: string | undefined,
 ): Promise<Record<string, string | undefined>> {
 	if (!arn) return {};
@@ -38,7 +38,9 @@ async function readTags(
 	}
 }
 
-export function createDynamoDbScanner(client: DynamoDBClient): ResourceScanner {
+export function createDynamoDbScanner(
+	client: Pick<DynamoDBClient, "send">,
+): ResourceScanner {
 	return {
 		service: "dynamodb",
 		async scan(): Promise<DeployedResource[]> {

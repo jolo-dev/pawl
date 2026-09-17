@@ -20,6 +20,11 @@ import {
 	runProjectScan,
 } from "../infra/project-scan";
 
+import {
+	createCheckedScannerFactories,
+	type ProofScanRequestHandler,
+} from "./checked-scanners";
+
 export class ExecutionContextError extends Error {
 	constructor(message: string) {
 		super(message);
@@ -217,7 +222,10 @@ export interface CheckedChildEnvironment {
 type CheckedScanOptions = Pick<
 	RunProjectScanOptions,
 	"exec" | "services" | "skipSynth" | "maxEntries" | "scannerFactories"
-> & { readonly signal?: AbortSignal };
+> & {
+	readonly signal?: AbortSignal;
+	readonly requestHandler?: ProofScanRequestHandler;
+};
 
 export async function createExecutionContext(
 	options: {
@@ -324,6 +332,8 @@ export async function createExecutionContext(
 		throw new ExecutionContextError("AWS identity was not established");
 	const boundIdentity: ExecutionIdentity = identity;
 
+	/** Credential/region configuration only. SDKs memoize this provider: use
+	 * the checked SDK executor/service facades for the per-command/per-attempt boundary. */
 	function sdkConfig(requested?: AbortSignal) {
 		return {
 			region,
@@ -436,7 +446,11 @@ export async function createExecutionContext(
 			throw new ExecutionContextError(
 				"A controlled scan executor must be injected",
 			);
-		const currentSignal = operationSignal(scan.signal);
+		const refusal = new AbortController();
+		const currentSignal = AbortSignal.any([
+			operationSignal(scan.signal),
+			refusal.signal,
+		]);
 		await checkedCredentials(currentSignal);
 		const result = await abortable(
 			runProjectScan({
@@ -454,7 +468,18 @@ export async function createExecutionContext(
 				services: scan.services,
 				skipSynth: scan.skipSynth,
 				maxEntries: scan.maxEntries,
-				scannerFactories: scan.scannerFactories,
+				scannerFactories:
+					scan.scannerFactories ??
+					createCheckedScannerFactories(
+						{
+							region,
+							signal: currentSignal,
+							checkedCredentials,
+							onCredentialRefusal: (error) => refusal.abort(error),
+						},
+						currentSignal,
+						scan.requestHandler,
+					),
 			}),
 			currentSignal,
 		);

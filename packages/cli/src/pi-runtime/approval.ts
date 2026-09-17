@@ -182,6 +182,11 @@ export class ApprovalBroker {
 							rejection("cancelled", "The parent run was cancelled"),
 						);
 					}
+					// Approvals expire with the parent run/context: outstanding
+					// un-consumed grants are revoked, mirroring restart().
+					for (const state of this.grants.values()) {
+						state.revoked = true;
+					}
 				};
 				this.parentSignal.addEventListener("abort", this.abortHandler, {
 					once: true,
@@ -333,7 +338,17 @@ export class ApprovalBroker {
 						ok: false,
 						reason: "revoked",
 						message:
-							"The approval was revoked by a session restart; it is never persisted",
+							"The approval grant is revoked (session restart or parent run cancellation); it is never persisted",
+					};
+				}
+				if (this.parentSignal?.aborted) {
+					// Fail closed even if the revoke pass has not observed this
+					// grant yet: approvals expire with the parent run/context.
+					return {
+						ok: false,
+						reason: "revoked",
+						message:
+							"The parent run/context is no longer active; the approval grant expired with it",
 					};
 				}
 				if (state.consumed) {

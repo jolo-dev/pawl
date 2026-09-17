@@ -235,6 +235,7 @@ export function createRuntimePolicy(
 	let modelCalls = 0;
 	let toolExecutions = 0;
 	let exhausted = false;
+	let storedRejection: PolicyRejection | undefined;
 	const cancellation = new AbortController();
 
 	const clearDeadline = dependencies.scheduleTimeout(() => {
@@ -247,10 +248,14 @@ export function createRuntimePolicy(
 	const exhaust = (rejection: PolicyRejection): PolicyDecision => {
 		if (!exhausted) {
 			exhausted = true;
+			storedRejection = rejection;
 			cancellation.abort(new PolicyExhaustedError(rejection));
 			options.onExhausted?.(rejection);
 		}
-		return { allowed: false, ...rejection };
+		// Cross-kind exhaustion: once any budget/deadline/context limit is spent,
+		// every further check refuses with the stored reason at the policy layer
+		// instead of relying on the shared aborted signal at the wiring layer.
+		return { allowed: false, ...(storedRejection ?? rejection) };
 	};
 
 	const deadlineRejection = (): PolicyRejection => ({
@@ -269,6 +274,9 @@ export function createRuntimePolicy(
 		remainingMs: () => Math.max(0, deadlineAt - dependencies.now()),
 
 		checkBeforeModel(input): PolicyDecision {
+			if (exhausted && storedRejection) {
+				return { allowed: false, ...storedRejection };
+			}
 			const model = modelSchema.safeParse(input.model);
 			if (!model.success) {
 				return exhaust({
@@ -308,6 +316,9 @@ export function createRuntimePolicy(
 		},
 
 		checkBeforeTool(toolName): PolicyDecision {
+			if (exhausted && storedRejection) {
+				return { allowed: false, ...storedRejection };
+			}
 			if (dependencies.now() >= deadlineAt) {
 				return exhaust(deadlineRejection());
 			}
@@ -363,8 +374,10 @@ export function truncateToolResult(text: string): TruncatedToolResult {
 		cut > 0 &&
 		(byteLength(text.slice(0, cut)) > budget ||
 			(() => {
-				const code = text.charCodeAt(cut - 1);
-				return code >= 0xdc00 && code <= 0xdfff; // never split a surrogate pair
+				// A low surrogate AT the cut means its high surrogate sits at
+				// cut-1: the pair would be split, so the cut moves back one.
+				const code = text.charCodeAt(cut);
+				return code >= 0xdc00 && code <= 0xdfff;
 			})())
 	) {
 		cut -= 1;

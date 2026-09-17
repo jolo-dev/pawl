@@ -324,6 +324,22 @@ describe("grant validation at the boundary", () => {
 		expect(broker.pendingCount).toBe(0);
 	});
 
+	test("a grant expires with the parent run/context when the run is cancelled", async () => {
+		const { broker, questions, run } = fixture();
+		const pending = broker.request(binding());
+		await broker.answer(approve(questions[0]?.requestId ?? ""));
+		const outcome = await pending;
+		if (!outcome.granted) throw new Error("expected approval");
+		// The parent run cancels while the executor waits (for example on the
+		// mutation permit); the un-consumed grant must not survive it.
+		run.abort();
+		expect(outcome.grant.consume(binding())).toEqual({
+			ok: false,
+			reason: "revoked",
+			message: expect.any(String),
+		});
+	});
+
 	test("a restart revokes outstanding grants and requests", async () => {
 		const { broker, questions } = fixture();
 		const pending = broker.request(binding());

@@ -317,6 +317,28 @@ describe("finite budgets shared across root and children", () => {
 		});
 		expect(policy.toolExecutionsUsed()).toBe(64);
 	});
+
+	test("after one budget exhausts, the other check refuses with the stored reason", () => {
+		const clock = fakeClock();
+		const policy = createRuntimePolicy({ dependencies: clock });
+		for (let i = 0; i < MAX_MODEL_CALLS_PER_PROMPT; i += 1) {
+			policy.checkBeforeModel({ model: MODEL, context: textContext("s", "m") });
+		}
+		const modelDecision = policy.checkBeforeModel({
+			model: MODEL,
+			context: textContext("s", "m"),
+		});
+		expect(modelDecision.allowed).toBe(false);
+		// Cross-kind: the tool check must also refuse, carrying the same stored
+		// rejection rather than reporting a fresh independent verdict.
+		const toolDecision = policy.checkBeforeTool("scan_resources");
+		expect(toolDecision).toEqual(modelDecision);
+		expect(policy.toolExecutionsUsed()).toBe(0);
+		// Timeout behavior is unchanged by exhaustion: they reflect the deadline,
+		// not the budget counters.
+		expect(policy.hostCommandTimeoutMs()).toBe(HOST_COMMAND_TIMEOUT_MS);
+		expect(policy.modelRequestTimeoutMs()).toBe(MODEL_REQUEST_TIMEOUT_MS);
+	});
 });
 
 describe("run deadline", () => {
@@ -463,5 +485,15 @@ describe("tool result truncation", () => {
 		).not.toThrow();
 		expect(result.text).toContain("truncated");
 		expect(result.text).toContain(String(result.totalBytes));
+		// The shown text ends on a complete code unit: no lone high surrogate at
+		// the cut and no replacement character introduced there.
+		const markerIndex = result.text.indexOf("\n[pawl:");
+		const shown = result.text.slice(
+			0,
+			markerIndex < 0 ? undefined : markerIndex,
+		);
+		const lastCode = shown.charCodeAt(shown.length - 1);
+		expect(lastCode >= 0xd800 && lastCode <= 0xdbff).toBe(false);
+		expect(shown).not.toContain("\uFFFD");
 	});
 });

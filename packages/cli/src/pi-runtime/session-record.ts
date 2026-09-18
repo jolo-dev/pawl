@@ -266,18 +266,31 @@ export interface ParsedSessionLog {
 /**
  * Parses a complete JSONL session log. One header line must come first; every
  * later terminated line must be a valid record with a monotonic sequence
- * starting at 1. A trailing unterminated line is treated as an uncommitted
- * tail and discarded; any terminated invalid record or sequence gap fails
- * closed. Error messages carry line numbers, never record contents.
+ * starting at 1. A terminated blank middle line is corruption and fails
+ * closed; trailing blank lines at EOF fall under the same conservative tail
+ * rule as an unterminated final line. Error messages carry line numbers,
+ * never record contents.
  */
 export function parseSessionLog(text: string): ParsedSessionLog {
 	const terminated = text.endsWith("\n");
-	const rawLines = text.split("\n").filter((line) => line.length > 0);
+	const rawLines = text.split("\n");
+	// Trailing blank lines at EOF are uncommitted tail remnants: drop them.
+	while (rawLines.length > 0 && rawLines[rawLines.length - 1] === "") {
+		rawLines.pop();
+	}
 	const tailDiscarded = !terminated && rawLines.length > 0;
 	const lines = tailDiscarded ? rawLines.slice(0, -1) : rawLines;
 	if (lines.length === 0) {
 		throw new SessionRecordError(
 			"Session log has no complete records; the format is unrecognized",
+		);
+	}
+	// A blank line in the middle is corruption (append writes never emit one);
+	// rawLines indices are preserved by the end-only pops, so numbering holds.
+	const blankIndex = lines.findIndex((line) => line.length === 0);
+	if (blankIndex >= 0) {
+		throw new SessionRecordError(
+			`Session log line ${blankIndex + 1} is blank; failing closed instead of discarding it`,
 		);
 	}
 	const header = parseHeader(lines[0] ?? "");

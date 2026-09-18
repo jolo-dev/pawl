@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
+import type { Stats } from "node:fs";
 import type { FileHandle } from "node:fs/promises";
-import { open, readFile, stat, unlink } from "node:fs/promises";
+import { lstat, open, readFile, truncate, unlink } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { z } from "zod";
 import {
@@ -47,6 +48,24 @@ import {
  * closed). Only a write/fsync failure advances the counter, and that failure
  * poisons the store, so an advanced sequence is always paired with a settled
  * (or failed) write, never silently skipped.
+ *
+ * Poison and concurrent appends: after a write/fsync failure the store is
+ * poisoned, but records already queued behind the failed one may still be
+ * persisted afterwards. The log can therefore contain records after a missing
+ * failed record — an operator-intervention gap: the failed outcome is
+ * unknown/interrupted, the caller must stop the run, and the gap must be
+ * reported, not silently healed.
+ *
+ * Reopen policy: an unterminated final line is an uncommitted tail. On reopen
+ * (while holding the exclusive lock) the store truncates the log to the last
+ * committed newline before opening append mode, so a new JSONL line can never
+ * concatenate onto partial tail bytes and corrupt the log. Read-only parsing
+ * still discards the tail conservatively without touching the file.
+ *
+ * Cleanup policy: every close() and every buildStore error path runs all
+ * cleanup best-effort (record handle, lock handle, lock release) before
+ * surfacing a typed SessionStoreError; a failed record close never leaves the
+ * lock behind.
  */
 
 export class SessionStoreError extends Error {}
@@ -222,7 +241,28 @@ async function buildStore(
 	const path = join(sessionsDirectory, sessionFileName(metadata.sessionId));
 	const lockPath = join(sessionsDirectory, lockFileName(metadata.sessionId));
 
-	if (create && (await exists(path))) {
+	// The record path is opened with flag "a", which follows a planted
+	// symlink; inspect it with lstat first (consistent with the shared
+	// helper's posture) and fail closed instead of redirecting session IO.
+	let existingRecord: Stats | undefined;
+	try {
+		existingRecord = await lstat(path);
+	} catch (error) {
+		if (
+			!(error instanceof Error && "code" in error && error.code === "ENOENT")
+		) {
+			throw new SessionStoreError(
+				`Cannot inspect the session record path at ${path}. Check permissions and the path before retrying.`,
+				{ cause: error },
+			);
+		}
+	}
+	if (existingRecord?.isSymbolicLink()) {
+		throw new SessionStoreError(
+			`Refusing symbolic link at ${path}. Remove or replace it with a project-local session record.`,
+		);
+	}
+	if (create && existingRecord) {
 		throw new SessionStoreError(
 			`Session ${metadata.sessionId} already exists at ${path}; reopen it instead of recreating it`,
 		);
@@ -250,11 +290,18 @@ async function buildStore(
 		);
 	}
 	const lockHandle = await openHandle(lockPath, "a", 0o600);
-	const lock = { ownerPid: process.pid, nonce: randomUUID(), createdAt: now() };
-	await lockHandle.appendLine(JSON.stringify(lock));
-	await lockHandle.sync();
-
+	// From here on, this store owns the lock: every error path below must
+	// release it and close every opened handle before surfacing.
+	let handle: SessionFileHandle | undefined;
 	try {
+		const lock = {
+			ownerPid: process.pid,
+			nonce: randomUUID(),
+			createdAt: now(),
+		};
+		await lockHandle.appendLine(JSON.stringify(lock));
+		await lockHandle.sync();
+
 		let header: SessionHeader;
 		let nextSeq: number;
 		if (create) {
@@ -270,9 +317,9 @@ async function buildStore(
 			};
 			nextSeq = 1;
 		} else {
-			let parsed: ReturnType<typeof parseSessionLog>;
+			let contents: string;
 			try {
-				parsed = parseSessionLog(await readFile(path, "utf8"));
+				contents = await readFile(path, "utf8");
 			} catch (error) {
 				if (
 					error instanceof Error &&
@@ -284,11 +331,24 @@ async function buildStore(
 						{ cause: error },
 					);
 				}
-				await releaseLock(lockPath);
-				await lockHandle.close();
 				throw error;
 			}
+			const parsed = parseSessionLog(contents);
 			header = parsed.header;
+			if (parsed.tailDiscarded) {
+				// An unterminated final line is an uncommitted tail. Truncate to
+				// the last committed newline (we hold the exclusive lock) so the
+				// next append cannot concatenate onto the partial bytes.
+				const committedLength = contents.lastIndexOf("\n") + 1;
+				try {
+					await truncate(path, committedLength);
+				} catch (error) {
+					throw new SessionStoreError(
+						`Cannot discard the uncommitted tail of ${path}. Stop all writers, then repair or remove the partial final line manually before reopening`,
+						{ cause: error },
+					);
+				}
+			}
 			const mismatches = [
 				header.projectPath !== metadata.projectPath ? "project" : undefined,
 				header.identity.accountId !== metadata.identity.accountId
@@ -299,8 +359,6 @@ async function buildStore(
 					: undefined,
 			].filter((value): value is string => value !== undefined);
 			if (mismatches.length > 0) {
-				await releaseLock(lockPath);
-				await lockHandle.close();
 				throw new SessionStoreError(
 					`Session ${metadata.sessionId} was recorded for a different ${mismatches.join(" and ")}. Explain the mismatch and start a new conversation instead of silently re-attaching the old one to a new target`,
 				);
@@ -308,10 +366,13 @@ async function buildStore(
 			nextSeq = parsed.records.length + 1;
 		}
 
-		const handle = await openHandle(path, "a", 0o600);
+		handle = await openHandle(path, "a", 0o600);
+		// A non-optional alias for the closures below (the cleanup path still
+		// observes the optional outer binding).
+		const recordHandle = handle;
 		if (create) {
-			await handle.appendLine(encodeHeaderLine(header));
-			await handle.sync();
+			await recordHandle.appendLine(encodeHeaderLine(header));
+			await recordHandle.sync();
 		}
 
 		let uncertain = false;
@@ -336,8 +397,8 @@ async function buildStore(
 			const line = encodeRecordLine({ ...record, seq } as SessionRecord);
 			nextSeq = seq + 1;
 			const run = tail.then(async () => {
-				await handle.appendLine(line);
-				await handle.sync();
+				await recordHandle.appendLine(line);
+				await recordHandle.sync();
 			});
 			// The queue keeps draining past a failed record; this caller still
 			// observes the failure and the store poisons itself.
@@ -399,27 +460,51 @@ async function buildStore(
 			close: async () => {
 				if (closed) return;
 				closed = true;
+				// All cleanup runs best-effort: a failed record close must never
+				// leave the lock behind or skip the remaining cleanup steps.
+				const failures: unknown[] = [];
 				try {
 					await tail;
 				} catch {
 					// Already-observed queue failures must not mask close().
 				}
-				await handle.close();
-				await lockHandle.close();
-				await releaseLock(lockPath);
+				try {
+					await recordHandle.close();
+				} catch (error) {
+					failures.push(error);
+				}
+				try {
+					await lockHandle.close();
+				} catch (error) {
+					failures.push(error);
+				}
+				try {
+					await releaseLock(lockPath);
+				} catch (error) {
+					failures.push(error);
+				}
+				if (failures.length > 0) {
+					const cause = failures[0];
+					throw new SessionStoreError(
+						`Closing the session at ${path} failed (${cause instanceof Error ? cause.message : String(cause)}). The lock was still released; check the session files before reopening`,
+						{ cause },
+					);
+				}
 			},
 		};
 	} catch (error) {
+		// Best-effort cleanup of every owned handle before releasing the lock;
+		// double closes and release failures are swallowed here because the
+		// original error is what must reach the caller.
+		for (const owned of [handle, lockHandle]) {
+			if (!owned) continue;
+			try {
+				await owned.close();
+			} catch {
+				// Already closed or failed: the lock release below still runs.
+			}
+		}
 		await releaseLock(lockPath);
 		throw error;
-	}
-}
-
-async function exists(path: string): Promise<boolean> {
-	try {
-		await stat(path);
-		return true;
-	} catch {
-		return false;
 	}
 }

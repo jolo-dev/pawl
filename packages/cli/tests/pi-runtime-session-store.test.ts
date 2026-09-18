@@ -8,6 +8,7 @@ import {
 	readdir,
 	readFile,
 	rm,
+	symlink,
 	unlink,
 	writeFile,
 } from "node:fs/promises";
@@ -31,6 +32,7 @@ import {
 	type SessionFileHandle,
 	type SessionMetadata,
 	type SessionStoreDependencies,
+	SessionStoreError,
 } from "../src/pi-runtime/session-store";
 
 async function realOpenHandle(
@@ -331,6 +333,22 @@ describe("session record codec", () => {
 		expect(parsed.records.map((record) => record.seq)).toEqual([1, 2, 3, 4, 5]);
 	});
 
+	test("a terminated blank middle line fails closed; trailing blank lines at EOF are conservative", () => {
+		const head = headerLine();
+		const record = encodeRecordLine(messageRecord(1, userMessage("x")));
+		try {
+			parseSessionLog(`${head}\n\n${record}\n`);
+			throw new Error("Expected blank middle line failure");
+		} catch (error) {
+			expect((error as Error).message).toMatch(/blank/i);
+			expect((error as Error).message).toContain("line 2");
+		}
+		// Trailing blank lines at EOF fall under the same conservative tail rule.
+		const ok = parseSessionLog(`${head}\n${record}\n\n`);
+		expect(ok.records).toHaveLength(1);
+		expect(ok.tailDiscarded).toBe(false);
+	});
+
 	test("toolIntentDigest is a sha256 hex digest over the stable-stringified arguments", () => {
 		const digest = toolIntentDigest({ region: "eu-central-1", depth: 2 });
 		expect(digest).toMatch(/^[0-9a-f]{64}$/);
@@ -557,6 +575,8 @@ describe("session store files and locking", () => {
 			if (!(failure instanceof Error)) throw new Error("Expected lock refusal");
 			expect(failure.message).toContain(lockPath);
 			expect(failure.message).toContain(String(process.pid));
+			// The lock file itself is private.
+			expect((await lstat(lockPath)).mode & 0o777).toBe(0o600);
 		} finally {
 			await store.close();
 		}
@@ -753,5 +773,111 @@ describe("session store files and locking", () => {
 		// No automatic retry: further persistence fails closed.
 		await expect(store.recordMessage(userMessage("never"))).rejects.toThrow();
 		await store.close();
+	});
+
+	test("reopening after a discarded tail truncates the uncommitted tail and stays parseable", async () => {
+		const store = await createSessionStore(metadata("tail"));
+		await store.recordMessage(userMessage("committed"));
+		await store.close();
+		// Simulate a crash mid-write: a partial, unterminated record line.
+		const file = join(sessions, "tail.jsonl");
+		await writeFile(file, '{"v":1,"kind":"mess', { flag: "a" });
+		// The reopen must not append onto the partial bytes: the new JSONL line
+		// would concatenate into a corrupt terminated middle line.
+		const reopened = await openSessionStore(metadata("tail"));
+		await reopened.recordMessage(userMessage("after crash"));
+		await reopened.close();
+		const parsed = await readSessionLog(file);
+		expect(parsed.tailDiscarded).toBe(false);
+		expect(
+			parsed.records.map((record) =>
+				record.kind === "message" && record.message.role === "user"
+					? record.message.content
+					: "",
+			),
+		).toEqual(["committed", "after crash"]);
+		// And the session remains openable.
+		const third = await openSessionStore(metadata("tail"));
+		await third.close();
+	});
+
+	test("a record-open failure after lock acquisition closes every opened handle", async () => {
+		const failRecordOpen = true;
+		const opened: string[] = [];
+		const closed: string[] = [];
+		await expect(
+			createSessionStore(metadata("leaked"), {
+				openHandle: async (path, flag, mode) => {
+					if (path.endsWith(".jsonl") && failRecordOpen) {
+						throw new Error("injected record-open failure");
+					}
+					const real = await realOpenHandle(path, flag, mode);
+					opened.push(path);
+					return {
+						appendLine: (line: string) => real.appendLine(line),
+						sync: () => real.sync(),
+						close: async () => {
+							closed.push(path);
+							await real.close();
+						},
+					};
+				},
+			}),
+		).rejects.toThrow(/injected record-open failure/i);
+		// The store must release the lock file and close every handle it opened.
+		expect(await readdir(sessions)).not.toContain("leaked.jsonl.lock");
+		expect(closed).toEqual(opened);
+		// The lock is gone: a healthy open of the same session succeeds.
+		const healthy = await createSessionStore(metadata("leaked"));
+		await healthy.close();
+	});
+
+	test("a record-close failure still releases the lock and throws typed SessionStoreError", async () => {
+		let failRecordClose = true;
+		const store = await createSessionStore(metadata("closefail"), {
+			openHandle: async (path, flag, mode) => {
+				const real = await realOpenHandle(path, flag, mode);
+				return {
+					appendLine: (line: string) => real.appendLine(line),
+					sync: () => real.sync(),
+					close: async () => {
+						if (path.endsWith(".jsonl") && failRecordClose) {
+							failRecordClose = false;
+							// Simulate a failure reported after the close attempt:
+							// release the real fd, then surface the error.
+							await real.close();
+							throw new Error("injected record-close failure");
+						}
+						await real.close();
+					},
+				};
+			},
+		});
+		const failure: unknown = await store.close().then(
+			() => null,
+			(value) => value,
+		);
+		if (!(failure instanceof Error)) throw new Error("Expected close failure");
+		expect(failure).toBeInstanceOf(SessionStoreError);
+		expect(failure.message).toContain(join(sessions, "closefail.jsonl"));
+		// Cleanup still ran: the lock is released and the session is reusable.
+		expect(await readdir(sessions)).not.toContain("closefail.jsonl.lock");
+		const healthy = await openSessionStore(metadata("closefail"));
+		await healthy.recordMessage(userMessage("usable again"));
+		await healthy.close();
+	});
+
+	test("refuses a symlinked session record file without following it", async () => {
+		await mkdir(sessions, { recursive: true });
+		await writeFile(join(root, "outside.jsonl"), "outside bytes");
+		await symlink(join(root, "outside.jsonl"), join(sessions, "sym.jsonl"));
+		await expect(createSessionStore(metadata("sym"))).rejects.toThrow(
+			/symbolic link/i,
+		);
+		// The link target is untouched and the lock is not left behind.
+		expect(await readFile(join(root, "outside.jsonl"), "utf8")).toBe(
+			"outside bytes",
+		);
+		expect(await readdir(sessions)).not.toContain("sym.jsonl.lock");
 	});
 });

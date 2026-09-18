@@ -131,6 +131,8 @@ export interface RuntimeRunContext {
 	readonly runId: string;
 	readonly broker: ApprovalBroker;
 	readonly policy: RuntimePolicy;
+	/** The run's abort signal; aborted on cancellation, disposal or exhaustion. */
+	readonly signal: AbortSignal;
 }
 
 export type AuthorizerFactory = (run: RuntimeRunContext) => ToolAuthorizer;
@@ -372,7 +374,12 @@ export function createPawlRuntimeConversation(
 				? {}
 				: { timeoutMs: options.approvalTimeoutMs }),
 		});
-		const authorizer = options.createAuthorizer({ runId, broker, policy });
+		const authorizer = options.createAuthorizer({
+			runId,
+			broker,
+			policy,
+			signal: abort.signal,
+		});
 		let resolveFinished: () => void = () => {};
 		const finished = new Promise<void>((resolve) => {
 			resolveFinished = resolve;

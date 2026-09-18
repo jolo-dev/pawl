@@ -913,6 +913,7 @@ describe("generate", () => {
 			runId: "run_probe",
 			broker: new ApprovalBroker({}),
 			policy: createRuntimePolicy(),
+			signal: new AbortController().signal,
 		});
 		for (const name of ["generate", "deploy_infra", "deploy_preview"]) {
 			const decision = await authorizer({

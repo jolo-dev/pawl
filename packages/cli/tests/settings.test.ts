@@ -252,8 +252,10 @@ describe("project settings loading", () => {
 	}
 });
 
+// The shared managed block from src/pawl-local-files.ts now covers settings,
+// sessions and artifacts with one deterministic final block.
 const ignoreBlock =
-	"# pawl local startup settings\n/settings.json\n/.settings-*.tmp\n";
+	"# pawl local private files (settings, sessions, artifacts)\n/settings.json\n/.settings-*.tmp\n/sessions/\n/.sessions-*.tmp\n/artifacts/\n/.artifacts-*.tmp\n";
 
 describe("project settings saving", () => {
 	let root: string;

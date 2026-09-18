@@ -1,15 +1,8 @@
 import { randomUUID } from "node:crypto";
-import {
-	appendFile,
-	lstat,
-	mkdir,
-	open,
-	readFile,
-	rename,
-	unlink,
-} from "node:fs/promises";
+import { lstat, mkdir, open, readFile, rename, unlink } from "node:fs/promises";
 import { resolve } from "node:path";
 import { z } from "zod";
+import { PawlLocalFilesError, protectPawlLocalFiles } from "./pawl-local-files";
 
 const plainString = (max: number) =>
 	z
@@ -86,33 +79,21 @@ async function checkPath(path: string, kind: "directory" | "file") {
 	return stat;
 }
 
-const ignoreBlock =
-	"# pawl local startup settings\n/settings.json\n/.settings-*.tmp";
-
+/**
+ * Ignore-rule protection delegates to the shared pawl local-files helper so
+ * settings, session and artifact writes manage one deterministic final block
+ * (see ./pawl-local-files) without alternating append churn. The version-1
+ * settings fields, error behavior and atomic save contract below are retained.
+ */
 async function protectSettings(directory: string) {
-	const path = resolve(directory, ".gitignore");
-	const stat = await checkPath(path, "file");
-	const contents = stat
-		? await filesystemOperation("read ignore rules", path, () =>
-				readFile(path, "utf8"),
-			)
-		: "";
-	const withoutFinalNewline = contents.endsWith("\n")
-		? contents.slice(0, -1)
-		: contents;
-	if (
-		withoutFinalNewline === ignoreBlock ||
-		withoutFinalNewline.endsWith(`\n${ignoreBlock}`)
-	) {
-		return;
+	try {
+		await protectPawlLocalFiles(directory);
+	} catch (error) {
+		if (error instanceof PawlLocalFilesError) {
+			throw new SettingsError(error.message, { cause: error });
+		}
+		throw error;
 	}
-	// Keep our rules last so existing negations cannot expose local settings.
-	const separator = contents && !contents.endsWith("\n") ? "\n" : "";
-	await filesystemOperation("append ignore rules", path, () =>
-		appendFile(path, `${separator}${ignoreBlock}\n`, {
-			flag: stat ? "a" : "wx",
-		}),
-	);
 }
 
 export function createProjectSettingsStore(

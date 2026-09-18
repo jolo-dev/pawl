@@ -415,3 +415,104 @@ describe("generation writes cannot bypass the gate", () => {
 		expect(writes).toEqual(["generate_project"]);
 	});
 });
+
+// ---- Task 11: the freeform ask() seam (additive; questions never grant) ---- //
+
+describe("freeform questions (ask seam)", () => {
+	test("a freeform question surfaces with empty options and resolves with the exact text", async () => {
+		const { broker, questions } = fixture();
+		const pending = broker.ask("Which region should I scan?");
+		expect(questions).toHaveLength(1);
+		expect(questions[0]?.prompt).toBe("Which region should I scan?");
+		expect(questions[0]?.options).toEqual([]);
+		await broker.answer({
+			requestId: questions[0]?.requestId ?? "",
+			choice: { kind: "text", value: "eu-central-1" },
+		});
+		expect(await pending).toEqual({ answered: true, text: "eu-central-1" });
+	});
+
+	test("an option answer to a freeform question is rejected, never a grant", async () => {
+		const { broker, questions } = fixture();
+		const pending = broker.ask("Continue?");
+		await expect(
+			broker.answer({
+				requestId: questions[0]?.requestId ?? "",
+				choice: { kind: "option", value: "approve" },
+			}),
+		).rejects.toThrow(/freeform/i);
+		// Still answerable with text; no grant exists to consume anywhere.
+		await broker.answer({
+			requestId: questions[0]?.requestId ?? "",
+			choice: { kind: "text", value: "yes" },
+		});
+		expect(await pending).toEqual({ answered: true, text: "yes" });
+	});
+
+	test("an unanswered freeform question expires without a grant", async () => {
+		const { broker, clock, questions } = fixture();
+		const pending = broker.ask("Hello?");
+		clock.advance(APPROVAL_TIMEOUT_MS);
+		expect(await pending).toEqual({
+			answered: false,
+			reason: "expired",
+			message: expect.any(String),
+		});
+		expect(questions).toHaveLength(1);
+	});
+
+	test("a parent run cancel settles a pending freeform question", async () => {
+		const { broker, run, questions } = fixture();
+		const pending = broker.ask("Hello?");
+		run.abort();
+		expect(await pending).toEqual({
+			answered: false,
+			reason: "cancelled",
+			message: expect.any(String),
+		});
+		expect(questions).toHaveLength(1);
+	});
+
+	test("a restart settles pending freeform questions without grants", async () => {
+		const { broker, questions } = fixture();
+		const pending = broker.ask("Hello?");
+		broker.restart();
+		expect(await pending).toEqual({
+			answered: false,
+			reason: "cancelled",
+			message: expect.any(String),
+		});
+		expect(questions).toHaveLength(1);
+	});
+
+	test("an already-aborted run never surfaces a freeform question", async () => {
+		const { broker, run, questions } = fixture();
+		run.abort();
+		const outcome = await broker.ask("Hello?");
+		expect(questions).toHaveLength(0);
+		expect(outcome).toEqual({
+			answered: false,
+			reason: "cancelled",
+			message: expect.any(String),
+		});
+	});
+
+	test("a freeform answer never reaches the grant/consume path", async () => {
+		const { broker, questions } = fixture();
+		const pendingApproval = broker.request(binding());
+		const pendingQuestion = broker.ask("Freeform?");
+		await broker.answer({
+			requestId: questions[1]?.requestId ?? "",
+			choice: { kind: "text", value: "the human's answer" },
+		});
+		expect(await pendingQuestion).toEqual({
+			answered: true,
+			text: "the human's answer",
+		});
+		// The approval is still pending and untouched by the question answer.
+		await broker.answer(approve(questions[0]?.requestId ?? ""));
+		const outcome = await pendingApproval;
+		if (!outcome.granted) throw new Error("expected approval");
+		expect(outcome.grant.consume(binding())).toEqual({ ok: true });
+	});
+});

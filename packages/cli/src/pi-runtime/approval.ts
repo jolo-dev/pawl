@@ -115,6 +115,18 @@ export type ApprovalOutcome =
 			readonly message: string;
 	  };
 
+/**
+ * Outcome of a freeform question (`ask`). A freeform question never grants:
+ * it resolves only with the human's exact text answer, or settles unanswered.
+ */
+export type FreeformQuestionOutcome =
+	| { readonly answered: true; readonly text: string }
+	| {
+			readonly answered: false;
+			readonly reason: "expired" | "cancelled";
+			readonly message: string;
+	  };
+
 export interface ApprovalBrokerOptions {
 	readonly now?: () => number;
 	readonly timeoutMs?: number;
@@ -135,9 +147,12 @@ interface GrantState {
 
 interface PendingRequest {
 	readonly requestId: string;
+	/** `approval` issues one-use grants; `freeform` never does (Task 11 ask seam). */
+	readonly kind: "approval" | "freeform";
+	/** Empty for freeform questions: they bind no approval digest. */
 	readonly digest: string;
 	readonly expiresAt: number;
-	readonly settle: (outcome: ApprovalOutcome) => void;
+	readonly settle: (outcome: ApprovalOutcome | FreeformQuestionOutcome) => void;
 	readonly clearTimer: () => void;
 }
 
@@ -179,7 +194,7 @@ export class ApprovalBroker {
 					for (const request of [...this.pending.values()]) {
 						this.settle(
 							request.requestId,
-							rejection("cancelled", "The parent run was cancelled"),
+							this.cancelledSettlement(request, "The parent run was cancelled"),
 						);
 					}
 					// Approvals expire with the parent run/context: outstanding
@@ -202,9 +217,19 @@ export class ApprovalBroker {
 
 	/**
 	 * Requests a fresh decision. Resolves with a one-use grant only after an
-	 * explicit approve answer; every other path fails closed.
+	 * explicit approve answer; every other path fails closed. A request on a
+	 * run/context that is already dead fails closed immediately: it never
+	 * surfaces a question and never yields a consumable grant.
 	 */
 	request(rawBinding: ApprovalBinding): Promise<ApprovalOutcome> {
+		if (this.restarted || this.parentSignal?.aborted) {
+			return Promise.resolve(
+				rejection(
+					"cancelled",
+					"The run/context is no longer active; a new approval must be requested in a live run",
+				),
+			);
+		}
 		const parsed = ApprovalBindingSchema.safeParse(rawBinding);
 		const serializable = (() => {
 			try {
@@ -257,9 +282,12 @@ export class ApprovalBroker {
 			}, this.timeoutMs);
 			this.pending.set(requestId, {
 				requestId,
+				kind: "approval",
 				digest,
 				expiresAt,
-				settle: resolve,
+				// The pending entry is created with kind "approval", so only
+				// approval outcomes are ever delivered to this resolver.
+				settle: (outcome) => resolve(outcome as ApprovalOutcome),
 				clearTimer,
 			});
 			this.onRequest({
@@ -267,6 +295,47 @@ export class ApprovalBroker {
 				prompt: `Allow ${binding.toolName} (${binding.toolCallId}) on ${binding.identity.accountId} in ${binding.identity.region}?`,
 				options: APPROVAL_QUESTION_OPTIONS,
 			});
+		});
+	}
+
+	/**
+	 * Surfaces a freeform question (no approve/deny options). It resolves only
+	 * with the human's exact text answer and NEVER issues a grant: questions do
+	 * not authorize anything. Option answers are rejected. Expiry, parent-run
+	 * cancellation and restart settle it without an answer, exactly like an
+	 * approval request, and nothing is persisted.
+	 */
+	ask(prompt: string): Promise<FreeformQuestionOutcome> {
+		if (this.restarted || this.parentSignal?.aborted) {
+			return Promise.resolve({
+				answered: false,
+				reason: "cancelled" as const,
+				message:
+					"The run/context is no longer active; the question was not surfaced",
+			});
+		}
+		this.counter += 1;
+		const requestId = `question_${this.counter}`;
+		const expiresAt = this.now() + this.timeoutMs;
+		return new Promise<FreeformQuestionOutcome>((resolve) => {
+			const clearTimer = this.scheduleTimeout(() => {
+				this.settle(requestId, {
+					answered: false,
+					reason: "expired",
+					message: "The question expired unanswered",
+				});
+			}, this.timeoutMs);
+			this.pending.set(requestId, {
+				requestId,
+				kind: "freeform",
+				digest: "",
+				expiresAt,
+				// The pending entry is created with kind "freeform", so only
+				// freeform outcomes are ever delivered to this resolver.
+				settle: (outcome) => resolve(outcome as FreeformQuestionOutcome),
+				clearTimer,
+			});
+			this.onRequest({ requestId, prompt, options: [] });
 		});
 	}
 
@@ -285,6 +354,20 @@ export class ApprovalBroker {
 			throw new Error(
 				`Approval request ${answer.requestId} is unknown, stale or already resolved`,
 			);
+		}
+		if (request.kind === "freeform") {
+			// A freeform question accepts only a text answer; an option answer is
+			// a visible rejection and can never mint a grant.
+			if (answer.choice.kind === "option") {
+				throw new Error(
+					`Request ${answer.requestId} is a freeform question; it accepts only a text answer`,
+				);
+			}
+			this.settle(request.requestId, {
+				answered: true,
+				text: answer.choice.value,
+			});
+			return;
 		}
 		if (answer.choice.kind === "option" && answer.choice.value === "approve") {
 			const state: GrantState = {
@@ -320,7 +403,7 @@ export class ApprovalBroker {
 		for (const request of [...this.pending.values()]) {
 			this.settle(
 				request.requestId,
-				rejection("cancelled", "The session restarted"),
+				this.cancelledSettlement(request, "The session restarted"),
 			);
 		}
 		for (const state of this.grants.values()) {
@@ -388,7 +471,20 @@ export class ApprovalBroker {
 		};
 	}
 
-	private settle(requestId: string, outcome: ApprovalOutcome): void {
+	/** The cancelled settlement shape depends on the pending request kind. */
+	private cancelledSettlement(
+		request: PendingRequest,
+		message: string,
+	): ApprovalOutcome | FreeformQuestionOutcome {
+		return request.kind === "freeform"
+			? { answered: false, reason: "cancelled" as const, message }
+			: rejection("cancelled", message);
+	}
+
+	private settle(
+		requestId: string,
+		outcome: ApprovalOutcome | FreeformQuestionOutcome,
+	): void {
 		const request = this.pending.get(requestId);
 		if (!request) return;
 		this.pending.delete(requestId);

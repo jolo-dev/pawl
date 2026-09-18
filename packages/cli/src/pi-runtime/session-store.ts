@@ -39,6 +39,14 @@ import {
  * Project path, account and region are immutable metadata: reopening a
  * session with different values is explained instead of silently re-attaching
  * the old conversation to a new target.
+ *
+ * Sequence policy: a record's sequence is assigned and the counter advances
+ * only after the record line encodes successfully. A record that fails schema
+ * validation is rejected before the counter moves, so a rejected append can
+ * never create a sequence gap (which would make every later reopen fail
+ * closed). Only a write/fsync failure advances the counter, and that failure
+ * poisons the store, so an advanced sequence is always paired with a settled
+ * (or failed) write, never silently skipped.
  */
 
 export class SessionStoreError extends Error {}
@@ -323,8 +331,10 @@ async function buildStore(
 					`The session store is uncertain after a failed write (${poisonReason}); further persistence is refused and nothing is retried automatically`,
 				);
 			}
-			const seq = nextSeq++;
+			// Encode first: a rejected record must not advance the sequence.
+			const seq = nextSeq;
 			const line = encodeRecordLine({ ...record, seq } as SessionRecord);
+			nextSeq = seq + 1;
 			const run = tail.then(async () => {
 				await handle.appendLine(line);
 				await handle.sync();

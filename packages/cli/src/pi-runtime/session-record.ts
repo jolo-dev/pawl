@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { z } from "zod";
 import { stableStringify } from "./approval";
 
@@ -247,9 +248,10 @@ export function encodeRecordLine(record: SessionRecord): string {
 	return JSON.stringify(parsed.data);
 }
 
-/** Digest over the canonical JSON of tool arguments (stable stringify). */
+/** SHA-256 hex digest over the canonical JSON of tool arguments (stable
+ * stringify). Matches the store's intent record schema `/^[0-9a-f]{64}$/`. */
 export function toolIntentDigest(input: unknown): string {
-	return stableStringify(input);
+	return createHash("sha256").update(stableStringify(input)).digest("hex");
 }
 
 // ---- Decoding (fail closed) ----

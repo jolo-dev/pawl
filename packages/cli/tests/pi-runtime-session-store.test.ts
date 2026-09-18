@@ -22,6 +22,7 @@ import {
 	recoverSessionContext,
 	SESSION_RECORD_VERSION,
 	type SessionRecord,
+	toolIntentDigest,
 } from "../src/pi-runtime/session-record";
 import {
 	createSessionStore,
@@ -329,6 +330,13 @@ describe("session record codec", () => {
 		const parsed = parseSessionLog(`${lines.join("\n")}\n`);
 		expect(parsed.records.map((record) => record.seq)).toEqual([1, 2, 3, 4, 5]);
 	});
+
+	test("toolIntentDigest is a sha256 hex digest over the stable-stringified arguments", () => {
+		const digest = toolIntentDigest({ region: "eu-central-1", depth: 2 });
+		expect(digest).toMatch(/^[0-9a-f]{64}$/);
+		// Deterministic over canonical JSON, independent of key order.
+		expect(toolIntentDigest({ depth: 2, region: "eu-central-1" })).toBe(digest);
+	});
 });
 
 describe("session record recovery", () => {
@@ -362,16 +370,8 @@ describe("session record recovery", () => {
 		];
 		const recovered = recoverSessionContext(records);
 		const modelContext = asMessages(recovered.modelContext);
-		expect(toolCallIds(modelContext)).toEqual([
-			"call-a",
-			"call-b",
-			"call-c",
-		]);
-		expect(toolResultIds(modelContext)).toEqual([
-			"call-a",
-			"call-b",
-			"call-c",
-		]);
+		expect(toolCallIds(modelContext)).toEqual(["call-a", "call-b", "call-c"]);
+		expect(toolResultIds(modelContext)).toEqual(["call-a", "call-b", "call-c"]);
 		const filled = modelContext.filter(
 			(message) =>
 				message.role === "toolResult" && message.toolCallId !== "call-a",
@@ -706,6 +706,39 @@ describe("session store files and locking", () => {
 			});
 		expect(executed).toBe(true);
 		await healthy.close();
+	});
+
+	test("toolIntentDigest round-trips through recordToolIntent", async () => {
+		const digest = toolIntentDigest({ region: "eu-central-1" });
+		const store = await createSessionStore(metadata("intent"));
+		await expect(
+			store.recordToolIntent({
+				toolCallId: "call-1",
+				toolName: "scan_resources",
+				digest,
+			}),
+		).resolves.toBeUndefined();
+		await store.close();
+		const parsed = await readSessionLog(join(sessions, "intent.jsonl"));
+		const intent = parsed.records.find(
+			(record) => record.kind === "tool_intent",
+		);
+		if (intent?.kind !== "tool_intent") throw new Error("Expected tool_intent");
+		expect(intent.digest).toBe(digest);
+	});
+
+	test("a rejected record never advances the sequence, so no silent gap can occur", async () => {
+		const store = await createSessionStore(metadata("gapless"));
+		await store.recordMessage(userMessage("first"));
+		await expect(store.recordMessage({ role: "nope" })).rejects.toThrow();
+		// The next valid record must take the freed sequence: no gap, or every
+		// future openSessionStore would fail closed and silently lose the session.
+		await store.recordMessage(userMessage("second"));
+		await store.close();
+		const reopened = await openSessionStore(metadata("gapless"));
+		const parsed = await readSessionLog(join(sessions, "gapless.jsonl"));
+		expect(parsed.records.map((record) => record.seq)).toEqual([1, 2]);
+		await reopened.close();
 	});
 
 	test("failed result persistence poisons the store and marks the outcome uncertain", async () => {

@@ -394,66 +394,69 @@ describe("router", () => {
 	test.each([
 		["merged", "RequestMerged"],
 		["closed", "RequestClosed"],
-	] as const)("routes a %s request through the production dispatcher without starting a pipeline", async (status, category) => {
-		const coordinationStore = new FakePipelineCoordinationStore();
-		await coordinationStore.registerJob(pendingPipelineJob("pending"));
-		await coordinationStore.registerJob({
-			...pendingPipelineJob("already-selected"),
-			callbackCandidate: {
+	] as const)(
+		"routes a %s request through the production dispatcher without starting a pipeline",
+		async (status, category) => {
+			const coordinationStore = new FakePipelineCoordinationStore();
+			await coordinationStore.registerJob(pendingPipelineJob("pending"));
+			await coordinationStore.registerJob({
+				...pendingPipelineJob("already-selected"),
+				callbackCandidate: {
+					status: "failure",
+					category: "ReviewBlocked",
+				},
+			});
+			await coordinationStore.registerJob({
+				...pendingPipelineJob("completing"),
+				state: "COMPLETING",
+				terminalIntent: {
+					status: "failure",
+					category: "ReviewFailed",
+				},
+				completionLeaseExpiresAt: "2026-01-01T00:10:00.000Z",
+			});
+			const sender = new IdempotentPipelineSender();
+			const reconciler = new RecordingReconciler();
+			const router = buildEventRouter({
+				stateStore: new InMemoryStateStore(),
+				lambda: new RecordingLambdaTransport(),
+				provider: fakeProvider,
+				reviewerFunctionName: "test-reviewer-function",
+				reviewerArn: "arn:aws:iam::123456789012:role/reviewer",
+				pipelineDispatcher: new PipelineReviewDispatcher({
+					pipelineName: "review-pipeline",
+					transport: new AwsCodePipelineTransport(sender),
+					store: coordinationStore,
+					reconciler,
+				}),
+			});
+
+			await router.routeCodeCommit(terminalRequestEvent(status));
+
+			expect(sender.starts).toHaveLength(0);
+			expect(coordinationStore.jobs.get("pending")?.callbackCandidate).toEqual({
+				status: "success",
+				category,
+			});
+			expect(
+				coordinationStore.jobs.get("already-selected")?.callbackCandidate,
+			).toEqual({
 				status: "failure",
 				category: "ReviewBlocked",
-			},
-		});
-		await coordinationStore.registerJob({
-			...pendingPipelineJob("completing"),
-			state: "COMPLETING",
-			terminalIntent: {
-				status: "failure",
-				category: "ReviewFailed",
-			},
-			completionLeaseExpiresAt: "2026-01-01T00:10:00.000Z",
-		});
-		const sender = new IdempotentPipelineSender();
-		const reconciler = new RecordingReconciler();
-		const router = buildEventRouter({
-			stateStore: new InMemoryStateStore(),
-			lambda: new RecordingLambdaTransport(),
-			provider: fakeProvider,
-			reviewerFunctionName: "test-reviewer-function",
-			reviewerArn: "arn:aws:iam::123456789012:role/reviewer",
-			pipelineDispatcher: new PipelineReviewDispatcher({
-				pipelineName: "review-pipeline",
-				transport: new AwsCodePipelineTransport(sender),
-				store: coordinationStore,
-				reconciler,
-			}),
-		});
-
-		await router.routeCodeCommit(terminalRequestEvent(status));
-
-		expect(sender.starts).toHaveLength(0);
-		expect(coordinationStore.jobs.get("pending")?.callbackCandidate).toEqual({
-			status: "success",
-			category,
-		});
-		expect(
-			coordinationStore.jobs.get("already-selected")?.callbackCandidate,
-		).toEqual({
-			status: "failure",
-			category: "ReviewBlocked",
-		});
-		expect(coordinationStore.jobs.get("completing")).toMatchObject({
-			state: "COMPLETING",
-			terminalIntent: {
-				status: "failure",
-				category: "ReviewFailed",
-			},
-		});
-		expect(
-			coordinationStore.jobs.get("completing")?.callbackCandidate,
-		).toBeUndefined();
-		expect(reconciler.count).toBe(1);
-	});
+			});
+			expect(coordinationStore.jobs.get("completing")).toMatchObject({
+				state: "COMPLETING",
+				terminalIntent: {
+					status: "failure",
+					category: "ReviewFailed",
+				},
+			});
+			expect(
+				coordinationStore.jobs.get("completing")?.callbackCandidate,
+			).toBeUndefined();
+			expect(reconciler.count).toBe(1);
+		},
+	);
 
 	test("drops reviewer-self comment events without invoking Lambda", async () => {
 		const store = new InMemoryStateStore();

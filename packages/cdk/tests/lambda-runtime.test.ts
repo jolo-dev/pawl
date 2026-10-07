@@ -74,15 +74,14 @@ describe("Lambda Node.js 24 runtime", () => {
 		expectNode24(stack);
 	});
 
-	test.each([
-		undefined,
-		"node22",
-		"node24",
-	] as const)("local functions inherit Node.js 24 with runtime hint %s", (runtime) => {
-		const stack = new LocalStack(createApp(), `LocalRuntime${runtime}`, {
-			lambdaDir: path.join(import.meta.dir, "lambda"),
-			runtime,
-		});
-		expectNode24(stack);
-	});
+	test.each([undefined, "node22", "node24"] as const)(
+		"local functions inherit Node.js 24 with runtime hint %s",
+		(runtime) => {
+			const stack = new LocalStack(createApp(), `LocalRuntime${runtime}`, {
+				lambdaDir: path.join(import.meta.dir, "lambda"),
+				runtime,
+			});
+			expectNode24(stack);
+		},
+	);
 });

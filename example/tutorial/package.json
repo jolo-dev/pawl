@@ -17,8 +17,8 @@
 	"devDependencies": {
 		"@pawl/cdk": "workspace:*",
 		"@pawl/lambda": "workspace:*",
-		"aws-cdk-local": "^2.18.0",
-		"tsx": "^4.19.2"
+		"aws-cdk-local": "^3.0.4",
+		"tsx": "^4.23.15"
 	},
 	"keywords": [],
 	"author": "",

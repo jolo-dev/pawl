@@ -795,24 +795,27 @@ describe("CodeBuildProject", () => {
 	test.each([
 		["a slash", "bad/team", "bar", "Build"],
 		["a prefix-inclusive overlength", "foo", "bar", "a".repeat(238)],
-	])("rejects a final project name containing %s before project creation", (_name, team, stage, id) => {
-		const app = createTestApp();
-		app.node.setContext("team", team);
-		app.node.setContext("stage", stage);
-		const stack = new Stack(app, "InvalidNameStack");
-		expect(
-			() =>
-				new CodeBuildProject(stack, id, {
-					repositoryName: "review-target",
-					networkPolicy: publicTestPolicy,
-				}),
-		).toThrow();
-		expect(
-			Object.keys(
-				Template.fromStack(stack).findResources("AWS::CodeBuild::Project"),
-			),
-		).toHaveLength(0);
-	});
+	])(
+		"rejects a final project name containing %s before project creation",
+		(_name, team, stage, id) => {
+			const app = createTestApp();
+			app.node.setContext("team", team);
+			app.node.setContext("stage", stage);
+			const stack = new Stack(app, "InvalidNameStack");
+			expect(
+				() =>
+					new CodeBuildProject(stack, id, {
+						repositoryName: "review-target",
+						networkPolicy: publicTestPolicy,
+					}),
+			).toThrow();
+			expect(
+				Object.keys(
+					Template.fromStack(stack).findResources("AWS::CodeBuild::Project"),
+				),
+			).toHaveLength(0);
+		},
+	);
 
 	test("exports a repository-free schema with secure defaults and supported retention values", () => {
 		const config = CodeBuildProjectConfigSchema.parse({

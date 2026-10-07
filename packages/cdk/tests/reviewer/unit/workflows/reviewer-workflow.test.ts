@@ -412,108 +412,111 @@ describe("ReviewerWorkflow", () => {
 		"listComments",
 		"listFindings",
 		"configLoader.load",
-	] as const)("attributes a %s load failure to the authoritative revision and cycle without exposing details", async (operation) => {
-		const reviewStore = createStore();
-		await seedRunning(reviewStore);
-		const original = {
-			message: `sensitive-${operation}-message`,
-			stack: `sensitive-${operation}-stack`,
-			secretModelOutput: `sensitive-${operation}-output`,
-		};
-		if (operation === "listFindings") {
-			reviewStore.listFindings = async () => {
-				throw original;
+	] as const)(
+		"attributes a %s load failure to the authoritative revision and cycle without exposing details",
+		async (operation) => {
+			const reviewStore = createStore();
+			await seedRunning(reviewStore);
+			const original = {
+				message: `sensitive-${operation}-message`,
+				stack: `sensitive-${operation}-stack`,
+				secretModelOutput: `sensitive-${operation}-output`,
 			};
-		}
-		const provider = {
-			...fakeProvider,
-			...(operation === "getDiff"
-				? {
-						getDiff: async () => {
-							throw original;
-						},
-					}
-				: {}),
-			...(operation === "listComments"
-				? {
-						listComments: async () => {
-							throw original;
-						},
-					}
-				: {}),
-		} as unknown as SourceControlProvider;
-		const configLoader =
-			operation === "configLoader.load"
-				? {
-						load: async () => {
-							throw original;
-						},
-					}
-				: new NoopRepositoryConfigLoader();
-		const pipelineStore = new FakePipelineCoordinationStore();
-		const observer = new PipelineReviewCycleObserver({
-			store: pipelineStore,
-			reconciler: { invoke: async () => {} },
-			clock: fixedClock,
-		});
-		const workflow = createWorkflow(reviewStore, observer, {
-			provider,
-			configLoader,
-		});
-		const stepNames: string[] = [];
-		const logEntries: Array<{
-			message: string;
-			data?: Record<string, unknown>;
-		}> = [];
-		const deterministicContext = {
-			step: async <T>(
-				name: string,
-				stepOperation: () => Promise<T>,
-			): Promise<T> => {
-				stepNames.push(name);
-				return stepOperation();
-			},
-		} as unknown as DurableContext;
+			if (operation === "listFindings") {
+				reviewStore.listFindings = async () => {
+					throw original;
+				};
+			}
+			const provider = {
+				...fakeProvider,
+				...(operation === "getDiff"
+					? {
+							getDiff: async () => {
+								throw original;
+							},
+						}
+					: {}),
+				...(operation === "listComments"
+					? {
+							listComments: async () => {
+								throw original;
+							},
+						}
+					: {}),
+			} as unknown as SourceControlProvider;
+			const configLoader =
+				operation === "configLoader.load"
+					? {
+							load: async () => {
+								throw original;
+							},
+						}
+					: new NoopRepositoryConfigLoader();
+			const pipelineStore = new FakePipelineCoordinationStore();
+			const observer = new PipelineReviewCycleObserver({
+				store: pipelineStore,
+				reconciler: { invoke: async () => {} },
+				clock: fixedClock,
+			});
+			const workflow = createWorkflow(reviewStore, observer, {
+				provider,
+				configLoader,
+			});
+			const stepNames: string[] = [];
+			const logEntries: Array<{
+				message: string;
+				data?: Record<string, unknown>;
+			}> = [];
+			const deterministicContext = {
+				step: async <T>(
+					name: string,
+					stepOperation: () => Promise<T>,
+				): Promise<T> => {
+					stepNames.push(name);
+					return stepOperation();
+				},
+			} as unknown as DurableContext;
 
-		const terminalFailure = await expectSanitizedTerminalFailure(
-			executeReviewerWorkflow(
-				{
-					...reviewerEvent(),
-					snapshot: {
-						...fakeReviewRequest,
-						sourceRevision: "stale-event-revision",
+			const terminalFailure = await expectSanitizedTerminalFailure(
+				executeReviewerWorkflow(
+					{
+						...reviewerEvent(),
+						snapshot: {
+							...fakeReviewRequest,
+							sourceRevision: "stale-event-revision",
+						},
 					},
-				},
-				deterministicContext,
-				{
-					info: (message, data) => logEntries.push({ message, data }),
-				},
-				{ workflow, cycleObserver: observer, clock: fixedClock },
-			),
-		);
-		expect(terminalFailure.stack).not.toContain(original.message);
+					deterministicContext,
+					{
+						info: (message, data) => logEntries.push({ message, data }),
+					},
+					{ workflow, cycleObserver: observer, clock: fixedClock },
+				),
+			);
+			expect(terminalFailure.stack).not.toContain(original.message);
 
-		expect(stepNames).toEqual(["load-snapshot", "record-cycle-failure"]);
-		expect([...pipelineStore.outcomes.values()]).toEqual([
-			{
-				request,
-				generation: 1,
-				sourceRevision: fakeReviewRequest.sourceRevision,
-				cycle: 1,
-				status: "failed",
-				checkStatus: "failed",
-				createdAt: "2026-01-01T00:00:00.000Z",
-			},
-		]);
-		const durableOutput = JSON.stringify({
-			outcomes: [...pipelineStore.outcomes.values()],
-			logEntries,
-		});
-		expect(durableOutput).not.toContain(original.message);
-		expect(durableOutput).not.toContain(original.stack);
-		expect(durableOutput).not.toContain(original.secretModelOutput);
-		expect(durableOutput).not.toContain("stale-event-revision");
-	});
+			expect(stepNames).toEqual(["load-snapshot", "record-cycle-failure"]);
+			expect([...pipelineStore.outcomes.values()]).toEqual([
+				{
+					request,
+					generation: 1,
+					sourceRevision: fakeReviewRequest.sourceRevision,
+					cycle: 1,
+					status: "failed",
+					checkStatus: "failed",
+					createdAt: "2026-01-01T00:00:00.000Z",
+				},
+			]);
+			const durableOutput = JSON.stringify({
+				outcomes: [...pipelineStore.outcomes.values()],
+				logEntries,
+			});
+			expect(durableOutput).not.toContain(original.message);
+			expect(durableOutput).not.toContain(original.stack);
+			expect(durableOutput).not.toContain(original.secretModelOutput);
+			expect(durableOutput).not.toContain("stale-event-revision");
+		},
+	);
 
 	test("the durable SDK exposes only the sanitized terminal failure while retaining authoritative metadata", async () => {
 		const reviewStore = createStore();
@@ -764,92 +767,92 @@ describe("ReviewerWorkflow", () => {
 		]);
 	});
 
-	test.each([
-		"registerCallback",
-		"callback logger",
-	] as const)("durable history sanitizes %s submitter errors and records current attribution", async (failureSource) => {
-		const reviewStore = createStore();
-		await seedRunning(reviewStore);
-		await reviewStore.claimEvents(request, 1);
-		const sensitiveFailure = Object.assign(
-			new Error(`LOCAL_${failureSource}_MESSAGE_SENTINEL`),
-			{
-				stack: `LOCAL_${failureSource}_STACK_SENTINEL`,
-				privateCallback: `LOCAL_${failureSource}_CUSTOM_SENTINEL`,
-			},
-		);
-		if (failureSource === "registerCallback") {
-			reviewStore.registerCallback = async () => {
-				throw sensitiveFailure;
-			};
-		}
-		const pipelineStore = new FakePipelineCoordinationStore();
-		const observer = new PipelineReviewCycleObserver({
-			store: pipelineStore,
-			reconciler: { invoke: async () => {} },
-			clock: fixedClock,
-		});
-		const workflow = createWorkflow(reviewStore, observer);
-		const callbackLogger = {
-			info: (message: string): void => {
-				if (
-					failureSource === "callback logger" &&
-					message === "registered callback"
-				) {
+	test.each(["registerCallback", "callback logger"] as const)(
+		"durable history sanitizes %s submitter errors and records current attribution",
+		async (failureSource) => {
+			const reviewStore = createStore();
+			await seedRunning(reviewStore);
+			await reviewStore.claimEvents(request, 1);
+			const sensitiveFailure = Object.assign(
+				new Error(`LOCAL_${failureSource}_MESSAGE_SENTINEL`),
+				{
+					stack: `LOCAL_${failureSource}_STACK_SENTINEL`,
+					privateCallback: `LOCAL_${failureSource}_CUSTOM_SENTINEL`,
+				},
+			);
+			if (failureSource === "registerCallback") {
+				reviewStore.registerCallback = async () => {
 					throw sensitiveFailure;
-				}
-			},
-		};
-		const handler = withDurableExecution<ReviewerEvent, void>(
-			async (event, context) =>
-				executeReviewerWorkflow(event, context, callbackLogger, {
-					workflow,
-					cycleObserver: observer,
-					clock: fixedClock,
-				}),
-		);
-		const runner = new LocalDurableTestRunner({ handlerFunction: handler });
+				};
+			}
+			const pipelineStore = new FakePipelineCoordinationStore();
+			const observer = new PipelineReviewCycleObserver({
+				store: pipelineStore,
+				reconciler: { invoke: async () => {} },
+				clock: fixedClock,
+			});
+			const workflow = createWorkflow(reviewStore, observer);
+			const callbackLogger = {
+				info: (message: string): void => {
+					if (
+						failureSource === "callback logger" &&
+						message === "registered callback"
+					) {
+						throw sensitiveFailure;
+					}
+				},
+			};
+			const handler = withDurableExecution<ReviewerEvent, void>(
+				async (event, context) =>
+					executeReviewerWorkflow(event, context, callbackLogger, {
+						workflow,
+						cycleObserver: observer,
+						clock: fixedClock,
+					}),
+			);
+			const runner = new LocalDurableTestRunner({ handlerFunction: handler });
 
-		const execution = await runner.run({ payload: reviewerEvent() });
+			const execution = await runner.run({ payload: reviewerEvent() });
 
-		expect(execution.getStatus()).toBe("FAILED");
-		expect([...pipelineStore.outcomes.values()]).toEqual([
-			{
-				request,
-				generation: 1,
-				sourceRevision: fakeReviewRequest.sourceRevision,
-				cycle: 1,
-				status: "failed",
-				checkStatus: "failed",
-				createdAt: "2026-01-01T00:00:00.000Z",
-			},
-		]);
-		expect(
-			execution
-				.getOperations()
-				.map((operation) => operation.getName())
-				.filter((name) => name !== undefined),
-		).toEqual([
-			"load-snapshot",
-			"begin-cycle",
-			"claim-events",
-			"wait-for-next-event",
-			"record-cycle-failure",
-		]);
-		expect(
-			runner.getOperation("wait-for-next-event").getCallbackDetails()
-				?.callbackId,
-		).toBeString();
-		const surfaces = inspectDurableSurfaces(execution);
-		expectFixedSafeExecutionError(surfaces.error);
-		expectSecretsAbsent(surfaces.serialized, [
-			sensitiveFailure.message,
-			sensitiveFailure.stack ?? "",
-			sensitiveFailure.privateCallback,
-		]);
-		expect(surfaces.serialized).toContain(callbackSubmitterFailureName);
-		expect(surfaces.serialized).toContain(callbackSubmitterFailureMessage);
-	});
+			expect(execution.getStatus()).toBe("FAILED");
+			expect([...pipelineStore.outcomes.values()]).toEqual([
+				{
+					request,
+					generation: 1,
+					sourceRevision: fakeReviewRequest.sourceRevision,
+					cycle: 1,
+					status: "failed",
+					checkStatus: "failed",
+					createdAt: "2026-01-01T00:00:00.000Z",
+				},
+			]);
+			expect(
+				execution
+					.getOperations()
+					.map((operation) => operation.getName())
+					.filter((name) => name !== undefined),
+			).toEqual([
+				"load-snapshot",
+				"begin-cycle",
+				"claim-events",
+				"wait-for-next-event",
+				"record-cycle-failure",
+			]);
+			expect(
+				runner.getOperation("wait-for-next-event").getCallbackDetails()
+					?.callbackId,
+			).toBeString();
+			const surfaces = inspectDurableSurfaces(execution);
+			expectFixedSafeExecutionError(surfaces.error);
+			expectSecretsAbsent(surfaces.serialized, [
+				sensitiveFailure.message,
+				sensitiveFailure.stack ?? "",
+				sensitiveFailure.privateCallback,
+			]);
+			expect(surfaces.serialized).toContain(callbackSubmitterFailureName);
+			expect(surfaces.serialized).toContain(callbackSubmitterFailureMessage);
+		},
+	);
 
 	test("replayed successful load attributes a downstream failure marker and outcome to its cached snapshot", async () => {
 		const reviewStore = createStore();

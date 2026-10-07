@@ -1,5 +1,5 @@
 import { intro, log, outro, select, spinner, text } from "@clack/prompts";
-import { getModels } from "@earendil-works/pi-ai";
+import { ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { parseKnownFiles } from "@smithy/core/config";
 import {
 	checkBedrockAccess,
@@ -121,7 +121,8 @@ if (valid) {
 process.env.AWS_PROFILE = profile;
 
 // 3. Select model — provider → model → scope → region
-const allModels = getModels("amazon-bedrock");
+const modelRuntime = await ModelRuntime.create();
+const allModels = modelRuntime.getModels("amazon-bedrock");
 
 // Group models by base name: strip us./eu./global. prefix to find variants
 type Scope = "us" | "eu" | "global" | "amazon" | "base";

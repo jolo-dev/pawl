@@ -28,17 +28,16 @@ describe("createFindingFingerprint", () => {
 		);
 	});
 
-	it.each([
-		"provider",
-		"repository",
-		"requestId",
-	] as const)("preserves case distinctions in opaque %s identifiers", (field) => {
-		expect(
-			createFindingFingerprint({ ...input, [field]: "case-sensitive" }),
-		).not.toBe(
-			createFindingFingerprint({ ...input, [field]: "CASE-SENSITIVE" }),
-		);
-	});
+	it.each(["provider", "repository", "requestId"] as const)(
+		"preserves case distinctions in opaque %s identifiers",
+		(field) => {
+			expect(
+				createFindingFingerprint({ ...input, [field]: "case-sensitive" }),
+			).not.toBe(
+				createFindingFingerprint({ ...input, [field]: "CASE-SENSITIVE" }),
+			);
+		},
+	);
 
 	it("preserves code-significant whitespace", () => {
 		expect(

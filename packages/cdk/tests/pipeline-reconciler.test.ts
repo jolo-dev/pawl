@@ -292,77 +292,82 @@ describe("DynamoDbPipelineCoordinationStore", () => {
 			{ status: "failure", category: "Superseded" } as const,
 			"callbackCandidate = :callbackCandidate",
 		],
-	] as const)("atomically claims a fully identified snapshot with candidate %s", async (callbackCandidate, candidateCondition) => {
-		const transport = new RecordingTransport();
-		const store = createStore(transport);
-		const observedJob = { ...job, callbackCandidate };
-		const intent =
-			callbackCandidate ??
-			({ status: "failure", category: "TimedOut" } as const);
+	] as const)(
+		"atomically claims a fully identified snapshot with candidate %s",
+		async (callbackCandidate, candidateCondition) => {
+			const transport = new RecordingTransport();
+			const store = createStore(transport);
+			const observedJob = { ...job, callbackCandidate };
+			const intent =
+				callbackCandidate ??
+				({ status: "failure", category: "TimedOut" } as const);
 
-		await expect(
-			store.claimCompletion({
-				observedJob,
-				outcomeObservation: { status: "absent" },
-				terminalRequestObservation: { status: "absent" },
-				authoritativeRevisionObservation: { status: "absent" },
-				intent,
-				leaseExpiresAt: "2026-07-29T12:02:00.000Z",
+			await expect(
+				store.claimCompletion({
+					observedJob,
+					outcomeObservation: { status: "absent" },
+					terminalRequestObservation: { status: "absent" },
+					authoritativeRevisionObservation: { status: "absent" },
+					intent,
+					leaseExpiresAt: "2026-07-29T12:02:00.000Z",
+					nextActionAt: "2026-07-29T12:02:00.000Z",
+				}),
+			).resolves.toEqual({
+				...observedJob,
+				state: "COMPLETING",
+				terminalIntent: intent,
+				completionLeaseExpiresAt: "2026-07-29T12:02:00.000Z",
 				nextActionAt: "2026-07-29T12:02:00.000Z",
-			}),
-		).resolves.toEqual({
-			...observedJob,
-			state: "COMPLETING",
-			terminalIntent: intent,
-			completionLeaseExpiresAt: "2026-07-29T12:02:00.000Z",
-			nextActionAt: "2026-07-29T12:02:00.000Z",
-		});
+			});
 
-		const command = transport.commands[0];
-		expect(command).toBeInstanceOf(TransactWriteCommand);
-		if (!(command instanceof TransactWriteCommand)) return;
-		expect(command.input.TransactItems).toHaveLength(4);
-		const [update, outcomeCheck, terminalCheck, markerCheck] =
-			command.input.TransactItems ?? [];
-		expect(update?.Update?.Key).toEqual({
-			pk: "PIPELINE_JOB#job-1",
-			sk: "META",
-		});
-		expect(update?.Update?.ConditionExpression).toContain(
-			"#state = :pending AND attribute_not_exists(terminalIntent)",
-		);
-		expect(update?.Update?.ConditionExpression).toContain(candidateCondition);
-		expect(update?.Update?.ExpressionAttributeValues).toMatchObject({
-			":pending": "PENDING",
-			":completing": "COMPLETING",
-			":intent": intent,
-			...(callbackCandidate ? { ":callbackCandidate": callbackCandidate } : {}),
-		});
-		expect(outcomeCheck?.ConditionCheck).toEqual({
-			TableName: "state",
-			Key: {
-				pk: "REVIEW_OUTCOME#codecommit#orders#42#GEN#3",
-				sk: `REVISION#${job.sourceRevision}`,
-			},
-			ConditionExpression: "attribute_not_exists(pk)",
-		});
-		expect(terminalCheck?.ConditionCheck).toEqual({
-			TableName: "state",
-			Key: {
-				pk: "TERMINAL_REQUEST#codecommit#orders#42#GEN#3",
+			const command = transport.commands[0];
+			expect(command).toBeInstanceOf(TransactWriteCommand);
+			if (!(command instanceof TransactWriteCommand)) return;
+			expect(command.input.TransactItems).toHaveLength(4);
+			const [update, outcomeCheck, terminalCheck, markerCheck] =
+				command.input.TransactItems ?? [];
+			expect(update?.Update?.Key).toEqual({
+				pk: "PIPELINE_JOB#job-1",
 				sk: "META",
-			},
-			ConditionExpression: "attribute_not_exists(pk)",
-		});
-		expect(markerCheck?.ConditionCheck).toEqual({
-			TableName: "state",
-			Key: {
-				pk: "AUTHORITATIVE_REVISION#codecommit#orders#42#GEN#3",
-				sk: "META",
-			},
-			ConditionExpression: "attribute_not_exists(pk)",
-		});
-	});
+			});
+			expect(update?.Update?.ConditionExpression).toContain(
+				"#state = :pending AND attribute_not_exists(terminalIntent)",
+			);
+			expect(update?.Update?.ConditionExpression).toContain(candidateCondition);
+			expect(update?.Update?.ExpressionAttributeValues).toMatchObject({
+				":pending": "PENDING",
+				":completing": "COMPLETING",
+				":intent": intent,
+				...(callbackCandidate
+					? { ":callbackCandidate": callbackCandidate }
+					: {}),
+			});
+			expect(outcomeCheck?.ConditionCheck).toEqual({
+				TableName: "state",
+				Key: {
+					pk: "REVIEW_OUTCOME#codecommit#orders#42#GEN#3",
+					sk: `REVISION#${job.sourceRevision}`,
+				},
+				ConditionExpression: "attribute_not_exists(pk)",
+			});
+			expect(terminalCheck?.ConditionCheck).toEqual({
+				TableName: "state",
+				Key: {
+					pk: "TERMINAL_REQUEST#codecommit#orders#42#GEN#3",
+					sk: "META",
+				},
+				ConditionExpression: "attribute_not_exists(pk)",
+			});
+			expect(markerCheck?.ConditionCheck).toEqual({
+				TableName: "state",
+				Key: {
+					pk: "AUTHORITATIVE_REVISION#codecommit#orders#42#GEN#3",
+					sk: "META",
+				},
+				ConditionExpression: "attribute_not_exists(pk)",
+			});
+		},
+	);
 
 	test("checks observed present immutable signals by exact keys", async () => {
 		const transport = new RecordingTransport();
@@ -437,47 +442,50 @@ describe("DynamoDbPipelineCoordinationStore", () => {
 			"attribute_not_exists(pk)",
 			"attribute_exists(pk)",
 		],
-	] as const)("builds independent transaction checks for %s", async (_description, outcomePresent, terminalPresent, outcomeCondition, terminalCondition) => {
-		const transport = new RecordingTransport();
-		const store = createStore(transport);
-		const outcome = {
-			request,
-			generation: 3,
-			sourceRevision: job.sourceRevision,
-			status: "reviewed",
-			checkStatus: "completed",
-		} as const;
-		const terminal = {
-			request,
-			generation: 3,
-			status: "closed",
-			occurredAt: now,
-		} as const;
+	] as const)(
+		"builds independent transaction checks for %s",
+		async (_description, outcomePresent, terminalPresent, outcomeCondition, terminalCondition) => {
+			const transport = new RecordingTransport();
+			const store = createStore(transport);
+			const outcome = {
+				request,
+				generation: 3,
+				sourceRevision: job.sourceRevision,
+				status: "reviewed",
+				checkStatus: "completed",
+			} as const;
+			const terminal = {
+				request,
+				generation: 3,
+				status: "closed",
+				occurredAt: now,
+			} as const;
 
-		await store.claimCompletion({
-			observedJob: job,
-			outcomeObservation: outcomePresent
-				? { status: "present", value: outcome }
-				: { status: "absent" },
-			terminalRequestObservation: terminalPresent
-				? { status: "present", value: terminal }
-				: { status: "absent" },
-			authoritativeRevisionObservation: { status: "absent" },
-			intent: { status: "success", category: "ReviewSucceeded" },
-			leaseExpiresAt: "2026-07-29T12:02:00.000Z",
-			nextActionAt: "2026-07-29T12:02:00.000Z",
-		});
+			await store.claimCompletion({
+				observedJob: job,
+				outcomeObservation: outcomePresent
+					? { status: "present", value: outcome }
+					: { status: "absent" },
+				terminalRequestObservation: terminalPresent
+					? { status: "present", value: terminal }
+					: { status: "absent" },
+				authoritativeRevisionObservation: { status: "absent" },
+				intent: { status: "success", category: "ReviewSucceeded" },
+				leaseExpiresAt: "2026-07-29T12:02:00.000Z",
+				nextActionAt: "2026-07-29T12:02:00.000Z",
+			});
 
-		const command = transport.commands[0];
-		expect(command).toBeInstanceOf(TransactWriteCommand);
-		if (!(command instanceof TransactWriteCommand)) return;
-		expect(
-			command.input.TransactItems?.[1]?.ConditionCheck?.ConditionExpression,
-		).toBe(outcomeCondition);
-		expect(
-			command.input.TransactItems?.[2]?.ConditionCheck?.ConditionExpression,
-		).toBe(terminalCondition);
-	});
+			const command = transport.commands[0];
+			expect(command).toBeInstanceOf(TransactWriteCommand);
+			if (!(command instanceof TransactWriteCommand)) return;
+			expect(
+				command.input.TransactItems?.[1]?.ConditionCheck?.ConditionExpression,
+			).toBe(outcomeCondition);
+			expect(
+				command.input.TransactItems?.[2]?.ConditionCheck?.ConditionExpression,
+			).toBe(terminalCondition);
+		},
+	);
 
 	test("uses a candidate-CAS update only for explicit unidentified configuration errors", async () => {
 		const transport = new RecordingTransport();

@@ -99,7 +99,10 @@ export async function ssoLogin(profile: string): Promise<void> {
 	);
 
 	console.log(`Opening browser for SSO login:\n${verificationUriComplete}`);
-	await $`open ${verificationUriComplete ?? ""}`.quiet();
+	const browser = Bun.which("open", { PATH: process.env.PATH });
+	if (!browser)
+		throw new Error("Browser opener 'open' is not available on PATH");
+	await $`${browser} ${verificationUriComplete ?? ""}`.env(process.env).quiet();
 
 	const pollMs = (interval ?? 5) * 1000;
 	let token: CreateTokenCommandOutput | undefined;

@@ -74,7 +74,7 @@ export async function buildTemplateFiles(
 			: `"dev": "AWS_PROFILE=${config.awsProfile} ${getPackageManagerExec(config.packageManager)} cdk watch"`,
 		localstackScripts: isLocalstack ? getLocalstackScripts(config) : "",
 		tsxDevDependency:
-			config.packageManager === "bun" ? "" : ',\n\t\t"tsx": "^4.19.2"',
+			config.packageManager === "bun" ? "" : ',\n\t\t"tsx": "^4.23.15"',
 		localstackDevDeps: isLocalstack ? getLocalstackDependencies() : "",
 		localstackSection: isLocalstack ? getLocalstackReadmeSection() : "",
 	};

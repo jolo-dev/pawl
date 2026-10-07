@@ -1,21 +1,19 @@
+import type { Api, Model } from "@earendil-works/pi-ai";
 import {
-	AuthStorage,
 	type CreateAgentSessionRuntimeFactory,
 	createAgentSessionFromServices,
 	createAgentSessionRuntime,
 	createAgentSessionServices,
 	getAgentDir,
 	InteractiveMode,
-	ModelRegistry,
+	ModelRuntime,
 	SessionManager,
 	SettingsManager,
 } from "@earendil-works/pi-coding-agent";
-import type { Api, Model } from "@mariozechner/pi-ai";
 import { pawlCommands } from "./commands";
 
 export async function startAgent(model: Model<Api>, message: string) {
-	const authStorage = AuthStorage.create();
-	const modelRegistry = ModelRegistry.create(authStorage);
+	const modelRuntime = await ModelRuntime.create();
 
 	const settingsManager = SettingsManager.inMemory({
 		enableSkillCommands: false,
@@ -29,8 +27,7 @@ export async function startAgent(model: Model<Api>, message: string) {
 	}) => {
 		const services = await createAgentSessionServices({
 			cwd,
-			authStorage,
-			modelRegistry,
+			modelRuntime,
 			settingsManager,
 			resourceLoaderOptions: {
 				extensionFactories: [pawlCommands],

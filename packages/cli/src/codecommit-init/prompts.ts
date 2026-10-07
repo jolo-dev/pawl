@@ -1,5 +1,5 @@
 import { confirm, isCancel, select, text } from "@clack/prompts";
-import { getModels } from "@earendil-works/pi-ai";
+import { ModelRuntime } from "@earendil-works/pi-coding-agent";
 import {
 	AnthropicModelIdSchema,
 	CodeCommitBranchNameSchema,
@@ -152,7 +152,8 @@ export async function promptAutoReviewer(): Promise<boolean> {
 }
 
 export async function promptModelId(): Promise<string> {
-	const allModels = getModels("amazon-bedrock");
+	const modelRuntime = await ModelRuntime.create();
+	const allModels = modelRuntime.getModels("amazon-bedrock");
 	const anthropicModels = allModels.filter(
 		(m) => AnthropicModelIdSchema.safeParse(m.id).success,
 	);

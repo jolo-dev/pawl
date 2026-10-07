@@ -5,10 +5,10 @@
 	"devDependencies": {
 		"@pawl/cdk": "workspace:*",
 		"@pawl/lambda": "workspace:*",
-		"@testcontainers/localstack": "^11.11.0",
+		"@testcontainers/localstack": "^12.2.0",
 		"@types/bun": "catalog:",
-		"aws-cdk-local": "^3.0.1",
-		"cdk-booster": "^1.2.5"
+		"aws-cdk-local": "^3.0.4",
+		"cdk-booster": "^1.3.9"
 	},
 	"description": "",
 	"keywords": [],

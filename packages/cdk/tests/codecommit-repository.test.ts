@@ -20,17 +20,14 @@ describe("CodeCommitRepositoryNameSchema", () => {
 		).toBe(true);
 	});
 
-	test.each([
-		"",
-		"a".repeat(101),
-		"has space",
-		"repo/name",
-		"repo.git",
-	])("rejects invalid repository name %p", (repositoryName) => {
-		expect(
-			CodeCommitRepositoryNameSchema.safeParse(repositoryName).success,
-		).toBe(false);
-	});
+	test.each(["", "a".repeat(101), "has space", "repo/name", "repo.git"])(
+		"rejects invalid repository name %p",
+		(repositoryName) => {
+			expect(
+				CodeCommitRepositoryNameSchema.safeParse(repositoryName).success,
+			).toBe(false);
+		},
+	);
 });
 
 describe("CodeCommitBranchNameSchema", () => {

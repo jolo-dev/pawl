@@ -227,13 +227,12 @@ describe("CodePipeline physical name", () => {
 			detail: { pipeline: unknown[] };
 		};
 
-		expect(
-			(
-				router?.Properties?.Environment as {
-					Variables: Record<string, unknown>;
-				}
-			).Variables.PIPELINE_NAME,
-		).toEqual(pipelineReference);
+		const routerEnvironment = router?.Properties?.Environment as
+			| { Variables: Record<string, unknown> }
+			| undefined;
+		expect(routerEnvironment?.Variables.PIPELINE_NAME).toEqual(
+			pipelineReference,
+		);
 		expect(eventPattern.detail.pipeline).toEqual([pipelineReference]);
 	});
 

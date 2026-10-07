@@ -10,17 +10,17 @@
 		"astro": "astro"
 	},
 	"dependencies": {
-		"@astrojs/starlight": "^0.42.0",
-		"@iconify-json/logos": "^1.2.13",
-		"astro": "^7.3.1",
-		"sharp": "^0.35.4",
+		"@astrojs/starlight": "^0.42.5",
+		"@iconify-json/logos": "^1.2.15",
+		"astro": "^7.3.6",
+		"sharp": "^0.35.5",
 		"starlight-typedoc": "^0.23.1",
 		"typedoc": "^0.28.20",
-		"typedoc-plugin-markdown": "^4.13.0",
+		"typedoc-plugin-markdown": "^4.13.1",
 		"typescript": "6.0.3"
 	},
 	"devDependencies": {
-		"mermaid": "^11.17.2",
+		"mermaid": "^12.1.0",
 		"typedoc-plugin-mermaid": "^1.12.0",
 		"typedoc-plugin-zod": "^1.4.3"
 	}

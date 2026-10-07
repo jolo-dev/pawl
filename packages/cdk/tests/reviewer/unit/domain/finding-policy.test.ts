@@ -77,21 +77,17 @@ const dismissalContext = {
 };
 
 describe("finding schemas and policy", () => {
-	it.each([
-		"correctness",
-		"security",
-		"reliability",
-		"maintainability",
-	])("allows the %s category", (category) =>
-		expect(findingCategorySchema.parse(category)).toBe(category));
+	it.each(["correctness", "security", "reliability", "maintainability"])(
+		"allows the %s category",
+		(category) => expect(findingCategorySchema.parse(category)).toBe(category),
+	);
 
-	it.each([
-		"style",
-		"performance",
-		"naming",
-	])("rejects the %s category", (category) => {
-		expect(() => findingCategorySchema.parse(category)).toThrow();
-	});
+	it.each(["style", "performance", "naming"])(
+		"rejects the %s category",
+		(category) => {
+			expect(() => findingCategorySchema.parse(category)).toThrow();
+		},
+	);
 
 	it("makes untrusted candidates unassignable until policy acceptance", () => {
 		const candidate = findingCandidateSchema.parse(finding);

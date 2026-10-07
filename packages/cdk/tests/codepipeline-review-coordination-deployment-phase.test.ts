@@ -259,15 +259,18 @@ describe("CodePipeline review coordination deployment phases", () => {
 			autoReviewer: { modelId: "eu.anthropic.claude-sonnet-4-6" },
 		},
 		{ onPullRequest: true, autoReviewer: undefined },
-	])("rejects phase unless PR-gated auto-review is configured", (configuration) => {
-		const stack = new Stack(createTestApp(), "InvalidPhaseStack");
-		expect(
-			() =>
-				new CodePipeline(stack, "Pipeline", {
-					onPullRequest: configuration.onPullRequest,
-					autoReviewer: configuration.autoReviewer,
-					reviewCoordinationDeploymentPhase: "prepareGsi1",
-				}),
-		).toThrow(/requires PR-gated auto-review/);
-	});
+	])(
+		"rejects phase unless PR-gated auto-review is configured",
+		(configuration) => {
+			const stack = new Stack(createTestApp(), "InvalidPhaseStack");
+			expect(
+				() =>
+					new CodePipeline(stack, "Pipeline", {
+						onPullRequest: configuration.onPullRequest,
+						autoReviewer: configuration.autoReviewer,
+						reviewCoordinationDeploymentPhase: "prepareGsi1",
+					}),
+			).toThrow(/requires PR-gated auto-review/);
+		},
+	);
 });

@@ -26,7 +26,7 @@ describe("writeScaffoldProject", () => {
 			"utf8",
 		);
 		expect(packageJson).toContain('"name": "my-app"');
-		expect(packageJson).not.toContain('"tsx": "^4.19.2"');
+		expect(packageJson).not.toContain('"tsx":');
 		expect(readFileSync(path.join(projectDir, "cdk.json"), "utf8")).toContain(
 			'"awsProfile": "dev"',
 		);
@@ -59,7 +59,7 @@ describe("writeScaffoldProject", () => {
 			path.join(dir, "my-app", "package.json"),
 			"utf8",
 		);
-		expect(packageJson).toContain('"tsx": "^4.19.2"');
+		expect(packageJson).toContain('"tsx": "^4.23.15"');
 	});
 
 	test("omits LocalStack-only files in none mode", async () => {

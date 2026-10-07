@@ -65,57 +65,60 @@ describe("pipeline review reconciler", () => {
 	test.each([
 		["merged", "RequestMerged", "dispatcher"],
 		["closed", "RequestClosed", "observer"],
-	] as const)("completes a late-registered job after a durable %s terminal request from the %s", async (status, category, producer) => {
-		const store = new FakePipelineCoordinationStore();
-		const transport = new RecordingResultTransport();
-		const noopKick = { invoke: async () => undefined };
-		if (producer === "dispatcher") {
-			const dispatcher = new PipelineReviewDispatcher({
-				pipelineName: "pipeline",
-				transport: {
-					startExecution: async () => ({ executionId: "unused" }),
-				},
+	] as const)(
+		"completes a late-registered job after a durable %s terminal request from the %s",
+		async (status, category, producer) => {
+			const store = new FakePipelineCoordinationStore();
+			const transport = new RecordingResultTransport();
+			const noopKick = { invoke: async () => undefined };
+			if (producer === "dispatcher") {
+				const dispatcher = new PipelineReviewDispatcher({
+					pipelineName: "pipeline",
+					transport: {
+						startExecution: async () => ({ executionId: "unused" }),
+					},
+					store,
+					reconciler: noopKick,
+					clock: () => new Date(now),
+				});
+				await dispatcher.completeTerminalRequest({
+					request,
+					generation: 3,
+					status,
+				});
+			} else {
+				const observer = new PipelineReviewCycleObserver({
+					store,
+					reconciler: noopKick,
+					clock: () => new Date(now),
+				});
+				await observer.recordTerminalRequest({
+					request,
+					generation: 3,
+					status,
+				});
+			}
+
+			await store.registerJob(
+				pendingJob(`late-${status}`, {
+					deadlineAt: "2026-07-29T11:59:00.000Z",
+				}),
+			);
+			const reconcile = buildPipelineReconciler({
 				store,
-				reconciler: noopKick,
+				transport,
 				clock: () => new Date(now),
 			});
-			await dispatcher.completeTerminalRequest({
-				request,
-				generation: 3,
-				status,
-			});
-		} else {
-			const observer = new PipelineReviewCycleObserver({
-				store,
-				reconciler: noopKick,
-				clock: () => new Date(now),
-			});
-			await observer.recordTerminalRequest({
-				request,
-				generation: 3,
-				status,
-			});
-		}
+			await reconcile(`late-${status}`);
 
-		await store.registerJob(
-			pendingJob(`late-${status}`, {
-				deadlineAt: "2026-07-29T11:59:00.000Z",
-			}),
-		);
-		const reconcile = buildPipelineReconciler({
-			store,
-			transport,
-			clock: () => new Date(now),
-		});
-		await reconcile(`late-${status}`);
-
-		expect(transport.successes).toEqual([`late-${status}`]);
-		expect(transport.failures).toEqual([]);
-		expect(store.jobs.get(`late-${status}`)).toMatchObject({
-			state: "SUCCEEDED",
-			terminalIntent: { status: "success", category },
-		});
-	});
+			expect(transport.successes).toEqual([`late-${status}`]);
+			expect(transport.failures).toEqual([]);
+			expect(store.jobs.get(`late-${status}`)).toMatchObject({
+				state: "SUCCEEDED",
+				terminalIntent: { status: "success", category },
+			});
+		},
+	);
 
 	test("fails a late old-revision job after the newer marker's eager scan", async () => {
 		const store = new FakePipelineCoordinationStore();

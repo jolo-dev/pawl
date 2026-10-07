@@ -231,31 +231,29 @@ describe("CodeCommit review combinations", () => {
 });
 
 describe("CodeCommit validation", () => {
-	test.each([
-		"",
-		"invalid repository",
-		"repo/name",
-		"repo.git",
-	])("rejects invalid repository name %p", (repositoryName) => {
-		const stack = createStack(`InvalidRepository${repositoryName.length}Stack`);
-		expect(() => new CodeCommit(stack, "Code", { repositoryName })).toThrow();
-	});
+	test.each(["", "invalid repository", "repo/name", "repo.git"])(
+		"rejects invalid repository name %p",
+		(repositoryName) => {
+			const stack = createStack(
+				`InvalidRepository${repositoryName.length}Stack`,
+			);
+			expect(() => new CodeCommit(stack, "Code", { repositoryName })).toThrow();
+		},
+	);
 
-	test.each([
-		"",
-		"-feature",
-		"feature..branch",
-		"feature branch",
-	])("rejects invalid branch %p", (branchName) => {
-		const stack = createStack(`InvalidBranch${branchName.length}Stack`);
-		expect(
-			() =>
-				new CodeCommit(stack, "Code", {
-					repositoryName: "branch-repository",
-					create: { sourcePath: createSource(), branchName },
-				}),
-		).toThrow();
-	});
+	test.each(["", "-feature", "feature..branch", "feature branch"])(
+		"rejects invalid branch %p",
+		(branchName) => {
+			const stack = createStack(`InvalidBranch${branchName.length}Stack`);
+			expect(
+				() =>
+					new CodeCommit(stack, "Code", {
+						repositoryName: "branch-repository",
+						create: { sourcePath: createSource(), branchName },
+					}),
+			).toThrow();
+		},
+	);
 
 	test("rejects branch and force-include without source", () => {
 		const branchStack = createStack("BranchWithoutSourceStack");

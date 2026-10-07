@@ -1,5 +1,5 @@
 {
-	"$schema": "https://biomejs.dev/schemas/2.4.15/schema.json",
+	"$schema": "https://biomejs.dev/schemas/2.5.15/schema.json",
 	"vcs": {
 		"enabled": true,
 		"clientKind": "git",
@@ -10,6 +10,7 @@
 			"**",
 			"!!**/dist",
 			"!**/docs/typedoc-plugin-mermaid.mjs",
+			"!docs/src/assets/*.excalidraw.svg",
 			"!packages/cli/templates",
 			"!example/durable-lambda-reviewer"
 		]

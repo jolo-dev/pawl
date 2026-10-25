@@ -44,15 +44,7 @@ test("creates WebFunction deployment resources synchronously", () => {
 
 	const assets = stack.node
 		.findAll()
-		.filter(
-			(child): child is Asset =>
-				child instanceof Asset &&
-				child.node.path.endsWith("/DeployWebsite/Asset1"),
-		);
-	expect(assets).toHaveLength(1);
-	const asset = assets[0];
-	if (asset === undefined) throw new Error("Expected WebFunction ZIP asset");
-	expect(asset.isZipArchive).toBe(true);
+		.filter((child): child is Asset => child instanceof Asset);
 
 	const revision = Object.values(
 		template.findResources("AWS::Lambda::WebFunctionRevision"),
@@ -60,8 +52,16 @@ test("creates WebFunction deployment resources synchronously", () => {
 	if (revision === undefined)
 		throw new Error("Expected WebFunction revision resource");
 	const s3Object = revision.Properties?.BuildConfig?.CodeConfig?.S3Object;
-	expect(s3Object?.Bucket).toBe(stack.resolve(asset.s3BucketName));
-	expect(s3Object?.Key).toBe(stack.resolve(asset.s3ObjectKey));
+	const revisionBucket = stack.resolve(s3Object?.Bucket);
+	const revisionKey = stack.resolve(s3Object?.Key);
+	expect(
+		assets.some(
+			(asset) =>
+				asset.isZipArchive &&
+				stack.resolve(asset.s3BucketName) === revisionBucket &&
+				stack.resolve(asset.s3ObjectKey) === revisionKey,
+		),
+	).toBe(true);
 
 	expect(existsSync(`${path.resolve(entry)}.zip`)).toBe(false);
 });

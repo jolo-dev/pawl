@@ -55,13 +55,13 @@ test("creates WebFunction deployment resources synchronously", () => {
 	const revisionBucket = stack.resolve(s3Object?.Bucket);
 	const revisionKey = stack.resolve(s3Object?.Key);
 	expect(
-		assets.some(
-			(asset) =>
-				asset.isZipArchive &&
-				stack.resolve(asset.s3BucketName) === revisionBucket &&
-				stack.resolve(asset.s3ObjectKey) === revisionKey,
-		),
-	).toBe(true);
+		assets
+			.filter((asset) => asset.isZipArchive)
+			.map((asset) => ({
+				bucket: stack.resolve(asset.s3BucketName),
+				key: stack.resolve(asset.s3ObjectKey),
+			})),
+	).toContainEqual({ bucket: revisionBucket, key: revisionKey });
 
 	expect(existsSync(`${path.resolve(entry)}.zip`)).toBe(false);
 });

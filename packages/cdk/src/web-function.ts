@@ -133,7 +133,7 @@ export class WebFunction extends BasicConstruct {
 		);
 		rmSync(outputZip, { force: true });
 		try {
-			execFileSync("zip", ["-r", outputZip, folder]);
+			execFileSync("zip", ["-q", "-r", outputZip, folder]);
 		} catch (err) {
 			throw new Error(`Failed to zip folder "${folder}"`, { cause: err });
 		}

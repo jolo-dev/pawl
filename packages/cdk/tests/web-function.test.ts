@@ -1,19 +1,24 @@
+import { expect, test } from "bun:test";
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { expect, test } from "bun:test";
 import { Template } from "aws-cdk-lib/assertions";
 import type { StackProps } from "aws-cdk-lib/core";
 import { type Construct, Stack } from "../../cdk/src/stack";
 import { WebFunction } from "../src/web-function";
 import { createTestApp } from "./utils";
 
-const fixtureDirectory = mkdtempSync(path.join(os.tmpdir(), "pawl-web-function-"));
+const fixtureDirectory = mkdtempSync(
+	path.join(os.tmpdir(), "pawl-web-function-"),
+);
 process.on("exit", () => {
 	rmSync(fixtureDirectory, { recursive: true, force: true });
 });
 const entry = path.join(fixtureDirectory, "http.ts");
-writeFileSync(entry, "export const handler = async () => new Response('ok');\n");
+writeFileSync(
+	entry,
+	"export const handler = async () => new Response('ok');\n",
+);
 
 class WebFunctionTestStack extends Stack {
 	constructor(scope: Construct, id: string, props?: StackProps) {

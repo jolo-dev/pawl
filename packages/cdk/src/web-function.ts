@@ -1,4 +1,4 @@
-import { CfnOutput, Fn } from "aws-cdk-lib";
+import { CfnOutput } from "aws-cdk-lib";
 import {
 	CfnWebFunction,
 	CfnWebFunctionEndpoint,
@@ -6,8 +6,7 @@ import {
 	CfnWebFunctionRevision,
 	type CfnWebFunctionRevisionProps,
 } from "aws-cdk-lib/aws-lambda";
-import { Bucket } from "aws-cdk-lib/aws-s3";
-import { BucketDeployment, Source } from "aws-cdk-lib/aws-s3-deployment";
+import { Asset } from "aws-cdk-lib/aws-s3-assets";
 import type { Construct } from "constructs";
 import { z } from "zod";
 import {
@@ -85,8 +84,7 @@ export class WebFunction extends BasicConstruct {
 		);
 
 		// The Code of the HTTP server for the WebFunction it is called revision
-		const s3bucket = new Bucket(this, `${id}-web-function-code-bucket`);
-		this.uploadToS3(s3bucket, props.entry, webFunction);
+		this.uploadToS3(props.entry, webFunction);
 
 		new CfnOutput(this, "webFunctionUrl", {
 			value: webFunction.webFunctionRef.functionArn,
@@ -99,17 +97,9 @@ export class WebFunction extends BasicConstruct {
 		});
 	}
 
-	private uploadToS3(
-		bucket: Bucket,
-		folder: string,
-		webFunction: CfnWebFunction,
-	) {
+	private uploadToS3(folder: string, webFunction: CfnWebFunction) {
 		const zipFile = this.#zipFolder(folder);
-		const deployment = new BucketDeployment(this, "DeployWebsite", {
-			sources: [Source.asset(zipFile)],
-			destinationBucket: bucket,
-			destinationKeyPrefix: "web-function-code", // optional prefix in destination bucket
-		});
+		const asset = new Asset(this, "WebFunctionCode", { path: zipFile });
 		const iamRole = new Role(this, `${this.id}-web-function-revision-role`, {
 			assumedBy: new ServicePrincipal("lambda.amazonaws.com"),
 		});
@@ -121,8 +111,8 @@ export class WebFunction extends BasicConstruct {
 				buildConfig: {
 					codeConfig: {
 						s3Object: {
-							bucket: bucket.bucketName,
-							key: Fn.select(0, deployment.objectKeys),
+							bucket: asset.s3BucketName,
+							key: asset.s3ObjectKey,
 						},
 					},
 					runtimeConfig: {

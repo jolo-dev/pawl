@@ -56,6 +56,7 @@ const expectedClasses = [
 	"Sqs",
 	"Stack",
 	"StaticSite",
+	"WebFunction",
 ];
 
 // Exact primary-node and condition inventories reject external context and invented resources.
@@ -167,6 +168,17 @@ const ownedComponents: Record<
 			"logs(logos:aws-s3)[Retained access log bucket] in siteGroup",
 		],
 		groups: ["siteGroup(logos:aws-cloudfront)[Static site]"],
+	},
+	WebFunction: {
+		services: [
+			"asset(disk)[Generated ZIP S3 asset] in functionGroup",
+			"function(logos:aws-lambda)[WebFunction] in functionGroup",
+			"endpoint(logos:aws-lambda)[WebFunction endpoint] in functionGroup",
+			"revision(logos:aws-lambda)[WebFunction revision] in functionGroup",
+			"role(logos:aws-iam)[Revision execution role] in functionGroup",
+			"outputs(logos:aws-cloudformation)[Function and endpoint outputs] in functionGroup",
+		],
+		groups: ["functionGroup(logos:aws-lambda)[WebFunction deployment]"],
 	},
 	CodeBuildProject: {
 		services: [
@@ -343,7 +355,7 @@ function validateArchitecture(diagram: string): void {
 }
 
 describe("public CDK class documentation diagrams", () => {
-	test("covers exactly the 22 Pawl-owned public classes", () => {
+	test("covers exactly the 23 Pawl-owned public classes", () => {
 		expect([...publicClasses.keys()].sort()).toEqual(expectedClasses);
 	});
 

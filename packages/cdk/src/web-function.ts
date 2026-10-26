@@ -55,6 +55,29 @@ type WebFunctionProps = z.infer<typeof WebFunctionPropsSchema> &
 	> &
 	BasicConstructProps;
 
+/**
+ * Creates a Lambda WebFunction, endpoint, revision, and revision execution role.
+ * The source is packaged as a ZIP and staged as a CDK asset; the asset bucket is
+ * managed by the CDK deployment system rather than by this construct. CloudFormation
+ * outputs expose the function ARN and endpoint domain name.
+ *
+ * ```mermaid
+ * architecture-beta
+ *   group functionGroup(logos:aws-lambda)[WebFunction deployment]
+ *   service asset(disk)[Generated ZIP S3 asset] in functionGroup
+ *   service function(logos:aws-lambda)[WebFunction] in functionGroup
+ *   service endpoint(logos:aws-lambda)[WebFunction endpoint] in functionGroup
+ *   service revision(logos:aws-lambda)[WebFunction revision] in functionGroup
+ *   service role(logos:aws-iam)[Revision execution role] in functionGroup
+ *   service outputs(logos:aws-cloudformation)[Function and endpoint outputs] in functionGroup
+ *   asset:R -- L:revision
+ *   role:R -- L:revision
+ *   function:R -- L:revision
+ *   function:R -- L:endpoint
+ *   function:B -- T:outputs
+ *   endpoint:R -- L:outputs
+ * ```
+ */
 export class WebFunction extends BasicConstruct {
 	readonly id: string;
 

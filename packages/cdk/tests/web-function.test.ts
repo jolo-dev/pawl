@@ -3,10 +3,13 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { Match, Template } from "aws-cdk-lib/assertions";
+import { Aspects } from "aws-cdk-lib";
+import { Annotations, Match, Template } from "aws-cdk-lib/assertions";
 import { Asset } from "aws-cdk-lib/aws-s3-assets";
 import type { StackProps } from "aws-cdk-lib/core";
+import { AwsSolutionsChecks, NagSuppressions } from "cdk-nag";
 import { type Construct, Stack } from "../../cdk/src/stack";
+import type { PolicyStatement } from "../src/basic-construct";
 import { WebFunction } from "../src/web-function";
 import { createTestApp } from "./utils";
 
@@ -23,14 +26,24 @@ writeFileSync(
 );
 
 class WebFunctionTestStack extends Stack {
-	constructor(scope: Construct, id: string, props?: StackProps) {
+	readonly webFunction: WebFunction;
+
+	constructor(
+		scope: Construct,
+		id: string,
+		props?: StackProps,
+		webFunctionProps: Partial<
+			ConstructorParameters<typeof WebFunction>[2]
+		> = {},
+	) {
 		super(scope, id, props);
-		new WebFunction(this, "TestWebFunction", {
+		this.webFunction = new WebFunction(this, "TestWebFunction", {
 			functionName: "my-web-function",
 			authType: "ApplicationManaged",
 			entry,
 			endpointType: "HomeRegion",
 			endpointName: "dev",
+			...webFunctionProps,
 		});
 	}
 }
@@ -166,4 +179,157 @@ test("bundles the entry for Node and zips the bundle at the archive root", () =>
 	});
 
 	expect(existsSync(`${path.resolve(entry)}.zip`)).toBe(false);
+});
+
+for (const effect of ["allow", "deny"] as const) {
+	for (const duringConstruction of [true, false]) {
+		test(`applies ${effect} permissions to the revision execution role ${duringConstruction ? "during construction" : "after construction"}`, () => {
+			const app = createTestApp();
+			const policy: PolicyStatement = {
+				effect,
+				actions: ["s3:GetObject"],
+				resource: "arn:aws:s3:::test-data/item.json",
+			};
+			const stack = new WebFunctionTestStack(
+				app,
+				"PermissionsStack",
+				undefined,
+				{
+					permissions: duringConstruction ? [[app, policy]] : undefined,
+				},
+			);
+			if (!duringConstruction) stack.webFunction.grantPermission(stack, policy);
+
+			const template = Template.fromStack(stack);
+			const revision = Object.values(
+				template.findResources("AWS::Lambda::WebFunctionRevision"),
+			)[0];
+			const roleId =
+				revision?.Properties?.ServiceConfig?.ExecutionRoleArn["Fn::GetAtt"][0];
+			expect(roleId).toBeString();
+			template.hasResourceProperties("AWS::IAM::Policy", {
+				Roles: [{ Ref: roleId }],
+				PolicyDocument: {
+					Version: "2012-10-17",
+					Statement: [
+						{
+							Action: "s3:GetObject",
+							Effect: effect === "allow" ? "Allow" : "Deny",
+							Resource: policy.resource,
+						},
+					],
+				},
+			});
+		});
+	}
+}
+
+test("defaults permission resources to the WebFunction ARN", () => {
+	const stack = new WebFunctionTestStack(
+		createTestApp(),
+		"DefaultResourceStack",
+	);
+	stack.webFunction.grantPermission(stack, {
+		effect: "allow",
+		actions: ["lambda:InvokeWebFunction"],
+	});
+	const template = Template.fromStack(stack);
+	const functionId = Object.keys(
+		template.findResources("AWS::Lambda::WebFunction"),
+	)[0];
+	template.hasResourceProperties("AWS::IAM::Policy", {
+		PolicyDocument: Match.objectLike({
+			Statement: [
+				{
+					Action: "lambda:InvokeWebFunction",
+					Effect: "Allow",
+					Resource: { Ref: functionId },
+				},
+			],
+		}),
+	});
+});
+
+test("monitors endpoint request metrics and alarms on sparse 5xx responses", () => {
+	const stack = new WebFunctionTestStack(createTestApp(), "MonitoringStack");
+	const template = Template.fromStack(stack);
+	template.hasResourceProperties("AWS::CloudWatch::Alarm", {
+		Namespace: "AWS/Lambda/Web",
+		MetricName: "HTTPResponseStatusClass5XX",
+		Dimensions: [
+			{ Name: "EndpointName", Value: "dev" },
+			{ Name: "FunctionName", Value: "my-web-function" },
+		],
+		Statistic: "Sum",
+		Period: 300,
+		Threshold: 5,
+		ComparisonOperator: "GreaterThanThreshold",
+		EvaluationPeriods: 1,
+		TreatMissingData: "notBreaching",
+	});
+	const dashboards = JSON.stringify(
+		template.findResources("AWS::CloudWatch::Dashboard"),
+	);
+	for (const metricName of [
+		"ExecutedRequests",
+		"HTTPResponseStatusClass4XX",
+		"HTTPResponseStatusClass5XX",
+	]) {
+		expect(dashboards).toContain(metricName);
+	}
+});
+
+test("passes AwsSolutions checks with documented deployment-helper suppressions", () => {
+	const stack = new WebFunctionTestStack(createTestApp(), "ComplianceStack");
+	stack.webFunction.grantPermission(stack, {
+		effect: "allow",
+		actions: ["s3:GetObject"],
+		resource: "arn:aws:s3:::test-data/item.json",
+	});
+	NagSuppressions.addResourceSuppressions(
+		stack.webFunction.node.findChild(
+			"TestWebFunction-web-function-code-bucket",
+		),
+		[
+			{
+				id: "AwsSolutions-S1",
+				reason:
+					"The isolated fixture's code-artifact bucket has no separate access-log bucket; runtime data is not stored here.",
+			},
+		],
+		true,
+	);
+	const deploymentProvider = stack.node.children.find((child) =>
+		child.node.id.startsWith("Custom::CDKBucketDeployment"),
+	);
+	if (!deploymentProvider) throw new Error("Expected CDK deployment provider");
+	NagSuppressions.addResourceSuppressions(
+		deploymentProvider,
+		[
+			{
+				id: "AwsSolutions-L1",
+				reason:
+					"The BucketDeployment provider's Python runtime is selected and maintained by CDK, not the WebFunction.",
+			},
+			{
+				id: "AwsSolutions-IAM4",
+				reason:
+					"The CDK-managed deployment provider uses AWSLambdaBasicExecutionRole for its own logging.",
+			},
+			{
+				id: "AwsSolutions-IAM5",
+				reason:
+					"The CDK-managed deployment provider needs S3 read/write action families and object wildcards to copy assets; the WebFunction execution role is not suppressed.",
+			},
+		],
+		true,
+	);
+	Aspects.of(stack).add(new AwsSolutionsChecks());
+	stack.node.root.synth();
+	expect(
+		Annotations.fromStack(stack).findError(
+			"*",
+			Match.stringLikeRegexp("AwsSolutions-.*"),
+		),
+	).toEqual([]);
 });

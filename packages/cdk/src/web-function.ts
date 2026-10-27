@@ -2,7 +2,13 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { CfnOutput, Fn, RemovalPolicy } from "aws-cdk-lib";
+import { CfnOutput, Duration, Fn, RemovalPolicy } from "aws-cdk-lib";
+import {
+	ComparisonOperator,
+	Metric,
+	TreatMissingData,
+	Unit,
+} from "aws-cdk-lib/aws-cloudwatch";
 import {
 	Effect,
 	PolicyStatement as IamPolicyStatement,
@@ -97,15 +103,22 @@ type WebFunctionProps = z.infer<typeof WebFunctionPropsSchema> &
  */
 export class WebFunction extends BasicConstruct {
 	readonly id: string;
+	private readonly webFunction: CfnWebFunction;
+	private readonly endpoint: CfnWebFunctionEndpoint;
+	private readonly executionRole: Role;
 
 	constructor(scope: Stack, id: string, props: WebFunctionProps) {
-		super(scope, id, props);
+		super(scope, id);
 
 		this.id = id;
 		// The actual WebFunction
 		const webProps = WebFunctionPropsSchema.parse(props);
 		const webFunction = new CfnWebFunction(this, `${id}-web-function`, {
 			functionName: props.functionName,
+		});
+		this.webFunction = webFunction;
+		this.executionRole = new Role(this, `${id}-web-function-revision-role`, {
+			assumedBy: new ServicePrincipal("lambda.amazonaws.com"),
 		});
 
 		// Extract only endpoint base props (runtime validation)
@@ -128,6 +141,7 @@ export class WebFunction extends BasicConstruct {
 				],
 			},
 		);
+		this.endpoint = webFunctionEndpoint;
 		webFunctionEndpoint.node.addDependency(webFunctionRevision);
 
 		new CfnOutput(this, "webFunctionUrl", {
@@ -139,6 +153,9 @@ export class WebFunction extends BasicConstruct {
 			value: webFunctionEndpoint.attrDomainName,
 			exportName: `${id}-webFunctionDomainName`,
 		});
+
+		if (props.permissions) this.grantPermissions(props.permissions);
+		this.createAlarm(this.stack);
 	}
 
 	private uploadToS3(entry: string, webFunction: CfnWebFunction) {
@@ -178,9 +195,6 @@ export class WebFunction extends BasicConstruct {
 		if (!bucketReadPolicy.statementAdded) {
 			throw new Error("Failed to add Lambda WebFunction code bucket policy");
 		}
-		const iamRole = new Role(this, `${this.id}-web-function-revision-role`, {
-			assumedBy: new ServicePrincipal("lambda.amazonaws.com"),
-		});
 		const cfnWebFunctionRevision = new CfnWebFunctionRevision(
 			this,
 			`${this.id}-web-function-revision`,
@@ -199,7 +213,7 @@ export class WebFunction extends BasicConstruct {
 					},
 				},
 				serviceConfig: {
-					executionRoleArn: iamRole.roleArn,
+					executionRoleArn: this.executionRole.roleArn,
 				},
 			},
 		);
@@ -251,11 +265,61 @@ export class WebFunction extends BasicConstruct {
 	}
 	protected applyPermissionPolicy(
 		_construct: Construct,
-		_policyStatement: PolicyStatement,
+		policyStatement: PolicyStatement,
 	): void {
-		throw new Error("Method not implemented.");
+		this.executionRole.addToPrincipalPolicy(
+			new IamPolicyStatement({
+				effect: policyStatement.effect === "allow" ? Effect.ALLOW : Effect.DENY,
+				actions: policyStatement.actions,
+				resources: [
+					policyStatement.resource ??
+						this.webFunction.webFunctionRef.functionArn,
+				],
+			}),
+		);
 	}
-	createAlarm(_scope: Stack): void {
-		throw new Error("Method not implemented.");
+
+	createAlarm(stack: Stack): void {
+		// Web Functions publish endpoint metrics separately from event-driven Lambdas.
+		const metric = (metricName: string) =>
+			new Metric({
+				namespace: "AWS/Lambda/Web",
+				metricName,
+				dimensionsMap: {
+					FunctionName: this.webFunction.functionName,
+					EndpointName: this.endpoint.endpointName,
+				},
+				statistic: "Sum",
+				unit: Unit.COUNT,
+				period: Duration.minutes(5),
+			});
+
+		stack.monitoring.monitorCustom({
+			alarmFriendlyName: `${this.node.id}-WebFunction`,
+			humanReadableName: `${this.node.id} WebFunction`,
+			metricGroups: [
+				{
+					title: `${this.node.id} WebFunction requests`,
+					metrics: [
+						metric("ExecutedRequests"),
+						metric("HTTPResponseStatusClass4XX"),
+						{
+							metric: metric("HTTPResponseStatusClass5XX"),
+							alarmFriendlyName: `${this.node.id}-WebFunction-5XX`,
+							addAlarm: {
+								Critical: {
+									threshold: 5,
+									comparisonOperator: ComparisonOperator.GREATER_THAN_THRESHOLD,
+									datapointsToAlarm: 1,
+									evaluationPeriods: 1,
+									// No 5xx responses means no data points, not a failure.
+									treatMissingDataOverride: TreatMissingData.NOT_BREACHING,
+								},
+							},
+						},
+					],
+				},
+			],
+		});
 	}
 }

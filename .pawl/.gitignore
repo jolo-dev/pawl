@@ -1,0 +1,7 @@
+# pawl local private files (settings, sessions, artifacts)
+/settings.json
+/.settings-*.tmp
+/sessions/
+/.sessions-*.tmp
+/artifacts/
+/.artifacts-*.tmp

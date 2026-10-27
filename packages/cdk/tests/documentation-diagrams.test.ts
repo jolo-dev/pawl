@@ -171,7 +171,9 @@ const ownedComponents: Record<
 	},
 	WebFunction: {
 		services: [
-			"asset(disk)[Generated ZIP S3 asset] in functionGroup",
+			"asset(disk)[Generated ZIP CDK asset] in functionGroup",
+			"deployment(logos:aws-s3)[Raw ZIP deployment] in functionGroup",
+			"bucket(logos:aws-s3)[Private code bucket and policy] in functionGroup",
 			"function(logos:aws-lambda)[WebFunction] in functionGroup",
 			"endpoint(logos:aws-lambda)[WebFunction endpoint] in functionGroup",
 			"revision(logos:aws-lambda)[WebFunction revision] in functionGroup",

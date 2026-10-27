@@ -6,9 +6,10 @@
  * identity, and `tests/tui-theme.test.ts` compares these values against that
  * file so the two cannot drift apart.
  *
- * This module stays free of any renderer import so the tokens are usable (and
- * testable) without a terminal.
+ * RGBA preserves terminal-default colour intent without creating a renderer.
  */
+
+import { RGBA } from "@opentui/core";
 
 /** Hex values, keyed by camelCase for use in code. */
 export const PAWL_COLORS = {
@@ -27,22 +28,24 @@ export const PAWL_COLORS = {
 } as const;
 
 /**
- * The terminal palette the client asked for: black background, white text.
+ * The terminal palette: inherited background, white text, grey user messages.
  *
  * The docs palette is the brand's, but a terminal client renders on a user's
  * own screen with its own contrast expectations, so the client uses a plain
- * high-contrast pair and keeps the redline as the only accent.
+ * terminal-default background, blue panel borders, and redline alerts.
  */
 export const TERMINAL = {
-	background: "#000000",
-	panel: "#000000",
+	background: RGBA.defaultBackground(),
+	panel: RGBA.defaultBackground(),
 	body: "#ffffff",
 	strong: "#ffffff",
 	muted: "#9a9a9a",
 	accent: "#ff2e1c",
-	box: "#ed5757",
+	box: "#8dbee1",
+	userMessage: "#262626",
+	watermark: "#722f37",
 	danger: "#7d1509",
-	code: "#000000",
+	code: RGBA.defaultBackground(),
 } as const;
 
 export type PawlColorName = keyof typeof PAWL_COLORS;

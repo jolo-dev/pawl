@@ -6,6 +6,7 @@ interface Recorded {
 	readonly appended: string[];
 	readonly updated: string[];
 	readonly statuses: string[];
+	readonly busy: boolean[];
 	clears: number;
 }
 
@@ -14,6 +15,7 @@ function recorder(): { target: PresenterTarget; recorded: Recorded } {
 		appended: [],
 		updated: [],
 		statuses: [],
+		busy: [],
 		clears: 0,
 	};
 	const target: PresenterTarget = {
@@ -26,6 +28,9 @@ function recorder(): { target: PresenterTarget; recorded: Recorded } {
 		},
 		setStatus(text, role) {
 			recorded.statuses.push(role ? `${role}:${text}` : text);
+		},
+		setBusy(busy) {
+			recorded.busy.push(busy);
 		},
 		clearTranscript() {
 			recorded.clears++;
@@ -44,6 +49,16 @@ const state = (
 });
 
 describe("createPresenter", () => {
+	test("drives activity from reducer state, not status wording", () => {
+		const { target, recorded } = recorder();
+		const presenter = createPresenter(target);
+		presenter.present(state([], { busy: true, status: "" }));
+		presenter.present(state([], { busy: false, status: "Working" }));
+		presenter.present(state([], { busy: true, status: "Calling a tool" }));
+		presenter.reset();
+		expect(recorded.busy).toEqual([true, false, true, false]);
+	});
+
 	test("appends only the lines that are new", () => {
 		const { target, recorded } = recorder();
 		const presenter = createPresenter(target);

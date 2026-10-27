@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
+import { RGBA } from "@opentui/core";
 import {
 	DESIGN_TOKEN_NAMES,
 	PAWL_COLORS,
@@ -53,14 +54,23 @@ describe("brand tokens", () => {
 		}
 	});
 
-	test("every semantic role is a real hex colour", () => {
+	test("semantic colours are hex literals or terminal-default colours", () => {
 		for (const value of Object.values(THEME)) {
-			expect(/^#[0-9a-f]{6}$/.test(value)).toBe(true);
+			if (typeof value === "string")
+				expect(/^#[0-9a-f]{6}$/.test(value)).toBe(true);
+			else expect(value.intent).toBe("default");
 		}
 	});
 
-	test("is the black-and-white pair the client asked for", () => {
-		expect(THEME.background).toBe("#000000");
+	test("uses the requested blue for panel borders and titles", () => {
+		expect(THEME.box).toBe("#8dbee1");
+	});
+
+	test("inherits the terminal background while retaining white text and grey user rows", () => {
+		expect(THEME.background).toEqual(RGBA.defaultBackground());
+		expect(THEME.panel).toEqual(RGBA.defaultBackground());
+		expect(THEME.code).toEqual(RGBA.defaultBackground());
+		expect(THEME.userMessage).toBe("#262626");
 		expect(THEME.body).toBe("#ffffff");
 	});
 

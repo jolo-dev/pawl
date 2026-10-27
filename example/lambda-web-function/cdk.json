@@ -1,0 +1,23 @@
+{
+	"app": "bunx tsx ./index.ts",
+	"watch": {
+		"include": ["**"],
+		"exclude": [
+			"README.md",
+			"cdk*.json",
+			"**/*.d.ts",
+			"**/*.js",
+			"tsconfig.json",
+			"package*.json",
+			"node_modules",
+			"test"
+		]
+	},
+	"context": {
+		"awsProfile": "jolo",
+		"projectName": "lambda-web-function",
+		"testMode": "localstack",
+		"team": "jolo",
+		"stage": "dev"
+	}
+}

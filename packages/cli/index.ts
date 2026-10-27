@@ -126,6 +126,7 @@ const presenter = createPresenter({
 	append: (role, text) => app.append(role, text),
 	updateLast: (role, text) => app.updateLast(role, text),
 	setStatus: (text, role) => app.setStatus(text, role),
+	setBusy: (busy) => app.setBusy(busy),
 	clearTranscript: () => app.clearTranscript(),
 });
 

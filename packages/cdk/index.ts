@@ -14,29 +14,7 @@ export * from "./src/codecommit-auto-reviewer";
 export * from "./src/codecommit-repository";
 export * from "./src/codecommit-review-events";
 export * from "./src/codecommit-source";
-export {
-	type ApprovalActionDefinition,
-	type CloudFormationDeployActionDefinition,
-	type CodeBuildActionDefinition,
-	CodeBuildActionType,
-	type CodeCommitPipelineSource,
-	CodeCommitPipelineSourceSchema,
-	CodePipeline,
-	CodePipelineNameSchema,
-	type CodePipelineNaming,
-	CodePipelineNamingSchema,
-	type CodePipelineProps,
-	type CustomActionDefinition,
-	type LambdaActionDefinition,
-	type PipelineActionBase,
-	type PipelineActionDefinition,
-	PipelineActionDefinitionSchema,
-	PipelineDefinitionError,
-	type PipelineDefinitionErrorCode,
-	type PipelineStageDefinition,
-	type PipelineStageDefinitionList,
-	type S3DeployActionDefinition,
-} from "./src/codepipeline";
+export * from "./src/codepipeline";
 export * from "./src/cognito";
 export * from "./src/define-stack";
 export * from "./src/durable-lambda-function";
@@ -53,3 +31,4 @@ export * from "./src/stack";
 export type { StackFunction, StacksProps } from "./src/stack-function";
 export { stacks } from "./src/stack-function";
 export * from "./src/static-site";
+export * from "./src/web-function";

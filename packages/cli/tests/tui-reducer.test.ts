@@ -247,6 +247,34 @@ describe("human input", () => {
 });
 
 describe("session-level outcomes", () => {
+	test("shows the provider rejection once across turn and session failure events", () => {
+		const data = {
+			code: "MODEL_CALL_FAILED",
+			message:
+				"reasoningConfig.maxReasoningEffort is only allowed when type is 'enabled'.",
+		};
+		const state = reduceAll([
+			event({ type: "turn.failed", data }),
+			event({ type: "session.failed", data }),
+		]);
+		expect(state.lines.filter((line) => line.role === "alert")).toEqual([
+			{ role: "alert", text: `${data.code}: ${data.message}`, open: false },
+		]);
+	});
+
+	test("shows a standalone session failure without losing prior output", () => {
+		const state = reduceAll([
+			event({ type: "message.appended", data: { messageDelta: "starting" } }),
+			event({
+				type: "session.failed",
+				data: { code: "SESSION_LIMIT", message: "limit reached" },
+			}),
+		]);
+		expect(text(state)).toEqual([
+			"assistant:starting",
+			"alert:SESSION_LIMIT: limit reached",
+		]);
+	});
 	test("records a session failure so the user sees why send will fail", () => {
 		const state = reduceAll([
 			event({ type: "message.appended", data: { messageDelta: "starting" } }),

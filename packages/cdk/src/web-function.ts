@@ -1,4 +1,14 @@
-import { CfnOutput } from "aws-cdk-lib";
+import { execFileSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { CfnOutput, Fn, RemovalPolicy } from "aws-cdk-lib";
+import {
+	Effect,
+	PolicyStatement as IamPolicyStatement,
+	Role,
+	ServicePrincipal,
+} from "aws-cdk-lib/aws-iam";
 import {
 	CfnWebFunction,
 	CfnWebFunctionEndpoint,
@@ -6,7 +16,12 @@ import {
 	CfnWebFunctionRevision,
 	type CfnWebFunctionRevisionProps,
 } from "aws-cdk-lib/aws-lambda";
-import { Asset } from "aws-cdk-lib/aws-s3-assets";
+import {
+	BlockPublicAccess,
+	Bucket,
+	BucketEncryption,
+} from "aws-cdk-lib/aws-s3";
+import { BucketDeployment, Source } from "aws-cdk-lib/aws-s3-deployment";
 import type { Construct } from "constructs";
 import { z } from "zod";
 import {
@@ -16,15 +31,6 @@ import {
 } from "./basic-construct";
 import type { Stack } from "./stack";
 
-const EndpointType = z.enum(["HOME_REGION", "MULTI_REGION", "PER_REGION"]);
-const AuthType = z.enum(["AWS_IAM", "APPLICATION_MANAGED"]);
-
-import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import path from "node:path";
-import { Role, ServicePrincipal } from "aws-cdk-lib/aws-iam";
-
 const webFunctionArchiveDirectory = mkdtempSync(
 	path.join(tmpdir(), "pawl-web-function-"),
 );
@@ -32,6 +38,8 @@ process.on("exit", () => {
 	rmSync(webFunctionArchiveDirectory, { recursive: true, force: true });
 });
 
+const EndpointType = z.enum(["HomeRegion", "MultiRegion", "PerRegion"]);
+const AuthType = z.enum(["IamAuth", "ApplicationManaged"]);
 const WebFunctionEndpointProps = z.object({}).loose();
 
 const WebFunctionPropsSchema = z
@@ -47,7 +55,11 @@ const WebFunctionPropsSchema = z
 type WebFunctionProps = z.infer<typeof WebFunctionPropsSchema> &
 	Omit<
 		CfnWebFunctionEndpointProps,
-		"functionName" | "authType" | "endpointType" | "endpointName"
+		| "functionName"
+		| "authType"
+		| "endpointType"
+		| "endpointName"
+		| "revisionWeights"
 	> &
 	Omit<
 		CfnWebFunctionRevisionProps,
@@ -57,23 +69,28 @@ type WebFunctionProps = z.infer<typeof WebFunctionPropsSchema> &
 
 /**
  * Creates a Lambda WebFunction, endpoint, revision, and revision execution role.
- * The source is packaged as a ZIP and staged as a CDK asset; the asset bucket is
- * managed by the CDK deployment system rather than by this construct. CloudFormation
- * outputs expose the function ARN and endpoint domain name.
+ * The single TypeScript entry is bundled for Node.js, packaged as a ZIP, and copied
+ * into a dedicated S3 bucket. A bucket policy grants the Lambda service read access
+ * to that object while the CDK asset bucket remains private to deployment. The stack
+ * owns the bucket and archive; outputs expose the function ARN and endpoint domain.
  *
  * ```mermaid
  * architecture-beta
  *   group functionGroup(logos:aws-lambda)[WebFunction deployment]
- *   service asset(disk)[Generated ZIP S3 asset] in functionGroup
+ *   service asset(disk)[Generated ZIP CDK asset] in functionGroup
+ *   service deployment(logos:aws-s3)[Raw ZIP deployment] in functionGroup
+ *   service bucket(logos:aws-s3)[Private code bucket and policy] in functionGroup
  *   service function(logos:aws-lambda)[WebFunction] in functionGroup
  *   service endpoint(logos:aws-lambda)[WebFunction endpoint] in functionGroup
  *   service revision(logos:aws-lambda)[WebFunction revision] in functionGroup
  *   service role(logos:aws-iam)[Revision execution role] in functionGroup
  *   service outputs(logos:aws-cloudformation)[Function and endpoint outputs] in functionGroup
- *   asset:R -- L:revision
+ *   asset:R -- L:deployment
+ *   deployment:R -- L:bucket
+ *   bucket:R -- L:revision
  *   role:R -- L:revision
  *   function:R -- L:revision
- *   function:R -- L:endpoint
+ *   revision:R -- L:endpoint
  *   function:B -- T:outputs
  *   endpoint:R -- L:outputs
  * ```
@@ -91,9 +108,12 @@ export class WebFunction extends BasicConstruct {
 			functionName: props.functionName,
 		});
 
-		// The Endpoint of the WebFunction
 		// Extract only endpoint base props (runtime validation)
 		const endpointBase = WebFunctionEndpointProps.parse(webProps);
+		// The Code of the HTTP server for the WebFunction it is called revision
+		const webFunctionRevision = this.uploadToS3(props.entry, webFunction);
+
+		// Route the endpoint to the revision created above, not a guessed revision ID.
 		const webFunctionEndpoint = new CfnWebFunctionEndpoint(
 			this,
 			`${id}-web-function-endpoint`,
@@ -103,11 +123,12 @@ export class WebFunction extends BasicConstruct {
 				endpointType: props.endpointType,
 				functionName: webFunction.webFunctionRef.functionArn,
 				...endpointBase,
+				revisionWeights: [
+					{ revisionId: webFunctionRevision.attrRevisionId, weight: 100 },
+				],
 			},
 		);
-
-		// The Code of the HTTP server for the WebFunction it is called revision
-		this.uploadToS3(props.entry, webFunction);
+		webFunctionEndpoint.node.addDependency(webFunctionRevision);
 
 		new CfnOutput(this, "webFunctionUrl", {
 			value: webFunction.webFunctionRef.functionArn,
@@ -120,9 +141,43 @@ export class WebFunction extends BasicConstruct {
 		});
 	}
 
-	private uploadToS3(folder: string, webFunction: CfnWebFunction) {
-		const zipFile = this.#zipFolder(folder);
-		const asset = new Asset(this, "WebFunctionCode", { path: zipFile });
+	private uploadToS3(entry: string, webFunction: CfnWebFunction) {
+		const bundleFile = this.#bundleEntry(entry);
+		const zipFile = this.#zipBundle(bundleFile);
+		const codeBucket = new Bucket(this, `${this.id}-web-function-code-bucket`, {
+			autoDeleteObjects: true,
+			blockPublicAccess: BlockPublicAccess.BLOCK_ALL,
+			encryption: BucketEncryption.S3_MANAGED,
+			enforceSSL: true,
+			removalPolicy: RemovalPolicy.DESTROY,
+			versioned: true,
+		});
+		const codeDeployment = new BucketDeployment(
+			this,
+			`${this.id}-web-function-code-deployment`,
+			{
+				sources: [Source.asset(zipFile)],
+				destinationBucket: codeBucket,
+				extract: false,
+				prune: false,
+				retainOnDelete: false,
+			},
+		);
+		const codeKey = Fn.select(0, codeDeployment.objectKeys);
+		const bucketReadPolicy = codeBucket.addToResourcePolicy(
+			new IamPolicyStatement({
+				actions: ["s3:GetObject", "s3:GetObjectVersion"],
+				effect: Effect.ALLOW,
+				principals: [new ServicePrincipal("lambda.amazonaws.com")],
+				resources: [codeBucket.arnForObjects(codeKey)],
+				conditions: {
+					StringEquals: { "aws:SourceAccount": codeBucket.stack.account },
+				},
+			}),
+		);
+		if (!bucketReadPolicy.statementAdded) {
+			throw new Error("Failed to add Lambda WebFunction code bucket policy");
+		}
 		const iamRole = new Role(this, `${this.id}-web-function-revision-role`, {
 			assumedBy: new ServicePrincipal("lambda.amazonaws.com"),
 		});
@@ -134,12 +189,13 @@ export class WebFunction extends BasicConstruct {
 				buildConfig: {
 					codeConfig: {
 						s3Object: {
-							bucket: asset.s3BucketName,
-							key: asset.s3ObjectKey,
+							bucket: codeBucket.bucketName,
+							key: codeKey,
+							versionId: Fn.select(0, codeDeployment.objectVersionIds),
 						},
 					},
 					runtimeConfig: {
-						runtime: "NODEJS_24_X",
+						runtime: "nodejs24.x",
 					},
 				},
 				serviceConfig: {
@@ -147,18 +203,49 @@ export class WebFunction extends BasicConstruct {
 				},
 			},
 		);
+		cfnWebFunctionRevision.node.addDependency(codeDeployment);
+		if (bucketReadPolicy.policyDependable !== undefined) {
+			cfnWebFunctionRevision.node.addDependency(
+				bucketReadPolicy.policyDependable,
+			);
+		}
 		return cfnWebFunctionRevision;
 	}
-	#zipFolder(folder: string): string {
+	#bundleEntry(entry: string): string {
+		const bundleDirectory = path.join(
+			webFunctionArchiveDirectory,
+			this.node.addr,
+		);
+		mkdirSync(bundleDirectory, { recursive: true });
+		const bundleFile = path.join(bundleDirectory, "index.js");
+		rmSync(bundleFile, { force: true });
+		try {
+			execFileSync("bun", [
+				"build",
+				path.resolve(entry),
+				"--target=node",
+				"--outfile",
+				bundleFile,
+			]);
+		} catch (err) {
+			throw new Error(`Failed to bundle entry "${entry}" for Node.js`, {
+				cause: err,
+			});
+		}
+		return bundleFile;
+	}
+	#zipBundle(bundleFile: string): string {
 		const outputZip = path.join(
 			webFunctionArchiveDirectory,
 			`${this.node.addr}.zip`,
 		);
 		rmSync(outputZip, { force: true });
 		try {
-			execFileSync("zip", ["-q", "-r", outputZip, folder]);
+			execFileSync("zip", ["-q", outputZip, path.basename(bundleFile)], {
+				cwd: path.dirname(bundleFile),
+			});
 		} catch (err) {
-			throw new Error(`Failed to zip folder "${folder}"`, { cause: err });
+			throw new Error(`Failed to zip bundle "${bundleFile}"`, { cause: err });
 		}
 		return outputZip;
 	}

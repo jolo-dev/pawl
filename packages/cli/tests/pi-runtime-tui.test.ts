@@ -10,7 +10,11 @@ import {
 	createAssistantMessageEventStream,
 	type ToolCall,
 } from "@earendil-works/pi-ai";
-import { TextRenderable } from "@opentui/core";
+import {
+	type BaseRenderable,
+	BoxRenderable,
+	TextRenderable,
+} from "@opentui/core";
 import {
 	createTestRenderer,
 	type TestRendererSetup,
@@ -416,20 +420,18 @@ function frame(h: Harness): string {
 	return h.setup.captureCharFrame();
 }
 
-type TextContent = { chunks?: readonly { text?: unknown }[] } | undefined;
-
-function textRenderableText(child: TextRenderable): string {
-	const content = (child as unknown as { content?: TextContent }).content;
-	return (content?.chunks ?? [])
-		.map((chunk) => (typeof chunk.text === "string" ? chunk.text : ""))
-		.join("");
-}
-
 function transcriptLines(h: Harness): string[] {
-	return h.app.transcript
-		.getChildren()
-		.filter((child): child is TextRenderable => child instanceof TextRenderable)
-		.map(textRenderableText);
+	const lines: string[] = [];
+	const visit = (node: BaseRenderable): void => {
+		if (node instanceof TextRenderable) {
+			lines.push(node.content.chunks.map((chunk) => chunk.text).join(""));
+			return;
+		}
+		for (const child of node.getChildren()) visit(child);
+	};
+	// Transcript rows may wrap text; never include the surrounding app chrome.
+	visit(h.app.transcript);
+	return lines;
 }
 
 function countLine(h: Harness, text: string): number {
@@ -460,6 +462,33 @@ const flush = async (): Promise<void> => {
 };
 
 describe("pi conversation through the native opentui renderer", () => {
+	test("transcriptLines reads direct and nested text once in order, excluding app chrome", async () => {
+		const h = await mount();
+		const { renderer } = h.setup;
+		h.app.setStatus("outside transcript");
+		expect(transcriptLines(h)).toEqual([]);
+
+		h.app.transcript.add(new TextRenderable(renderer, { content: "direct" }));
+		const row = new BoxRenderable(renderer, {});
+		row.add(new TextRenderable(renderer, { content: "nested first" }));
+		const inner = new BoxRenderable(renderer, {});
+		inner.add(new TextRenderable(renderer, { content: "deeply nested" }));
+		row.add(inner);
+		row.add(new TextRenderable(renderer, { content: "nested last" }));
+		h.app.transcript.add(row);
+		h.app.transcript.add(new BoxRenderable(renderer, {}));
+		h.app.transcript.add(new TextRenderable(renderer, { content: "direct" }));
+		await h.setup.renderOnce();
+
+		expect(transcriptLines(h)).toEqual([
+			"direct",
+			"nested first",
+			"deeply nested",
+			"nested last",
+			"direct",
+		]);
+	});
+
 	test("renders two consecutive prompts and a multi-iteration tool turn", async () => {
 		const h = await mount({
 			script: [

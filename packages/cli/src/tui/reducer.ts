@@ -184,30 +184,25 @@ export function reduceEvent(
 			};
 
 		case "turn.failed":
+		case "session.failed": {
+			const { code, message } = event.data;
+			// Eve reports the same provider rejection at both boundaries. Keep
+			// its explanation in scrollback once, not just the opaque status code.
+			const alreadyShown =
+				state.failure?.code === code && state.failure.message === message;
 			return {
 				...state,
 				busy: false,
-				lines: closeOpen(state.lines),
-				failure: { code: event.data.code, message: event.data.message },
-				// The transcript is deliberately kept: losing it would erase the
-				// context that explains the failure.
-				status: event.data.code,
+				lines: alreadyShown
+					? closeOpen(state.lines)
+					: push(state.lines, "alert", `${code}: ${message}`),
+				failure: { code, message },
+				status: code,
 			};
+		}
 
 		case "session.waiting":
 			return { ...state, busy: false, status: "Waiting" };
-
-		case "session.failed":
-			// The session cannot continue, which is why a client must show it: the
-			// next `send` will be rejected, and without this the user would see a
-			// crash with no explanation.
-			return {
-				...state,
-				busy: false,
-				lines: closeOpen(state.lines),
-				failure: { code: event.data.code, message: event.data.message },
-				status: event.data.code,
-			};
 
 		case "session.completed":
 			return {

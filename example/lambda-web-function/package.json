@@ -1,0 +1,25 @@
+{
+  "name": "lambda-web-function",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "deploy": "AWS_PROFILE=jolo bunx cdk deploy --all",
+    "remove": "AWS_PROFILE=jolo bunx cdk destroy --all",
+    "dev": "bun run localstack && bun run cdklocal watch",
+    "test": "bun run test",
+    "localstack": "LOCALSTACK_AUTH_TOKEN=$(aws ssm get-parameter --name /pawl/localstack/token --with-decryption --query Parameter.Value --output text --profile jolo) docker compose -f ./node_modules/@pawl/cdk/docker-compose.yml up -d",
+    "cdklocal": "LOCALSTACK_AUTH_TOKEN=$(aws ssm get-parameter --name /pawl/localstack/token --with-decryption --query Parameter.Value --output text --profile jolo) AWS_ACCESS_KEY_ID=test AWS_SECRET_ACCESS_KEY=test AWS_DEFAULT_REGION=us-east-1 bunx cdklocal --app 'bun run local.dev.ts'",
+    "bootstrap:local": "bun run localstack && bun run cdklocal bootstrap --all",
+    "deploy:local": "bun run localstack && bun run bootstrap:local && bun run cdklocal deploy -- --all",
+    "remove:local": "bun run localstack && bun run cdklocal destroy --all",
+    "synth:local": "bun run cdklocal synth"
+  },
+  "devDependencies": {
+    "@pawl/cdk": "workspace:*",
+    "@pawl/lambda": "workspace:*",
+    "@tsconfig/node24": "catalog:",
+    "@types/node": "^26.6.5",
+    "aws-cdk-local": "^3.0.4"
+  },
+  "description": "A pawl scaffold project"
+}

@@ -16,6 +16,7 @@ export interface PresenterTarget {
 	append(role: TranscriptRole, text: string): unknown;
 	updateLast(role: TranscriptRole, text: string): void;
 	setStatus(text: string, role?: TranscriptRole): void;
+	setBusy(busy: boolean): void;
 	clearTranscript(): void;
 }
 
@@ -36,6 +37,7 @@ export function createPresenter(target: PresenterTarget): Presenter {
 
 	return {
 		present(state) {
+			target.setBusy(state.busy);
 			for (let index = rendered; index < state.lines.length; index++) {
 				const line = state.lines[index];
 				if (!line) continue;
@@ -64,6 +66,7 @@ export function createPresenter(target: PresenterTarget): Presenter {
 		},
 
 		reset() {
+			target.setBusy(false);
 			rendered = 0;
 			lastSignature = null;
 			target.clearTranscript();

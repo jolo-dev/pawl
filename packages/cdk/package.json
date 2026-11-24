@@ -18,8 +18,7 @@
 		"@tsconfig/node22": "catalog:",
 		"aws-cdk": "^2.1146.1",
 		"aws-cdk-local": "^3.1.0",
-		"cdk-nag": "^2.38.2",
-		"zod": "catalog:"
+		"cdk-nag": "^2.38.2"
 	},
 	"dependencies": {
 		"@aws-cdk/aws-bedrock-agentcore-alpha": "^2.257.0-alpha.0",
@@ -38,6 +37,7 @@
 		"@aws-sdk/lib-dynamodb": "catalog:",
 		"@aws-sdk/client-cloudwatch-logs": "catalog:",
 		"@aws/durable-execution-sdk-js": "catalog:",
-		"diff": "catalog:"
+		"diff": "catalog:",
+		"zod": "^4.6.7"
 	}
 }

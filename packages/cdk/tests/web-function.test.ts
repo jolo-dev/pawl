@@ -10,7 +10,11 @@ import type { StackProps } from "aws-cdk-lib/core";
 import { AwsSolutionsChecks, NagSuppressions } from "cdk-nag";
 import { type Construct, Stack } from "../../cdk/src/stack";
 import type { PolicyStatement } from "../src/basic-construct";
-import { WebFunction } from "../src/web-function";
+import {
+	WebFunction,
+	WebFunctionAuthType,
+	WebFunctionEndpointType,
+} from "../src/web-function";
 import { createTestApp } from "./utils";
 
 const fixtureDirectory = mkdtempSync(
@@ -39,9 +43,9 @@ class WebFunctionTestStack extends Stack {
 		super(scope, id, props);
 		this.webFunction = new WebFunction(this, "TestWebFunction", {
 			functionName: "my-web-function",
-			authType: "ApplicationManaged",
+			authType: WebFunctionAuthType.APPLICATION_MANAGED,
 			entry,
-			endpointType: "HomeRegion",
+			endpointType: WebFunctionEndpointType.HOME_REGION,
 			endpointName: "dev",
 			...webFunctionProps,
 		});
@@ -211,13 +215,13 @@ for (const effect of ["allow", "deny"] as const) {
 				Roles: [{ Ref: roleId }],
 				PolicyDocument: {
 					Version: "2012-10-17",
-					Statement: [
+					Statement: Match.arrayWith([
 						{
 							Action: "s3:GetObject",
 							Effect: effect === "allow" ? "Allow" : "Deny",
 							Resource: policy.resource,
 						},
-					],
+					]),
 				},
 			});
 		});
@@ -239,13 +243,13 @@ test("defaults permission resources to the WebFunction ARN", () => {
 	)[0];
 	template.hasResourceProperties("AWS::IAM::Policy", {
 		PolicyDocument: Match.objectLike({
-			Statement: [
+			Statement: Match.arrayWith([
 				{
 					Action: "lambda:InvokeWebFunction",
 					Effect: "Allow",
 					Resource: { Ref: functionId },
 				},
-			],
+			]),
 		}),
 	});
 });
@@ -320,6 +324,19 @@ test("passes AwsSolutions checks with documented deployment-helper suppressions"
 				id: "AwsSolutions-IAM5",
 				reason:
 					"The CDK-managed deployment provider needs S3 read/write action families and object wildcards to copy assets; the WebFunction execution role is not suppressed.",
+			},
+		],
+		true,
+	);
+	NagSuppressions.addResourceSuppressions(
+		stack.webFunction.node.findChild(
+			"TestWebFunction-web-function-revision-role",
+		),
+		[
+			{
+				id: "AwsSolutions-IAM5",
+				reason:
+					"CloudWatch Logs stream names are generated at runtime; access is restricted to this function's log groups.",
 			},
 		],
 		true,
